@@ -426,6 +426,7 @@ class THM(MultisegmentHyperbolic):
         """
         Compute the rate function using full definition.
         Uses `scipy.integrate.quadrature`.
+
         Parameters
         ----------
           t: Union[float, numpy.ndarray[float]]
@@ -444,6 +445,7 @@ class THM(MultisegmentHyperbolic):
     def transient_cum(self, t: Union[float, ndarray], **kwargs) -> ndarray:
         """
         Compute the cumulative volume function using full definition.
+
         Parameters
         ----------
           t: Union[float, numpy.ndarray[float]]
@@ -462,6 +464,7 @@ class THM(MultisegmentHyperbolic):
     def transient_D(self, t: Union[float, ndarray]) -> ndarray:
         """
         Compute the D-parameter function using full definition.
+
         Parameters
         ----------
           t: Union[float, numpy.ndarray[float]]
@@ -859,8 +862,10 @@ class Duong(PrimaryPhase):
     def _bfn(self, t: ndarray) -> ndarray:
         a = self.a
         m = self.m
-        Denom = (a * t - m * t ** m)
-        return m * t ** m * (t ** m - a * t) / (Denom * Denom)
+        Denom = a * t - m * t ** m
+        with warnings.catch_warnings(record=True) as w:
+            return np.where(
+                Denom == 0.0, 0.0, m * t ** m * (t ** m - a * t) / (Denom * Denom))
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:

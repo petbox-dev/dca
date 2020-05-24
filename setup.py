@@ -14,20 +14,13 @@ Created on August 5, 2019
 
 import os
 import sys
-import re
-from pathlib import Path
+
+from petbox.dca import __version__
 
 try:
     from setuptools import setup  # type: ignore
 except ImportError:
     from distutils.core import setup
-
-
-path = Path() / 'petbox' / 'dca'
-pattern = re.compile('__version__ = \'(.*?)\'')
-with open(path / '__init__.py', 'r') as f:
-    version = pattern.findall(f.read())[0]
-
 
 if sys.argv[-1] == 'build':
     print('\nBuilding...')
@@ -37,7 +30,7 @@ if sys.argv[-1] == 'build':
 
 setup(
     name='petbox-dca',
-    version=version,
+    version=__version__,
     description='Decline Curve Library',
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",

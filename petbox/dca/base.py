@@ -55,7 +55,8 @@ def get_time() -> ndarray:
 
     Returns
     -------
-        numpy.ndarray[float]
+      time: numpy.ndarray[float]
+        A default evenly-logarithmically-spaced time series
     """
     return 10.0 ** np.linspace(0.0, 5.0, 101)
 
@@ -66,11 +67,11 @@ def get_time_interval_vol() -> ndarray:
 
     Parameters
     ----------
-        None
 
     Returns
     -------
-        numpy.ndarray[float]
+      time: numpy.ndarray[float]
+        A default evenly-monthly-spaced time series
     """
     return (np.arange(1e5 // DAYS_PER_MONTH) + 1) * DAYS_PER_MONTH
 
@@ -92,7 +93,7 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-          numpy.ndarray[float]
+          rate: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._qfn(t)
@@ -112,7 +113,7 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-          numpy.ndarray[float]
+          cumulative volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._Nfn(t, **kwargs)
@@ -137,7 +138,7 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-          numpy.ndarray[float]
+          interval volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         if t0 is None:
@@ -164,7 +165,7 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-          numpy.ndarray[float]
+          monthly equivalent volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         if t0 is None:
@@ -184,7 +185,7 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-          numpy.ndarray[float]
+          D-parameter: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._Dfn(t)
@@ -200,7 +201,7 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-          numpy.ndarray[float]
+          beta-parameter: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._betafn(t)
@@ -216,7 +217,7 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-          numpy.ndarray[float]
+          b-parameter: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._bfn(t)
@@ -325,6 +326,18 @@ class PrimaryPhase(DeclineCurve):
         object.__setattr__(self, 'secondary', secondary)
 
     def add_secondary(self, secondary: 'SecondaryPhase') -> None:
+        """
+        Attach a secondary phase model to this primary phase model.
+
+        Parameters
+        ----------
+          secondary: SecondaryPhase
+            A model that inherits the ``SecondaryPhase`` class.
+
+        Returns
+        -------
+          None
+        """
         # bypass the "frozen" protection to link to the secondary phase
         object.__setattr__(secondary, 'primary', self)
         object.__setattr__(self, 'secondary', secondary)
@@ -359,7 +372,7 @@ class SecondaryPhase(DeclineCurve):
 
         Returns
         -------
-          numpy.ndarray[float]
+          GOR: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)

@@ -330,13 +330,12 @@ def test_THM(qi, Di, bf, telf):
     qi=st.floats(1e-10, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
-    telf=st.floats(0.0, 1e6),
-    bterm=st.floats(0.0, 2.0),
+    telf=st.floats(0.0, 1e4),
+    bterm=st.floats(0.0, 1.0),
     tterm=st.floats(1e-3, 30.0),
 )
-@settings(suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_THM_terminal(qi, Di, bf, telf, bterm, tterm):
-    assume(tterm > telf)
+    assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     check_transient_model(thm)
@@ -346,13 +345,12 @@ def test_THM_terminal(qi, Di, bf, telf, bterm, tterm):
 @given(
     qi=st.floats(1e-10, 1e6),
     bf=st.floats(0.0, 2.0),
-    telf=st.floats(0.0, 1e6),
-    bterm=st.floats(0.0, 2.0),
-    tterm=st.floats(1e-3, 30.0),
+    telf=st.floats(0.0, 1e4),
+    bterm=st.floats(0.0, 1.0),
+    tterm=st.floats(5.0, 30.0),
 )
-@settings(suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_THM_zero_Di(qi, bf, telf, bterm, tterm):
-    assume(tterm > telf)
+    assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, 0.0, 2.0, bf, telf, bterm, tterm)
     check_model(thm, qi)
@@ -362,13 +360,12 @@ def test_THM_zero_Di(qi, bf, telf, bterm, tterm):
 @given(
     qi=st.floats(1e-10, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
-    telf=st.floats(0.0, 1e6),
-    bterm=st.floats(0.0, 1.0, exclude_max=True),
-    tterm=st.floats(1e-3, 30.0),
+    telf=st.floats(0.0, 1e4),
+    bterm=st.floats(0.0, 0.5),
+    tterm=st.floats(5, 30),
 )
-@settings(suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_THM_harmonic(qi, Di, telf, bterm, tterm):
-    assume(tterm > telf)
+    assume(tterm * dca.DAYS_PER_YEAR > telf)
     thm = dca.THM(qi, Di, 2.0, 1.0, telf, bterm, tterm)
     check_model(thm, qi)
     check_transient_model(thm)
@@ -393,11 +390,11 @@ def test_THM_transient_extra():
     Di=st.floats(0.0, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6),
-    bterm=st.floats(1e-3, 1.0, exclude_max=True)
+    bterm=st.floats(1e-3, 0.3)
 )
 @settings(suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_THM_terminal_exp(qi, Di, bf, telf, bterm):
-    assume(dca.MH.nominal_from_secant(Di, 2.0) >= dca.MH.nominal_from_tangent(bterm))
+    assume(dca.THM.nominal_from_secant(Di, 2.0) >= dca.THM.nominal_from_tangent(bterm))
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, 0.0)
     check_model(thm, qi)
     check_transient_model(thm)
@@ -486,17 +483,16 @@ def test_terminal_exceeds():
     qi=st.floats(1e-10, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
-    telf=st.floats(1e-10, 1e6),
+    telf=st.floats(1e-10, 1e4),
     bterm=st.floats(1e-3, 0.3, exclude_max=True),
-    tterm=st.floats(1e-3, 30.0),
+    tterm=st.floats(5.0, 30.0),
     c=st.floats(1e-10, 1e10),
     m0=st.floats(-1.0, 1.0),
     m=st.floats(-1.0, 1.0),
     t0=st.floats(1e-10, 365.25),
 )
-@settings(deadline=1000.0, suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_yield(qi, Di, bf, telf, bterm, tterm, c, m0, m, t0):
-    assume(tterm > telf)
+    assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     thm.add_secondary(dca.PLYield(c, m0, m, t0))
@@ -507,9 +503,9 @@ def test_yield(qi, Di, bf, telf, bterm, tterm, c, m0, m, t0):
     qi=st.floats(1e-10, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
-    telf=st.floats(1e-10, 1e6),
+    telf=st.floats(1e-10, 1e4),
     bterm=st.floats(1e-3, 0.3, exclude_max=True),
-    tterm=st.floats(1e-3, 30.0),
+    tterm=st.floats(5.0, 30.0),
     c=st.floats(1e-10, 1e10),
     m0=st.floats(-1.0, 1.0),
     m=st.floats(-1.0, 1.0),
@@ -517,9 +513,8 @@ def test_yield(qi, Di, bf, telf, bterm, tterm, c, m0, m, t0):
     _min=st.floats(0, 100.0),
     _max=st.floats(1e4, 5e5)
 )
-@settings(deadline=1000.0, suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_yield_min_max(qi, Di, bf, telf, bterm, tterm, c, m0, m, t0, _min, _max):
-    assume(tterm > telf)
+    assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     thm.add_secondary(dca.PLYield(c, m0, m, t0, _min, _max))
