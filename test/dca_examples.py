@@ -64,7 +64,7 @@ beta_dg = dg.beta(ftime)
 
 
 #
-thm.add_secondary(dca.Yield(c=1000, m0=-.1, m=.5, t0=2 * 365.25 / 12))
+thm.add_secondary(dca.PLYield(c=1000, m0=-.1, m=.5, t0=2 * 365.25 / 12))
 g = thm.secondary.rate(ftime)
 y = thm.secondary.gor(ftime)
 g = thm.secondary.cum(ftime)

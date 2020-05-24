@@ -67,7 +67,7 @@ class NullSecondaryPhase(SecondaryPhase):
 
 
 @dataclass(frozen=True)
-class Yield(SecondaryPhase):
+class PLYield(SecondaryPhase):
     """
     Power-Law Secondary Phase Model.
 
@@ -94,8 +94,8 @@ class Yield(SecondaryPhase):
 
         with warnings.catch_warnings(record=True) as w:
             if self.min is not None or self.max is not None:
-                return np.clip(c * (t / t0) ** m, self.min, self.max)
-            return c * (t / t0) ** m
+                return np.where(t == 0.0, 0.0, np.clip(c * (t / t0) ** m, self.min, self.max))
+            return np.where(t == 0.0, 0.0, c * (t / t0) ** m)
 
     def _qfn(self, t: ndarray) -> ndarray:
         return self._yieldfn(t) / 1000.0 * self.primary._qfn(t)
@@ -193,7 +193,7 @@ class Yield(SecondaryPhase):
                 lambda r, n: r.uniform(-1.0, 1.0, n)),
             ParamDesc(
                 't0', 'Time of pivot point [days]',
-                0.0, None,
+                0, None,
                 lambda r, n: r.uniform(0.0, 1e5, n),
                 exclude_lower_bound=True)
         ]

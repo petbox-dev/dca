@@ -99,14 +99,14 @@ def check_model(model: dca.DeclineCurve, qi: float) -> bool:
         # assert is_monotonic_nondecreasing(cum)
     assert np.all(np.isfinite(cum))
 
-    mvolume = model.monthly_vol(t, t0=t0)
+    mvolume = model.monthly_vol(t)
     mavg_rate = np.gradient(mvolume, t)
     # assert is_float_array_like(mvolume, t)
     # assert is_monotonic_nonincreasing(mavg_rate)
     assert np.all(np.isfinite(mvolume))
     assert np.all(np.isfinite(mavg_rate))
 
-    ivolume = model.interval_vol(t, t0=t0)
+    ivolume = model.interval_vol(t)
     iavg_rate = np.gradient(ivolume, t)
     # assert is_float_array_like(ivolume, t)
     # assert is_monotonic_nonincreasing(iavg_rate)
@@ -350,6 +350,7 @@ def test_THM_terminal(qi, Di, bf, telf, bterm, tterm):
     bterm=st.floats(0.0, 2.0),
     tterm=st.floats(1e-3, 30.0),
 )
+@settings(suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_THM_zero_Di(qi, bf, telf, bterm, tterm):
     assume(tterm > telf)
     assume(bterm < bf)
@@ -365,6 +366,7 @@ def test_THM_zero_Di(qi, bf, telf, bterm, tterm):
     bterm=st.floats(0.0, 1.0, exclude_max=True),
     tterm=st.floats(1e-3, 30.0),
 )
+@settings(suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_THM_harmonic(qi, Di, telf, bterm, tterm):
     assume(tterm > telf)
     thm = dca.THM(qi, Di, 2.0, 1.0, telf, bterm, tterm)
@@ -490,19 +492,37 @@ def test_terminal_exceeds():
     c=st.floats(1e-10, 1e10),
     m0=st.floats(-1.0, 1.0),
     m=st.floats(-1.0, 1.0),
-    t0=st.floats(0, 365.25, exclude_min=True),
+    t0=st.floats(1e-10, 365.25),
+)
+@settings(deadline=1000.0, suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
+def test_yield(qi, Di, bf, telf, bterm, tterm, c, m0, m, t0):
+    assume(tterm > telf)
+    assume(bterm < bf)
+    thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
+    thm.add_secondary(dca.PLYield(c, m0, m, t0))
+    check_yield_model(thm, qi)
+
+
+@given(
+    qi=st.floats(1e-10, 1e6),
+    Di=st.floats(0.0, 1.0, exclude_max=True),
+    bf=st.floats(0.0, 2.0),
+    telf=st.floats(1e-10, 1e6),
+    bterm=st.floats(1e-3, 0.3, exclude_max=True),
+    tterm=st.floats(1e-3, 30.0),
+    c=st.floats(1e-10, 1e10),
+    m0=st.floats(-1.0, 1.0),
+    m=st.floats(-1.0, 1.0),
+    t0=st.floats(1e-10, 365.25),
     _min=st.floats(0, 100.0),
     _max=st.floats(1e4, 5e5)
 )
 @settings(deadline=1000.0, suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
-def test_yield(qi, Di, bf, telf, bterm, tterm, c, m0, m, t0, _min, _max):
+def test_yield_min_max(qi, Di, bf, telf, bterm, tterm, c, m0, m, t0, _min, _max):
     assume(tterm > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
-    thm.add_secondary(dca.Yield(c, m0, m, t0, _min, _max))
-    check_yield_model(thm, qi)
-
-    thm.add_secondary(dca.Yield(c, m0, m, t0))
+    thm.add_secondary(dca.PLYield(c, m0, m, t0, _min, _max))
     check_yield_model(thm, qi)
 
 

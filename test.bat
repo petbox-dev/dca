@@ -3,5 +3,5 @@
 flake8 petbox\dca
 mypy petbox\dca
 
-pytest --cov=petbox\dca --cov-report=html -v test
+pytest --cov=petbox.dca --cov-report=term-missing -v test
 REM coveralls

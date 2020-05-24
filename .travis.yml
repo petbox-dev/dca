@@ -8,15 +8,14 @@ python:
 
 install:
     - "pip install ."
-    - "pip install -U coveralls flake8 sphinx sphinx_rtd_theme"
-    - "if [[ $TRAVIS_PYTHON_VERSION != pypy* ]]; then pip install -U mypy; fi"
+    - "pip install -U coveralls flake8 sphinx sphinx_rtd_theme mypy numpy scipy"
 
 script:
-    - "coverage run --include='more_itertools/*.py' -m unittest -v"
-    - "flake8 ."
+    - 'flake8 petbox/dca'
+    - "mypy petbox/dca"
+    - "pytest --cov=petbox.dca --cov-report=html -v test"
     - "sphinx-build -W -b html docs docs/_build/html"
-    - "if [[ $TRAVIS_PYTHON_VERSION != pypy* ]] && [[ $TRAVIS_PYTHON_VERSION != 3.9-dev ]]; then mypy more_itertools; fi"
-    - "if [[ $TRAVIS_PYTHON_VERSION != pypy* ]] && [[ $TRAVIS_PYTHON_VERSION != 3.9-dev ]]; then stubtest more_itertools.more more_itertools.recipes; fi"
+    - "then mypy petbox/dca"
 
 notifications:
     - email: false
