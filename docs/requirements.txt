@@ -1,0 +1,6 @@
+sphinx
+sphinx_rtd_theme
+recommonmark
+commonmark
+numpy
+scipy

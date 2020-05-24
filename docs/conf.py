@@ -13,7 +13,7 @@
 import os
 import sys
 import sphinx_rtd_theme  # type: ignore
-from petbox.dca import __version__
+from petbox import dca
 
 sys.path.insert(0, os.path.abspath('.'))
 
@@ -24,7 +24,7 @@ copyright = '2020, David S. Fulford'
 author = 'David S. Fulford'
 
 # The full version, including alpha/beta/rc tags
-release = __version__
+release = dca.__version__
 
 
 # -- General configuration ---------------------------------------------------
