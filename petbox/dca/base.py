@@ -109,7 +109,7 @@ class DeclineCurve(ABC):
             An array of times at which to evaluate the function.
 
           **kwargs
-            Additional arguments passed to `scipy.integrate.quadrature` if needed.
+            Additional arguments passed to :func:`scipy.integrate.quadrature` if needed.
 
         Returns
         -------
@@ -131,10 +131,10 @@ class DeclineCurve(ABC):
 
           t0: Optional[Union[float, numpy.ndarray[float]]]
             A start time of the first interval. If not given, the first element
-            of `t` is used.
+            of ``t`` is used.
 
           **kwargs
-            Additional arguments passed to `scipy.integrate.quadrature` if needed.
+            Additional arguments passed to :func:`scipy.integrate.quadrature` if needed.
 
         Returns
         -------
@@ -161,7 +161,7 @@ class DeclineCurve(ABC):
             A start time of the first interval. If not given, assumed to be zero.
 
           **kwargs
-            Additional arguments passed to `scipy.integrate.quadrature` if needed.
+            Additional arguments passed to :func:`scipy.integrate.quadrature` if needed.
 
         Returns
         -------
@@ -313,7 +313,7 @@ class DeclineCurve(ABC):
 
 class PrimaryPhase(DeclineCurve):
     """
-    Extends `DeclineCurve` for a primary phase forecast.
+    Extends :class:`DeclineCurve` for a primary phase forecast.
     Adds the capability to link a secondary (associated) phase model.
     """
     secondary: 'SecondaryPhase'
@@ -332,7 +332,7 @@ class PrimaryPhase(DeclineCurve):
         Parameters
         ----------
           secondary: SecondaryPhase
-            A model that inherits the ``SecondaryPhase`` class.
+            A model that inherits the :class:`SecondaryPhase` class.
 
         Returns
         -------
@@ -345,9 +345,9 @@ class PrimaryPhase(DeclineCurve):
 
 class SecondaryPhase(DeclineCurve):
     """
-    Extends `DeclineCurve` for a secondary (associated) phase forecast.
+    Extends :class:`DeclineCurve` for a secondary (associated) phase forecast.
     Adds the capability to link a primary phase model.
-    Defines the `gor()` and `cgr()` functions. Each model must implement the
+    Defines the :meth:`gor` and :meth:`cgr` functions. Each model must implement the
     defined abstract method.
 
     """

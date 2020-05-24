@@ -5,10 +5,37 @@ API Reference
 Summary
 -------
 
-Decline Curve Functions
+
+Primary Phase Models
+~~~~~~~~~~~~~~~~~~~~
+
+.. currentmodule:: petbox.dca.primary
+
+.. autosummary::
+
+    THM
+    MH
+    PLE
+    SE
+    Duong
+
+
+Secondary Phase Models
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. currentmodule:: petbox.dca.secondary
+
+.. autosummary::
+
+    PLYield
+
+
+Model Functions
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 .. currentmodule:: petbox.dca.DeclineCurve
+
+All Models
 
 .. autosummary::
     rate
@@ -16,6 +43,35 @@ Decline Curve Functions
     D
     beta
     b
+
+.. currentmodule:: petbox.dca.PrimaryPhase
+
+
+Primary Phase Models
+
+.. autosummary::
+    add_secondary
+
+
+Secondary Phase Models
+
+.. currentmodule:: petbox.dca.SecondaryPhase
+
+.. autosummary::
+    gor
+    cgr
+
+
+Transient Hyperbolic Specific
+
+.. currentmodule:: petbox.dca.THM
+
+.. autosummary::
+    transient_rate
+    transient_cum
+    transient_D
+    transient_beta
+    transient_b
 
 .. automodule:: petbox.dca
 
@@ -27,24 +83,6 @@ Utility Functions
 
     get_time
     get_time_interval_vol
-
-Primary Phase Models
-~~~~~~~~~~~~~~~~~~~~
-
-.. autosummary::
-
-    THM
-    MH
-    PLE
-    SE
-    Duong
-
-Secondary Phase Models
-~~~~~~~~~~~~~~~~~~~~~~
-
-.. autosummary::
-
-    PLYield
 
 
 Detailed Reference
