@@ -1,7 +1,6 @@
 """
 Decline Curve Models
-Enhancement of module developed for David S. Fulford's thesis research
-Copyright © 2020, Gryphon Oil & Gas
+Copyright © 2020 David S. Fulford
 
 Author
 ------
