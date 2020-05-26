@@ -9,7 +9,7 @@ Each model, including the secondary phase models, implements all diagnostic func
 .. code-block:: python
 
     from petbox import dca
-    from data import (rate, time)
+    from data import (q_dat, t_data)
     import numpy as np
     import matplotlib.pyplot as plt
     import matplotlib as mpl
@@ -17,12 +17,12 @@ Each model, including the secondary phase models, implements all diagnostic func
     plt.style.use('seaborn-white')
     plt.rcParams['font.size'] = 16
 
-*Setup time series for Forecasts and calculate cumlative production of data*
+*Setup time series for Forecasts and calculate cumulative production of data*
 
 .. code-block:: python
 
-    ftime = np.power(10, np.linspace(0, 4, 101))
-    data_N = np.cumsum(rate * [time[0], *np.diff(time)])
+    t = np.power(10, np.linspace(0, 4, 101))
+    data_N = np.cumsum(rate * np.diff(time, prepend=t_data[0]))
 
 
 Primary Phase Decline Curve Models
@@ -36,11 +36,11 @@ Modified Hyperbolic Model
 .. code-block:: python
 
     mh = dca.MH(qi=725, Di=0.85, bi=0.6, Dterm=0.2)
-    q_mh = mh.rate(ftime)
-    N_mh = mh.cum(ftime)
-    D_mh = mh.D(ftime)
-    b_mh = mh.b(ftime)
-    beta_mh = mh.beta(ftime)
+    q_mh = mh.rate(t)
+    N_mh = mh.cum(t)
+    D_mh = mh.D(t)
+    b_mh = mh.b(t)
+    beta_mh = mh.beta(t)
     N_mh *= data_N[-1] / mh.cum(time[-1])
 
 
@@ -52,11 +52,11 @@ Transient Hyperbolic Model
 .. code-block:: python
 
     thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
-    q_trans = thm.transient_rate(ftime)
-    N_trans = thm.transient_cum(ftime)
-    D_trans = thm.transient_D(ftime)
-    b_trans = thm.transient_b(ftime)
-    beta_trans = thm.transient_beta(ftime)
+    q_trans = thm.transient_rate(t)
+    N_trans = thm.transient_cum(t)
+    D_trans = thm.transient_D(t)
+    b_trans = thm.transient_b(t)
+    beta_trans = thm.transient_beta(t)
     N_trans *= data_N[-1] / thm.transient_cum(time[-1])
 
 
@@ -67,11 +67,11 @@ Transient Hyperbolic Model Analytic Approximation
 
 .. code-block:: python
 
-    q_thm = thm.rate(ftime)
-    N_thm = thm.cum(ftime)
-    D_thm = thm.D(ftime)
-    b_thm = thm.b(ftime)
-    beta_thm = thm.beta(ftime)
+    q_thm = thm.rate(t)
+    N_thm = thm.cum(t)
+    D_thm = thm.D(t)
+    b_thm = thm.b(t)
+    beta_thm = thm.beta(t)
     N_thm *= data_N[-1] / thm.cum(time[-1])
 
 
@@ -82,14 +82,14 @@ If performance is a consideration, the approximation is about much faster.
 
 .. code-block:: python
 
-    %timeit thm.transient_rate(ftime)
+    %timeit thm.transient_rate(t)
 
 ``64.9 ms ± 5.81 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)``
 
 
 .. code-block:: python
 
-    %timeit thm.rate(ftime)
+    %timeit thm.rate(t)
 
 ``86.9 µs ± 5.35 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)``
 
@@ -104,11 +104,11 @@ Power-Law Exponential Model
 .. code-block:: python
 
     ple = dca.PLE(qi=750, Di=.1, Dinf=.00001, n=.5)
-    q_ple = ple.rate(ftime)
-    N_ple = ple.cum(ftime)
-    D_ple = ple.D(ftime)
-    b_ple = ple.b(ftime)
-    beta_ple = ple.beta(ftime)
+    q_ple = ple.rate(t)
+    N_ple = ple.cum(t)
+    D_ple = ple.D(t)
+    b_ple = ple.b(t)
+    beta_ple = ple.beta(t)
     N_ple *= data_N[-1] /  ple.cum(time[-1])
 
 
@@ -120,11 +120,11 @@ Stretched Exponential
 .. code-block:: python
 
     se = dca.SE(qi=715, tau=90.0, n=.5)
-    q_se = se.rate(ftime)
-    N_se = se.cum(ftime)
-    D_se = se.D(ftime)
-    b_se = se.b(ftime)
-    beta_se = se.beta(ftime)
+    q_se = se.rate(t)
+    N_se = se.cum(t)
+    D_se = se.D(t)
+    b_se = se.b(t)
+    beta_se = se.beta(t)
     N_se *= data_N[-1] / se.cum(time[-1])
 
 
@@ -136,16 +136,16 @@ Duong Model
 .. code-block:: python
 
     dg = dca.Duong(qi=715, a=2.8, m=1.4)
-    q_dg = dg.rate(ftime)
-    N_dg = dg.cum(ftime)
-    D_dg = dg.D(ftime)
-    b_dg = dg.b(ftime)
-    beta_dg = dg.beta(ftime)
+    q_dg = dg.rate(t)
+    N_dg = dg.cum(t)
+    D_dg = dg.D(t)
+    b_dg = dg.b(t)
+    beta_dg = dg.beta(t)
     N_dg *= data_N[-1] / dg.cum(time[-1])
 
 
 Primary Phase Diagnostic Plots
-================================
+==============================
 
 Rate and Cumulative Production Plots
 ------------------------------------
@@ -158,11 +158,11 @@ Rate and Cumulative Production Plots
     ax2 = fig.add_subplot(122)
 
     ax1.loglog(time, rate, 'o', mfc='w', label='Data')
-    ax1.loglog(ftime, q_thm, label='THM')
-    ax1.loglog(ftime, q_mh, label='MH')
-    ax1.loglog(ftime, q_ple, label='PLE')
-    ax1.loglog(ftime, q_se, label='SE')
-    ax1.loglog(ftime, q_dg, label='Duong')
+    ax1.loglog(t, q_thm, label='THM')
+    ax1.loglog(t, q_mh, label='MH')
+    ax1.loglog(t, q_ple, label='PLE')
+    ax1.loglog(t, q_se, label='SE')
+    ax1.loglog(t, q_dg, label='Duong')
 
     ax1.set(ylabel='Rate, BPD', xlabel='Time, Days')
     ax1.set(ylim=(1e0, 1e4), xlim=(1e0, 1e4))
@@ -172,11 +172,11 @@ Rate and Cumulative Production Plots
 
     # Cumulative Volume vs Time
     ax2.loglog(time, data_N, 'o', mfc='w', label='Data')
-    ax2.loglog(ftime, N_thm, label='THM')
-    ax2.loglog(ftime, N_mh, label='MH')
-    ax2.loglog(ftime, N_ple, label='PLE')
-    ax2.loglog(ftime, N_se, label='SE')
-    ax2.loglog(ftime, N_dg, label='Duong')
+    ax2.loglog(t, N_thm, label='THM')
+    ax2.loglog(t, N_mh, label='MH')
+    ax2.loglog(t, N_ple, label='PLE')
+    ax2.loglog(t, N_se, label='SE')
+    ax2.loglog(t, N_dg, label='Duong')
 
     ax2.set(ylim=(1e2, 1e6), xlim=(1e0, 1e4))
     ax2.set(ylabel='Cumulative Volume, MBbl', xlabel='Time, Days')
@@ -201,45 +201,45 @@ Diagnostic Function Plots
 
     # D-parameter vs Time
     ax1.loglog([], [])
-    ax1.loglog(ftime, D_trans, label='THM Transient')
-    ax1.loglog(ftime, D_thm, ls='--', label='THM Approx')
-    ax1.loglog(ftime, D_mh, label='MH')
-    ax1.loglog(ftime, D_ple, label='PLE')
-    ax1.loglog(ftime, D_se, label='SE')
-    ax1.loglog(ftime, D_dg, label='Duong')
+    ax1.loglog(t, D_trans, label='THM Transient')
+    ax1.loglog(t, D_thm, ls='--', label='THM Approx')
+    ax1.loglog(t, D_mh, label='MH')
+    ax1.loglog(t, D_ple, label='PLE')
+    ax1.loglog(t, D_se, label='SE')
+    ax1.loglog(t, D_dg, label='Duong')
     ax1.set(ylim=(1e-4, 1e0))
     ax1.set(ylabel='$D$-parameter, Days$^{-1}$', xlabel='Time, Days')
 
     # beta-parameter vs Time
     ax2.loglog([], [])
-    ax2.loglog(ftime, beta_trans, label='THM Transient')
-    ax2.loglog(ftime, beta_thm, ls='--', label='THM Approx')
-    ax2.loglog(ftime, beta_mh, label='MH')
-    ax2.loglog(ftime, beta_ple, label='PLE')
-    ax2.loglog(ftime, beta_se, label='SE')
-    ax2.loglog(ftime, beta_dg, label='Duong')
+    ax2.loglog(t, beta_trans, label='THM Transient')
+    ax2.loglog(t, beta_thm, ls='--', label='THM Approx')
+    ax2.loglog(t, beta_mh, label='MH')
+    ax2.loglog(t, beta_ple, label='PLE')
+    ax2.loglog(t, beta_se, label='SE')
+    ax2.loglog(t, beta_dg, label='Duong')
     ax2.set(ylim=(1e-2, 1e2))
     ax2.set(ylabel=r'$\beta$-parameter, Dimensionless', xlabel='Time, Days')
 
     # b-parameter vs Time
     ax3.semilogx([], [])
-    ax3.semilogx(ftime, b_trans, label='THM Transient')
-    ax3.semilogx(ftime, b_thm, ls='--', label='THM Approx')
-    ax3.semilogx(ftime, b_mh, label='MH')
-    ax3.semilogx(ftime, b_ple, label='PLE')
-    ax3.semilogx(ftime, b_se, label='SE')
-    ax3.semilogx(ftime, b_dg, label='Duong')
+    ax3.semilogx(t, b_trans, label='THM Transient')
+    ax3.semilogx(t, b_thm, ls='--', label='THM Approx')
+    ax3.semilogx(t, b_mh, label='MH')
+    ax3.semilogx(t, b_ple, label='PLE')
+    ax3.semilogx(t, b_se, label='SE')
+    ax3.semilogx(t, b_dg, label='Duong')
     ax3.set(ylim=(0., 4.))
     ax3.set(ylabel='$b$-parameter, Dimensionless', xlabel='Time, Days')
 
     # q/N vs Time
     ax4.loglog([], [])
-    ax4.loglog(ftime, q_trans / N_trans, label='THM Transient')
-    ax4.loglog(ftime, q_thm / N_thm, label='THM Approx')
-    ax4.loglog(ftime, q_mh / N_mh, label='MH')
-    ax4.loglog(ftime, q_ple / N_ple, label='PLE')
-    ax4.loglog(ftime, q_se / N_se, label='SE')
-    ax4.loglog(ftime, q_dg / N_dg, label='Duong')
+    ax4.loglog(t, q_trans / N_trans, label='THM Transient')
+    ax4.loglog(t, q_thm / N_thm, label='THM Approx')
+    ax4.loglog(t, q_mh / N_mh, label='MH')
+    ax4.loglog(t, q_ple / N_ple, label='PLE')
+    ax4.loglog(t, q_se / N_se, label='SE')
+    ax4.loglog(t, q_dg / N_dg, label='Duong')
     ax4.set(ylim=(1e-7, 1e0), xlim=(1e0, 1e7))
     ax4.set(ylabel='$q_o / N_p$, Days$^{-1}$', xlabel='Time, Days')
 
@@ -290,54 +290,54 @@ Numeric calculation provided to verify analytic relationships
 
 
     # Rate vs Time
-    q = thm.rate(ftime)
-    g = thm.secondary.rate(ftime)
-    y = thm.secondary.gor(ftime)
+    q = thm.rate(t)
+    g = thm.secondary.rate(t)
+    y = thm.secondary.gor(t)
 
-    ax1.plot(ftime, q, c='C2', label='Oil')
-    ax1.plot(ftime, g, c='C3', label='Gas')
-    ax1.plot(ftime, y, c='C1', label='GOR')
+    ax1.plot(t, q, c='C2', label='Oil')
+    ax1.plot(t, g, c='C3', label='Gas')
+    ax1.plot(t, y, c='C1', label='GOR')
     ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
     ax1.set(ylabel='Rate, BPD or MCFD', xlabel='Time, Days')
 
 
     # Cumulative Volume vs Time
-    q_N = thm.cum(ftime)
-    g_N = thm.secondary.cum(ftime)
-    _g_N = np.cumsum(g_q * np.diff(ftime, prepend=0))
+    q_N = thm.cum(t)
+    g_N = thm.secondary.cum(t)
+    _g_N = np.cumsum(g_q * np.diff(t, prepend=0))
 
-    ax2.plot(ftime, q_N, c='C2', label='Oil')
-    ax2.plot(ftime, g_N, c='C3', label='Gas')
-    ax2.plot(ftime, _g_N, c='k', ls=':', label='Gas (numeric)')
-    ax2.plot(ftime, y, c='C1', label='GOR')
+    ax2.plot(t, q_N, c='C2', label='Oil')
+    ax2.plot(t, g_N, c='C3', label='Gas')
+    ax2.plot(t, _g_N, c='k', ls=':', label='Gas (numeric)')
+    ax2.plot(t, y, c='C1', label='GOR')
     ax2.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e2, 1e7))
     ax2.set(ylabel='Rate, Dimensionless', xlabel='Time, Days')
     ax2.set(ylabel='Cumulative Volume or GOR, MBbl, MMcf, or Bbl/scf', xlabel='Time, Days')
 
 
     # Time vs Monthly Volume
-    q_MN = thm.monthly_vol(ftime, t0=0.0)
-    g_MN = thm.secondary.monthly_vol(ftime, t0=0.0)
-    _g_MN = np.diff(np.cumsum(g_q * np.diff(ftime, prepend=0)), prepend=0) \
-        / np.diff(ftime, prepend=0) * dca.DAYS_PER_MONTH
+    q_MN = thm.monthly_vol(t, t0=0.0)
+    g_MN = thm.secondary.monthly_vol(t, t0=0.0)
+    _g_MN = np.diff(np.cumsum(g_q * np.diff(t, prepend=0)), prepend=0) \
+        / np.diff(t, prepend=0) * dca.DAYS_PER_MONTH
 
-    ax3.plot(ftime, q_MN, c='C2', label='Oil')
-    ax3.plot(ftime, g_MN, c='C3', label='Gas')
-    ax3.plot(ftime, _g_MN, c='k', ls=':', label='Gas (numeric)')
-    ax3.plot(ftime, y, c='C1', label='GOR')
+    ax3.plot(t, q_MN, c='C2', label='Oil')
+    ax3.plot(t, g_MN, c='C3', label='Gas')
+    ax3.plot(t, _g_MN, c='k', ls=':', label='Gas (numeric)')
+    ax3.plot(t, y, c='C1', label='GOR')
     ax3.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
     ax3.set(ylabel='Monthly Volume or GOR, MBbl, MMcf, or Bbl/scf', xlabel='Time, Days')
 
 
     # Time vs Interval Volume
-    q_IN = thm.interval_vol(ftime, t0=0.0)
-    g_IN = thm.secondary.interval_vol(ftime, t0=0.0)
-    _g_IN = np.diff(np.cumsum(g_q * np.diff(ftime, prepend=0)), prepend=0)
+    q_IN = thm.interval_vol(t, t0=0.0)
+    g_IN = thm.secondary.interval_vol(t, t0=0.0)
+    _g_IN = np.diff(np.cumsum(g_q * np.diff(t, prepend=0)), prepend=0)
 
-    ax4.plot(ftime, q_IN, c='C2', label='Oil')
-    ax4.plot(ftime, g_IN, c='C3', label='Gas')
-    ax4.plot(ftime, _g_IN, c='k', ls=':', label='Gas (numeric)')
-    ax4.plot(ftime, y, c='C1', label='GOR')
+    ax4.plot(t, q_IN, c='C2', label='Oil')
+    ax4.plot(t, g_IN, c='C3', label='Gas')
+    ax4.plot(t, _g_IN, c='k', ls=':', label='Gas (numeric)')
+    ax4.plot(t, y, c='C1', label='GOR')
     ax4.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
     ax4.set(ylabel='$\Delta$Volume or GOR, MBbl, MMcf, or Bbl/scf', xlabel='Time, Days')
 
@@ -364,46 +364,46 @@ Diagnotic Function Plots
     ax4 = fig.add_subplot(224)
 
     # D-parameter vs Time
-    q_D = thm.D(ftime)
-    g_D = thm.secondary.D(ftime)
-    _g_D = -np.gradient(np.log(thm.secondary.rate(ftime)), ftime)
+    q_D = thm.D(t)
+    g_D = thm.secondary.D(t)
+    _g_D = -np.gradient(np.log(thm.secondary.rate(t)), t)
 
-    ax1.plot(ftime, q_D, c='C2', label='Oil')
-    ax1.plot(ftime, g_D, c='C3', label='Gas')
-    ax1.plot(ftime, _g_D, c='k', ls=':', label='Gas (numeric)')
+    ax1.plot(t, q_D, c='C2', label='Oil')
+    ax1.plot(t, g_D, c='C3', label='Gas')
+    ax1.plot(t, _g_D, c='k', ls=':', label='Gas (numeric)')
     ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e4), ylim=(1e-4, 1e0))
     ax1.set(ylabel='$D$-parameter, Days$^{-1}$', xlabel='Time, Days')
 
     # beta-parameter vs Time
-    q_beta = thm.beta(ftime)
-    g_beta = thm.secondary.beta(ftime)
-    _g_beta = _g_D * ftime
+    q_beta = thm.beta(t)
+    g_beta = thm.secondary.beta(t)
+    _g_beta = _g_D * t
 
-    ax2.plot(ftime, q_beta, c='C2', label='Oil')
-    ax2.plot(ftime, g_beta, c='C3', label='Gas')
-    ax2.plot(ftime, _g_beta, c='k', ls=':', label='Gas (numeric)')
+    ax2.plot(t, q_beta, c='C2', label='Oil')
+    ax2.plot(t, g_beta, c='C3', label='Gas')
+    ax2.plot(t, _g_beta, c='k', ls=':', label='Gas (numeric)')
     ax2.set(xscale='log', yscale='log', xlim=(1e0, 1e4), ylim=(1e-2, 1e2))
     ax2.set(ylabel=r'$\beta$-parameter, Dimensionless', xlabel='Time, Days')
 
     # b-parameter vs Time
-    q_b = thm.b(ftime)
-    g_b = thm.secondary.b(ftime)
-    _g_b = np.gradient(1.0 / _g_D, ftime)
+    q_b = thm.b(t)
+    g_b = thm.secondary.b(t)
+    _g_b = np.gradient(1.0 / _g_D, t)
 
-    ax3.plot(ftime, q_b, c='C2', label='Oil')
-    ax3.plot(ftime, g_b, c='C3', label='Gas')
-    ax3.plot(ftime, _g_b, c='k', ls=':', label='Gas (numeric)')
+    ax3.plot(t, q_b, c='C2', label='Oil')
+    ax3.plot(t, g_b, c='C3', label='Gas')
+    ax3.plot(t, _g_b, c='k', ls=':', label='Gas (numeric)')
     ax3.set(xscale='log', yscale='linear', xlim=(1e0, 1e4), ylim=(-2, 4))
     ax3.set(ylabel='$b$-parameter, Dimensionless', xlabel='Time, Days')
 
     # q/N vs Time
-    q_Ng = thm.rate(ftime) / thm.cum(ftime)
-    g_Ng = thm.secondary.rate(ftime) / thm.secondary.cum(ftime)
-    _g_Ng = thm.secondary.rate(ftime) / np.cumsum(g_q * np.diff(ftime, prepend=0))
+    q_Ng = thm.rate(t) / thm.cum(t)
+    g_Ng = thm.secondary.rate(t) / thm.secondary.cum(t)
+    _g_Ng = thm.secondary.rate(t) / np.cumsum(g_q * np.diff(t, prepend=0))
 
-    ax4.plot(ftime, q_Ng, c='C2', label='Oil')
-    ax4.plot(ftime, g_Ng, c='C3', ls='--', label='Gas')
-    ax4.plot(ftime, _g_Ng, c='k', ls=':', label='Gas (numeric)')
+    ax4.plot(t, q_Ng, c='C2', label='Oil')
+    ax4.plot(t, g_Ng, c='C3', ls='--', label='Gas')
+    ax4.plot(t, _g_Ng, c='k', ls=':', label='Gas (numeric)')
     ax4.set(xscale='log', yscale='log', ylim=(1e-7, 1e0), xlim=(1e0, 1e7))
     ax4.set(ylabel='$q_o / N_p$, Days$^{-1}$', xlabel='Time, Days')
 
@@ -433,13 +433,13 @@ Numeric calculation provided to verify analytic relationships
     ax3 = fig.add_subplot(223)
 
     # D-parameter vs Time
-    q_D = thm.D(ftime)
-    g_D = thm.secondary.D(ftime)
-    _g_D = -np.gradient(np.log(thm.secondary.rate(ftime)), ftime)
+    q_D = thm.D(t)
+    g_D = thm.secondary.D(t)
+    _g_D = -np.gradient(np.log(thm.secondary.rate(t)), t)
 
-    ax1.plot(ftime, q_D, c='C2', label='Oil')
-    ax1.plot(ftime, g_D, c='C3', label='Gas')
-    ax1.plot(ftime, _g_D, c='k', ls=':', label='Gas(numeric)')
+    ax1.plot(t, q_D, c='C2', label='Oil')
+    ax1.plot(t, g_D, c='C3', label='Gas')
+    ax1.plot(t, _g_D, c='k', ls=':', label='Gas(numeric)')
     ax1.set(xscale='log', yscale='linear', xlim=(1e0, 1e5), ylim=(None, None))
     ax1.set(ylabel='$D$-parameter, 1 / Days', xlabel='Time, Days')
 
@@ -447,21 +447,21 @@ Numeric calculation provided to verify analytic relationships
     secant_from_nominal = dca.MultisegmentHyperbolic.secant_from_nominal
     dpy = dca.DAYS_PER_YEAR
 
-    q_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(q_D, thm.b(ftime))]
-    g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(g_D, thm.secondary.b(ftime))]
-    _g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(_g_D, np.gradient(1 / _g_D, ftime))]
+    q_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(q_D, thm.b(t))]
+    g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(g_D, thm.secondary.b(t))]
+    _g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(_g_D, np.gradient(1 / _g_D, t))]
 
-    ax2.plot(ftime, q_Dn, c='C2', label='Oil')
-    ax2.plot(ftime, g_Dn, c='C3', label='Gas')
-    ax2.plot(ftime, _g_Dn, c='k', ls=':', label='Gas (numeric)')
+    ax2.plot(t, q_Dn, c='C2', label='Oil')
+    ax2.plot(t, g_Dn, c='C3', label='Gas')
+    ax2.plot(t, _g_Dn, c='k', ls=':', label='Gas (numeric)')
     ax2.set(xscale='log', yscale='linear', xlim=(1e0, 1e5), ylim=(-.5, 1.025))
     ax2.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(xmax=1))
     ax2.set(ylabel='Secant Effective Decline, % / Year', xlabel='Time$ Days')
 
     # Tangent Effective Decline vs Time
-    ax3.plot(ftime, 1 - np.exp(-q_D * dpy), c='C2', label='Oil')
-    ax3.plot(ftime, 1 - np.exp(-g_D * dpy), c='C3', label='Gas')
-    ax3.plot(ftime, 1 - np.exp(-_g_D * dpy), c='k', ls=':', label='Gas (numeric)')
+    ax3.plot(t, 1 - np.exp(-q_D * dpy), c='C2', label='Oil')
+    ax3.plot(t, 1 - np.exp(-g_D * dpy), c='C3', label='Gas')
+    ax3.plot(t, 1 - np.exp(-_g_D * dpy), c='k', ls=':', label='Gas (numeric)')
     ax3.set(xscale='log', yscale='linear', xlim=(1e0, 1e5), ylim=(-1.025, 1.025))
     ax3.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(xmax=1))
     ax3.set(ylabel='Tangent Effective Decline, % / Day', xlabel='Time, Days')

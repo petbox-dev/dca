@@ -29,18 +29,38 @@ def get_long_description() -> str:
     with open('README.rst', 'r') as f:
         readme = f.read()
 
+    replacements = [
+        '.. automodule:: petbox.dca',
+        ':noindex:',
+    ]
+
+    def replace(s: str) -> str:
+        for r in replacements:
+            s = s.replace(r, '')
+        return s
+
+    lines = []
     with open('docs/versions.rst', 'r') as f:
-        version_history = '\n'.join([
-            l.rstrip().replace('.. automodule:: petbox.dca', '') for l in f
-        ])
+        iter_f = iter(f)
+        _ = next(f)
+        for line in f:
+            if any(r in line for r in replacements):
+                continue
+            lines.append(line)
+
+    version_history = ''.join(lines)
     version_history = sub(r':func:`([a-zA-Z0-9._]+)`', r'\1', version_history)
+
+    for l in version_history:
+        if ':noindex:' in l:
+            print("STILL HERE")
 
     return readme + '\n\n' + version_history
 
 
 if sys.argv[-1] == 'build':
     print('\nBuilding...')
-    os.system('rm -r dist\\')
+    os.system('rm -r dist\\')  # clean out dist/
     os.system('python setup.py sdist bdist_wheel')
 
 
@@ -49,7 +69,7 @@ setup(
     version=__version__,
     description='Decline Curve Library',
     long_description=get_long_description(),
-    long_description_content_type="text/markdown",
+    long_description_content_type="text/x-rst",
     url='https://github.com/petbox-dev/dca',
     author='David S. Fulford',
     author_email='dsfulford@gmail.com',

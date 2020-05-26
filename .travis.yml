@@ -3,7 +3,6 @@ language: "python"
 python:
     - "3.7"
     - "3.8"
-    - "3.9-dev"
 
 install:
     - "pip install -U flake8 mypy numpy scipy pytest pytest-cov \"attrs>=19.2.0\" hypothesis coveralls sphinx sphinx_rtd_theme"
