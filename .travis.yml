@@ -6,9 +6,9 @@ python:
     - "3.9-dev"
 
 install:
-    - "pip install ."
     - "pip install -U coveralls flake8 sphinx sphinx_rtd_theme mypy numpy scipy pytest pytest-cov"
     - "pip install git+https://github.com/numpy/numpy-stubs.git"
+    - "pip install ."
 
 script:
     - 'flake8 petbox/dca'
