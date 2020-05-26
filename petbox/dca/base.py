@@ -14,6 +14,7 @@ Created on August 5, 2019
 """
 
 from math import exp, log, log1p, ceil as ceiling, floor
+from itertools import starmap
 import warnings
 
 import dataclasses as dc
@@ -24,10 +25,11 @@ import numpy as np
 from numpy.random import RandomState
 
 from scipy.special import expi as ei, gammainc  # type: ignore
-from scipy.integrate import quadrature  # type: ignore
+from scipy.integrate import fixed_quad  # type: ignore
 
 from abc import ABC, abstractmethod
-from typing import TypeVar, Type, List, Tuple, Sequence, Optional, Callable, ClassVar, Union
+from typing import (TypeVar, Type, List, Dict, Tuple, Any,
+                    Sequence, Iterator, Optional, Callable, ClassVar, Union)
 from typing import cast
 
 
@@ -46,34 +48,47 @@ class ParamDesc():
     exclude_upper_bound: bool = False
 
 
-def get_time() -> ndarray:
+def get_time(start: float = 1.0, end: float = 1e5, n: int = 101) -> ndarray:
     """
     Get a time array to evaluate with.
 
     Parameters
     ----------
+      start: float
+        The first time value of the array.
+
+      end: float
+        The last time value of the array.
+
+      n: int
+        The number of element in the array.
 
     Returns
     -------
       time: numpy.ndarray[float]
-        A default evenly-logarithmically-spaced time series
+        An evenly-logspaced time series.
     """
-    return 10.0 ** np.linspace(0.0, 5.0, 101)
+    return 10.0 ** np.linspace(log(start), log(end), n)
 
 
-def get_time_interval_vol() -> ndarray:
+def get_time_monthly_vol(start: float = 1, end: int = 10_000) -> ndarray:
     """
     Get a time array to evaluate with.
 
     Parameters
     ----------
+      start: float
+        The first time value of the array.
+
+      end: float
+        The last time value of the array.
 
     Returns
     -------
       time: numpy.ndarray[float]
-        A default evenly-monthly-spaced time series
+        An evenly-monthly-spaced time series
     """
-    return (np.arange(1e5 // DAYS_PER_MONTH) + 1) * DAYS_PER_MONTH
+    return (np.arange(start, end // DAYS_PER_MONTH) + 1) * DAYS_PER_MONTH
 
 
 class DeclineCurve(ABC):
@@ -98,7 +113,7 @@ class DeclineCurve(ABC):
         t = self._validate_ndarray(t)
         return self._qfn(t)
 
-    def cum(self, t: Union[float, ndarray], **kwargs) -> ndarray:
+    def cum(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
         Defines the model cumulative volume function.
         For secondary phase, precision is limited by the step size of the time array.
@@ -118,8 +133,8 @@ class DeclineCurve(ABC):
         t = self._validate_ndarray(t)
         return self._Nfn(t, **kwargs)
 
-    def interval_vol(self, t: Union[float, ndarray],
-                     t0: Optional[Union[float, ndarray]] = None, **kwargs) -> ndarray:
+    def interval_vol(self, t: Union[float, ndarray], t0: Optional[Union[float, ndarray]] = None,
+                     **kwargs: Any) -> ndarray:
         """
         Defines the model interval volume function.
         For secondary phase, precision is limited by the step size of the time array.
@@ -146,8 +161,8 @@ class DeclineCurve(ABC):
         t0 = cast(ndarray, np.atleast_1d(t0).astype(float))
         return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0))
 
-    def monthly_vol(self, t: Union[float, ndarray],
-                    t0: Optional[Union[float, ndarray]] = None, **kwargs) -> ndarray:
+    def monthly_vol(self, t: Union[float, ndarray], t0: Optional[Union[float, ndarray]] = None,
+                    **kwargs: Any) -> ndarray:
         """
         Defines the model interval volume function transformed to equivalent monthly volumes.
         For secondary phase, precision is limited by the step size of the time array.
@@ -227,7 +242,7 @@ class DeclineCurve(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _Nfn(self, t: ndarray, **kwargs) -> ndarray:
+    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         raise NotImplementedError
 
     @abstractmethod
@@ -245,6 +260,14 @@ class DeclineCurve(ABC):
     @abstractmethod
     def _bfn(self, t: ndarray) -> ndarray:
         raise NotImplementedError
+
+    def _integrate_with(self, fn: Callable[[ndarray], ndarray], t: ndarray,
+                        **kwargs: Any) -> ndarray:
+        kwargs.setdefault('n', 100)
+        return np.cumsum(list(starmap(
+            lambda t0, t1: fixed_quad(fn, t0, t1, **kwargs)[0],
+            self._iter_t(t)
+        )))
 
     def _validate(self) -> None:
         # this will be called by the __post_init__ hook - subclasses should
@@ -282,7 +305,7 @@ class DeclineCurve(ABC):
 
     # don't call this in a loop - it's a utility for e.g. test suites
     @classmethod
-    def get_param_desc(cls, name) -> ParamDesc:
+    def get_param_desc(cls, name: str) -> ParamDesc:
         for p in cls.get_param_descs():
             if p.name == name:
                 return p  # pragma: no cover
@@ -294,21 +317,38 @@ class DeclineCurve(ABC):
 
     @classmethod
     def from_params(cls: Type['DeclineCurve'], params: Sequence[float]) -> 'DeclineCurve':
+        """
+        Construct a model from a sequence of parameters.
+        """
         if len(cls.get_param_descs()) != len(params):
             raise ValueError('Params sequence does not have required length')
         return cls(*params)
+
+    @staticmethod
+    def _validate_ndarray(x: Union[float, ndarray]) -> ndarray:
+        """
+        Ensure the time array is a 1d arary of floats.
+        """
+        return np.atleast_1d(x).astype(float)
+
+    @staticmethod
+    def _iter_t(t: ndarray) -> Iterator[Tuple[float, float]]:
+        """
+        Yield a tuple of time intervals.
+        """
+        t0 = 0.0
+        for t1 in t:
+            yield(t0, t1)
+            t0 = t1
+        return
 
     @staticmethod
     def get_time() -> ndarray:
         return get_time()
 
     @staticmethod
-    def get_time_interval_vol() -> ndarray:
-        return get_time_interval_vol()
-
-    @staticmethod
-    def _validate_ndarray(x: Union[float, ndarray]) -> ndarray:
-        return np.atleast_1d(x).astype(float)
+    def get_time_monthly_vol() -> ndarray:
+        return get_time_monthly_vol()
 
 
 class PrimaryPhase(DeclineCurve):
@@ -318,7 +358,7 @@ class PrimaryPhase(DeclineCurve):
     """
     secondary: 'SecondaryPhase'
 
-    def _set_defaults(self):
+    def _set_defaults(self) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
         secondary = NullSecondaryPhase()
@@ -353,7 +393,7 @@ class SecondaryPhase(DeclineCurve):
     """
     primary: 'PrimaryPhase'
 
-    def _set_defaults(self):
+    def _set_defaults(self) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
         primary = NullPrimaryPhase()

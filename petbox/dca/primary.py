@@ -23,10 +23,11 @@ from numpy import ndarray
 import numpy as np
 
 from scipy.special import expi as ei, gammainc  # type: ignore
-from scipy.integrate import quadrature  # type: ignore
+from scipy.integrate import fixed_quad  # type: ignore
 
 from abc import ABC, abstractmethod
-from typing import TypeVar, Type, List, Tuple, Sequence, Optional, Callable, ClassVar, Union
+from typing import (TypeVar, Type, List, Dict, Tuple, Any,
+                    Sequence, Optional, Callable, ClassVar, Union)
 from typing import cast
 
 from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
@@ -39,14 +40,14 @@ class NullPrimaryPhase(PrimaryPhase):
     A null `PrimaryPhase` class that always returns zeroes.
     """
 
-    def _set_defaults(self):
+    def _set_defaults(self) -> None:
         # Do not associate with the null secondary phase
         pass
 
     def _qfn(self, t: ndarray) -> ndarray:
         return np.zeros_like(t)
 
-    def _Nfn(self, t: ndarray, **kwargs) -> ndarray:
+    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         return np.zeros_like(t)
 
     def _Dfn(self, t: ndarray) -> ndarray:
@@ -171,7 +172,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         Denom = 1.0 + D * b * dt
         return -b * D * D / (Denom * Denom)
 
-    def _vectorize(self, fn: Callable, t: Union[float, ndarray]) -> ndarray:
+    def _vectorize(self, fn: Callable[..., ndarray], t: Union[float, ndarray]) -> ndarray:
         """
         Vectorize the computation of a parameter
         """
@@ -191,7 +192,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
     def _qfn(self, t: ndarray) -> ndarray:
         return self._vectorize(self._qcheck, t)
 
-    def _Nfn(self, t: ndarray, **kwargs) -> ndarray:
+    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         return self._vectorize(self._Ncheck, t)
 
     def _Dfn(self, t: ndarray) -> ndarray:
@@ -422,7 +423,7 @@ class THM(MultisegmentHyperbolic):
 
         return segments
 
-    def transient_rate(self, t: Union[float, ndarray], **kwargs) -> ndarray:
+    def transient_rate(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
         Compute the rate function using full definition.
         Uses `scipy.integrate.quadrature`.
@@ -442,7 +443,7 @@ class THM(MultisegmentHyperbolic):
         t = self._validate_ndarray(t)
         return self._transqfn(t, **kwargs)
 
-    def transient_cum(self, t: Union[float, ndarray], **kwargs) -> ndarray:
+    def transient_cum(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
         Compute the cumulative volume function using full definition.
 
@@ -509,26 +510,15 @@ class THM(MultisegmentHyperbolic):
         t = self._validate_ndarray(t)
         return self._transbfn(t)
 
-    def _transNfn(self, t: ndarray, **kwargs) -> ndarray:
-        N = np.zeros_like(t, dtype=np.float)
-        iter_t = iter(t)
+    def _transNfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         with warnings.catch_warnings(record=True) as w:
-            N[0] = quadrature(self._transqfn, 0, next(iter_t), **kwargs)[0]
-            for i, t_i in enumerate(iter_t):
-                N[i + 1] = N[i] + quadrature(self._transqfn, t[i], t_i, **kwargs)[0]
-        return N
+            return self._integrate_with(self._transqfn, t, **kwargs)
 
-    def _transqfn(self, t: ndarray, **kwargs) -> ndarray:
+    def _transqfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         qi = self.qi
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
-
-        q = np.zeros_like(t, dtype=np.float)
-        iter_t = iter(t)
         with warnings.catch_warnings(record=True) as w:
-            q[0] = Dnom_i + quadrature(self._transDfn, 0, next(iter_t), **kwargs)[0]
-            for i, t_i in enumerate(iter_t):
-                q[i + 1] = q[i] + quadrature(self._transDfn, t[i], t_i, **kwargs)[0]
-        return qi * np.exp(-q)
+            return qi * np.exp(Dnom_i - self._integrate_with(self._transDfn, t, **kwargs))
 
     def _transDfn(self, t: ndarray) -> ndarray:
 
@@ -689,14 +679,9 @@ class PLE(PrimaryPhase):
         n = self.n
         return qi * np.exp(-Di * t ** n - Dinf * t)
 
-    def _Nfn(self, t: ndarray, **kwargs) -> ndarray:
-        N = np.zeros_like(t, dtype=np.float)
-        iter_t = iter(t)
+    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         with warnings.catch_warnings(record=True) as w:
-            N[0] = quadrature(self._qfn, 0, next(iter_t), **kwargs)[0]
-            for i, t_i in enumerate(iter_t):
-                N[i + 1] = N[i] + quadrature(self._qfn, t[i], t_i, **kwargs)[0]
-        return N
+            return self._integrate_with(self._qfn, t, **kwargs)
 
     def _Dfn(self, t: ndarray) -> ndarray:
         Di = self.Di
@@ -768,7 +753,7 @@ class SE(PrimaryPhase):
         n = self.n
         return qi * np.exp(-(t / tau) ** n)
 
-    def _Nfn(self, t: ndarray, **kwargs) -> ndarray:
+    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         qi = self.qi
         tau = self.tau
         n = self.n
@@ -834,7 +819,7 @@ class Duong(PrimaryPhase):
                          qi * t ** -m * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
         return q
 
-    def _Nfn(self, t: ndarray, **kwargs) -> ndarray:
+    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         qi = self.qi
         a = self.a
         m = self.m

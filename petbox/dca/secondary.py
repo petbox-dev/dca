@@ -21,9 +21,10 @@ from dataclasses import dataclass
 from numpy import ndarray
 import numpy as np
 
-from scipy.integrate import quadrature  # type: ignore
+from scipy.integrate import fixed_quad  # type: ignore
 
-from typing import TypeVar, Type, List, Tuple, Sequence, Optional, Callable, ClassVar, Union
+from typing import (TypeVar, Type, List, Dict, Tuple, Any,
+                    Sequence, Optional, Callable, ClassVar, Union)
 from typing import cast
 
 from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
@@ -36,7 +37,7 @@ class NullSecondaryPhase(SecondaryPhase):
     A null `SecondaryPhase` class that always returns zeroes.
     """
 
-    def _set_defaults(self):
+    def _set_defaults(self) -> None:
         # Do not associate with the null secondary phase
         pass
 
@@ -46,7 +47,7 @@ class NullSecondaryPhase(SecondaryPhase):
     def _qfn(self, t: ndarray) -> ndarray:
         return np.zeros_like(t)
 
-    def _Nfn(self, t: ndarray, **kwargs) -> ndarray:
+    def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
         return np.zeros_like(t)
 
     def _Dfn(self, t: ndarray) -> ndarray:
@@ -100,14 +101,9 @@ class PLYield(SecondaryPhase):
     def _qfn(self, t: ndarray) -> ndarray:
         return self._yieldfn(t) / 1000.0 * self.primary._qfn(t)
 
-    def _Nfn(self, t: ndarray, **kwargs) -> ndarray:
-        N = np.zeros_like(t, dtype=np.float)
-        iter_t = iter(t)
+    def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
         with warnings.catch_warnings(record=True) as w:
-            N[0] = quadrature(self._qfn, 0.0, next(iter_t), **kwargs)[0]
-            for i, (t_i, t_i1) in enumerate(zip(iter_t, t)):
-                N[i + 1] = N[i] + quadrature(self._qfn, t_i1, t_i, **kwargs)[0]
-        return N
+            return self._integrate_with(self._qfn, t, **kwargs)
 
     # def _NNfn(self, t: ndarray) -> ndarray:
     #     c = self.c

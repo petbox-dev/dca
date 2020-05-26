@@ -245,11 +245,11 @@ def check_transient_model_rate_cum(model: dca.THM) -> bool:
 
 def test_time_arrays():
     t = dca.get_time()
-    int_t = dca.get_time_interval_vol()
+    int_t = dca.get_time_monthly_vol()
 
     thm = dca.THM(1000, 0.5, 2.0, 1.0, 30.0)
     t = thm.get_time()
-    int_t = thm.get_time_interval_vol()
+    int_t = thm.get_time_monthly_vol()
 
 
 def test_nulls():

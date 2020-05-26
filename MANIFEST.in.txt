@@ -1,0 +1,11 @@
+include README.rst
+include LICENSE
+include docs/*.rst
+include docs/Makefile
+include docs/make.bat
+include docs/conf.py
+include docs/_static/*
+include docs/_image/*
+include tests/*.py
+include tests/test.bat
+include setup.cfg

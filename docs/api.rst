@@ -9,7 +9,7 @@ Summary
 Primary Phase Models
 ~~~~~~~~~~~~~~~~~~~~
 
-.. currentmodule:: petbox.dca.primary
+.. currentmodule:: petbox.dca
 
 .. autosummary::
 
@@ -23,7 +23,7 @@ Primary Phase Models
 Secondary Phase Models
 ~~~~~~~~~~~~~~~~~~~~~~
 
-.. currentmodule:: petbox.dca.secondary
+.. currentmodule:: petbox.dca
 
 .. autosummary::
 
@@ -33,9 +33,9 @@ Secondary Phase Models
 Model Functions
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-.. currentmodule:: petbox.dca.DeclineCurve
-
 All Models
+
+.. currentmodule:: petbox.dca.DeclineCurve
 
 .. autosummary::
     rate
@@ -44,10 +44,10 @@ All Models
     beta
     b
 
-.. currentmodule:: petbox.dca.PrimaryPhase
-
 
 Primary Phase Models
+
+.. currentmodule:: petbox.dca.PrimaryPhase
 
 .. autosummary::
     add_secondary
@@ -73,27 +73,22 @@ Transient Hyperbolic Specific
     transient_beta
     transient_b
 
-.. automodule:: petbox.dca
-
 
 Utility Functions
 ~~~~~~~~~~~~~~~~~
 
+.. currentmodule:: petbox.dca
+
 .. autosummary::
 
     get_time
-    get_time_interval_vol
+    get_time_monthly_vol
 
 
 Detailed Reference
 ------------------
 
-Utility Functions
-~~~~~~~~~~~~~~~~~
-
-.. autofunction:: get_time
-.. autofunction:: get_time_interval_vol
-
+.. currentmodule:: petbox.dca
 
 Base Classes
 ~~~~~~~~~~~~
@@ -181,3 +176,10 @@ Implementations of secondary (associated) phase GOR/CGR models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+
+
+Utility Functions
+~~~~~~~~~~~~~~~~~
+
+.. autofunction:: get_time
+.. autofunction:: get_time_monthly_vol
