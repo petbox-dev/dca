@@ -1,7 +1,7 @@
 """
 Decline Curve Models
 Unit Testing
-Copyright © 2020, Gryphon Oil & Gas
+Copyright © 2020 David S. Fulford
 
 Author
 ------
