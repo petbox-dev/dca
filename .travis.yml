@@ -6,8 +6,8 @@ python:
     - "3.9-dev"
 
 install:
-    - "pip install -U coveralls flake8 sphinx sphinx_rtd_theme mypy numpy scipy pytest pytest-cov hypothesis"
-    - "pip install git+https://github.com/numpy/numpy-stubs.git"
+    - "pip install -U flake8 mypy numpy scipy pytest pytest-cov \"attrs>=19.2.0\" hypothesis coveralls sphinx sphinx_rtd_theme"
+    - "pip install -U git+https://github.com/numpy/numpy-stubs.git"
     - "pip install ."
 
 script:
