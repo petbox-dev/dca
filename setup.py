@@ -26,19 +26,16 @@ except ImportError:
 
 def get_long_description() -> str:
     # Fix display issues on PyPI caused by RST markup
-    readme = open('README.rst').read()
+    with open('README.rst', 'r') as f:
+        readme = f.read()
 
-    version_lines = []
-    with open('docs/versions.rst') as infile:
-        next(infile)
-        for line in infile:
-            line = line.rstrip().replace('.. automodule:: more_itertools', '')
-            version_lines.append(line)
-    version_history = '\n'.join(version_lines)
+    with open('docs/versions.rst', 'r') as f:
+        version_history = '\n'.join([
+            l.rstrip().replace('.. automodule:: petbox.dca', '') for l in f
+        ])
     version_history = sub(r':func:`([a-zA-Z0-9._]+)`', r'\1', version_history)
 
-    ret = readme + '\n\n' + version_history
-    return ret
+    return readme + '\n\n' + version_history
 
 
 if sys.argv[-1] == 'build':
@@ -56,10 +53,32 @@ setup(
     url='https://github.com/petbox-dev/dca',
     author='David S. Fulford',
     author_email='dsfulford@gmail.com',
-    install_requires=['numpy', 'scipy'],
+    license='MIT',
+    install_requires=['numpy>=1.17', 'scipy'],
     zip_safe=False,
     packages=['petbox.dca'],
     package_data={
         'petbox.dca': ['py.typed']
     },
+    include_package_data=True,
+    python_requires='>=3.7',
+    classifiers=[
+        'Development Status :: 5 - Production/Stable',
+        'Intended Audience :: Science/Research',
+        'Intended Audience :: Education',
+        'Intended Audience :: Developers',
+        'Natural Language :: English',
+        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: Implementation :: CPython',
+        'Topic :: Scientific/Engineering',
+        'Topic :: Scientific/Engineering :: Mathematics',
+        'Topic :: Software Development :: Libraries',
+        'Typing :: Typed'
+    ],
+    keywords=[
+        'petbox-dca', 'dca', 'decline curve', 'type curve',
+        'production forecast', 'production data analysis'
+    ],
 )
