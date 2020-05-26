@@ -6,14 +6,14 @@ python:
     - "3.9-dev"
 
 install:
-    - "pip install -U coveralls flake8 sphinx sphinx_rtd_theme mypy numpy scipy pytest pytest-cov"
+    - "pip install -U coveralls flake8 sphinx sphinx_rtd_theme mypy numpy scipy pytest pytest-cov hypothesis"
     - "pip install git+https://github.com/numpy/numpy-stubs.git"
     - "pip install ."
 
 script:
     - 'flake8 petbox/dca'
     - "mypy petbox/dca"
-    - "pytest --cov=petbox.dca --cov-report=html -v test"
+    - "pytest --cov=petbox.dca --cov-report=term-missing --hypothesis-show-statistics -v test"
     - "sphinx-build -W -b html docs docs/_build/html"
 
 notifications:
