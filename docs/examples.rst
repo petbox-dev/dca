@@ -210,7 +210,6 @@ Diagnostic Function Plots
 
     # D-parameter vs Time
     ax1.plot(data_t, data_D, 'o', mfc='w', label='Data')
-    # ax1.plot(data_t, data_D2, 'o', label='Data2')
     ax1.plot(t, D_trans, label='THM Transient')
     ax1.plot(t, D_thm, ls='--', label='THM Approx')
     ax1.plot(t, D_mh, label='MH')
