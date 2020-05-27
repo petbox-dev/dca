@@ -98,7 +98,13 @@ class DeclineCurve(ABC):
 
     def rate(self, t: Union[float, ndarray]) -> ndarray:
         """
-        Defines the model rate function.
+        Defines the model rate function:
+
+        .. math::
+
+            q(t) = f(t)
+
+        where ``f(t)`` is defined by each model.
 
         Parameters
         ----------
@@ -114,8 +120,11 @@ class DeclineCurve(ABC):
 
     def cum(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
-        Defines the model cumulative volume function.
-        For secondary phase, precision is limited by the step size of the time array.
+        Defines the model cumulative volume function:
+
+        .. math::
+
+            N(t) = \int_0^t q \, dt
 
         Parameters
         ----------
@@ -123,7 +132,7 @@ class DeclineCurve(ABC):
             An array of times at which to evaluate the function.
 
           **kwargs
-            Additional arguments passed to :func:`scipy.integrate.quadrature` if needed.
+            Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
 
         Returns
         -------
@@ -135,8 +144,13 @@ class DeclineCurve(ABC):
     def interval_vol(self, t: Union[float, ndarray], t0: Optional[Union[float, ndarray]] = None,
                      **kwargs: Any) -> ndarray:
         """
-        Defines the model interval volume function.
-        For secondary phase, precision is limited by the step size of the time array.
+        Defines the model interval volume function:
+
+        .. math::
+
+            N(t) = \int_{t_{i-1}}^{t_i} q \, dt
+
+        for each element of ``t``.
 
         Parameters
         ----------
@@ -148,7 +162,7 @@ class DeclineCurve(ABC):
             of ``t`` is used.
 
           **kwargs
-            Additional arguments passed to :func:`scipy.integrate.quadrature` if needed.
+            Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
 
         Returns
         -------
@@ -163,8 +177,11 @@ class DeclineCurve(ABC):
     def monthly_vol(self, t: Union[float, ndarray], t0: Optional[Union[float, ndarray]] = None,
                     **kwargs: Any) -> ndarray:
         """
-        Defines the model interval volume function transformed to equivalent monthly volumes.
-        For secondary phase, precision is limited by the step size of the time array.
+        Defines the model interval volume function transformed to equivalent monthly volumes:
+
+        .. math::
+
+            N(t) = \int_{t-{1 \, month}}^{t} q \, dt
 
         Parameters
         ----------
@@ -175,7 +192,7 @@ class DeclineCurve(ABC):
             A start time of the first interval. If not given, assumed to be zero.
 
           **kwargs
-            Additional arguments passed to :func:`scipy.integrate.quadrature` if needed.
+            Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
 
         Returns
         -------
@@ -190,7 +207,11 @@ class DeclineCurve(ABC):
 
     def D(self, t: Union[float, ndarray]) -> ndarray:
         """
-        Defines the model D-parameter function.
+        Defines the model D-parameter function:
+
+        .. math::
+
+            D \equiv \\frac{d[\\textrm{ln} \, q]}{dt}
 
         Parameters
         ----------
@@ -208,6 +229,10 @@ class DeclineCurve(ABC):
         """
         Defines the model beta-parameter function.
 
+        .. math::
+
+            \\beta \equiv \\frac{\\textrm{ln} \, q}{\\textrm{ln} \, t} = t \, D(t)
+
         Parameters
         ----------
           t: Union[float, numpy.ndarray[float]]
@@ -222,7 +247,11 @@ class DeclineCurve(ABC):
 
     def b(self, t: Union[float, ndarray]) -> ndarray:
         """
-        Defines the model b-parameter function.
+        Defines the model b-parameter function:
+
+        .. math::
+
+            b \equiv \\frac{d\\frac{1}{D}}{dt}
 
         Parameters
         ----------
@@ -412,6 +441,7 @@ class SecondaryPhase(DeclineCurve):
         Returns
         -------
           GOR: numpy.ndarray[float]
+            The gas-oil ratio function in units of ``Bbl / scf``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)
@@ -428,7 +458,8 @@ class SecondaryPhase(DeclineCurve):
 
         Returns
         -------
-          numpy.ndarray[float]
+          CGR: numpy.ndarray[float]
+            The condensate-gas ratio in units of ``MMscf / Bbl``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)

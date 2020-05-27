@@ -40,6 +40,8 @@ All Models
 .. autosummary::
     rate
     cum
+    interval_vol
+    monthly_vol
     D
     beta
     b
@@ -81,6 +83,7 @@ Utility Functions
 
 .. autosummary::
 
+    bourdet
     get_time
     get_time_monthly_vol
 
@@ -99,6 +102,8 @@ These classes define the basic functions that are exposed by all decline curve m
 
     .. automethod:: rate
     .. automethod:: cum
+    .. automethod:: interval_vol
+    .. automethod:: monthly_vol
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
@@ -171,6 +176,8 @@ Implementations of secondary (associated) phase GOR/CGR models
 
 .. autoclass:: PLYield
 
+    .. automethod:: gor
+    .. automethod:: cgr
     .. automethod:: rate
     .. automethod:: cum
     .. automethod:: D
@@ -181,5 +188,6 @@ Implementations of secondary (associated) phase GOR/CGR models
 Utility Functions
 ~~~~~~~~~~~~~~~~~
 
+.. autofunction:: bourdet
 .. autofunction:: get_time
 .. autofunction:: get_time_monthly_vol

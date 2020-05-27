@@ -21,7 +21,7 @@ This library defines a single interface to each of the implemented decline curve
 
 Additionally, we also define an interface to attach a GOR/CGR yield function to any primary phase model. We can then obtain the outputs for the secondary phase as easily as the primary phase.
 
-Analytic functions are implemented wherever possible. When not possible, numerical evaluations are performed using ``scipy.integrate.quadrature``. Given that most of the functions of interest that must be numerically evaluated are monotonic, this generally works well.
+Analytic functions are implemented wherever possible. When not possible, numerical evaluations are performed using ``scipy.integrate.fixed_quad``. Given that most of the functions of interest that must be numerically evaluated are monotonic, this generally works well.
 
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Primary Phase          | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |
@@ -53,7 +53,8 @@ The following functions are exposed for use
 | Secondary Phase        | `gor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.gor>`_,                                 |
 |                        | `cgr(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.cgr>`_                                  |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Utility                | `get_time(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                    |
+| Utility                | `bourdet(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.bourdet>`_,                                      |
+|                        | `get_time(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                    |
 |                        | `get_time_monthly_vol(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time_monthly_vol>`_             |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 
