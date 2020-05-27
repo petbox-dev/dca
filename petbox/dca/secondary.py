@@ -34,6 +34,10 @@ from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
 class NullSecondaryPhase(SecondaryPhase):
     """
     A null `SecondaryPhase` class that always returns zeroes.
+
+    Parameters
+    ----------
+      None
     """
 
     def _set_defaults(self) -> None:
@@ -41,25 +45,25 @@ class NullSecondaryPhase(SecondaryPhase):
         pass
 
     def _yieldfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _qfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Dfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _betafn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _bfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -75,6 +79,34 @@ class PLYield(SecondaryPhase):
     Performance of Unconventional Wells. Presented at Unconventional Resources
     Conference in Houston, Texas, USA, 23–25 July. URTeC-2903036.
     https://doi.org/10.15530/urtec-2018-2903036.
+
+    Has the general form of
+
+    .. math::
+
+        GOR = c \, t^m
+
+    and allows independent early-time and late-time slopes ``m0`` and ``m`` respectively.
+
+    Parameters
+    ----------
+      c: float
+        The value of GOR that acts as the anchor or pivot at ``t=t0``.
+
+      m0: float
+        Early-time power-law slope.
+
+      m: float
+        Late-time power-law slope.
+
+      t0: float
+        The time of the anchor or pivot value ``c``.
+
+      min: Optional[float] = None
+        The minimum allowed value. Would be used e.g. to limit minimum CGR.
+
+      max: Optional[float] = None
+        The maximum allowed value. Would be used e.g. to limit maximum GOR.
     """
     c: float
     m0: float
@@ -89,8 +121,7 @@ class PLYield(SecondaryPhase):
     def _yieldfn(self, t: ndarray) -> ndarray:
         c = self.c
         t0 = self.t0
-        m = np.full_like(t, self.m)
-        m[t < t0] = self.m0
+        m = np.where(t < t0, self.m0, self.m)
 
         with warnings.catch_warnings(record=True) as w:
             if self.min is not None or self.max is not None:
@@ -104,63 +135,28 @@ class PLYield(SecondaryPhase):
         with warnings.catch_warnings(record=True) as w:
             return self._integrate_with(self._qfn, t, **kwargs)
 
-    # def _NNfn(self, t: ndarray) -> ndarray:
-    #     c = self.c
-    #     t0 = self.t0
-    #     m = self.m
-    #     m0 = self.m0
-
-    #     def m_fn(c, t, t0, m):
-    #         with warnings.catch_warnings(record=True) as w:
-    #             if m == -1.0:
-    #                 return c * t0 * np.log(t)
-    #             else:
-    #                 return c * t * (t / t0) ** m / (m + 1)
-
-    #     int_c0 = m_fn(c, t, t0, m0)
-    #     int_c = m_fn(c, t, t0, m)
-
-    #     return np.where(
-    #         t < t0,
-    #         m_fn(c, t, t0, m0),
-    #         int_c0 - int_c + m_fn(c, t, t0, m)
-    #     )
-
-    # def _derfn(self, t: ndarray) -> ndarray:
-    #     c = self.c
-    #     t0 = self.t0
-    #     m = np.full_like(t, self.m)
-    #     m[t < t0] = self.m0
-    #     y = self._yieldfn(t)
-
-    #     if self.min is not None:
-    #         m[y == self.min] = 0
-    #     if self.max is not None:
-    #         m[y == self.max] = 0
-    #     return m * c / t * (t / t0) ** m
-
     def _Dfn(self, t: ndarray) -> ndarray:
+        c = self.c
         t0 = self.t0
-        m = np.full_like(t, self.m)
-        m[t < t0] = self.m0
+        m = np.where(t < t0, self.m0, self.m)
         y = self._yieldfn(t)
 
         if self.min is not None:
-            m[y == self.min] = 0
+            m[y <= self.min] = 0.0
         if self.max is not None:
-            m[y == self.max] = 0
+            m[y >= self.max] = 0.0
         return -m / t + self.primary._Dfn(t)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
+        c = self.c
         t0 = self.t0
-        m = np.full_like(t, self.m)
-        m[t < t0] = self.m0
+        m = np.where(t < t0, self.m0, self.m)
         y = self._yieldfn(t)
 
         if self.min is not None:
-            m[y == self.min] = 0
+            m[y <= self.min] = 0.0
         if self.max is not None:
-            m[y == self.max] = 0
+            m[y >= self.max] = 0.0
         return -m / (t * t)
 
     def _betafn(self, t: ndarray) -> ndarray:
@@ -177,7 +173,8 @@ class PLYield(SecondaryPhase):
             ParamDesc(
                 'c', 'Pivot point of early- and late-time functions [vol/vol]',
                 0.0, None,
-                lambda r, n: r.uniform(0.0, 1e6, n)),
+                lambda r, n: r.uniform(0.0, 1e6, n),
+                exclude_lower_bound=True),
             ParamDesc(
                 'm0', 'Early-time slope before pivot point',
                 -10.0, 10.0,

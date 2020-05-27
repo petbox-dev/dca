@@ -37,6 +37,10 @@ from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
 class NullPrimaryPhase(PrimaryPhase):
     """
     A null `PrimaryPhase` class that always returns zeroes.
+
+    Parameters
+    ----------
+      None
     """
 
     def _set_defaults(self) -> None:
@@ -44,22 +48,22 @@ class NullPrimaryPhase(PrimaryPhase):
         pass
 
     def _qfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Dfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _betafn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _bfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -111,7 +115,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, q)
+            return np.full_like(t, q, dtype=float)
 
         if b < 1e-10:
             with warnings.catch_warnings(record=True) as w:
@@ -129,7 +133,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if q <= 0.0:
-            return np.atleast_1d(N) + np.zeros_like(t)
+            return np.atleast_1d(N) + np.zeros_like(t, dtype=float)
 
         if D <= 0.0:
             return np.atleast_1d(N + q * dt)
@@ -153,7 +157,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, D)
+            return np.full_like(t, D, dtype=float)
 
         return D / (1.0 + D * b * dt)
 
@@ -166,7 +170,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, D)
+            return np.full_like(t, D, dtype=float)
 
         Denom = 1.0 + D * b * dt
         return -b * D * D / (Denom * Denom)
@@ -238,6 +242,26 @@ class MH(MultisegmentHyperbolic):
 
     Robertson, S. 1988. Generalized Hyperbolic Equation.
     Available from SPE, Richardson, Texas, USA. SPE-18731-MS.
+
+    Parameters
+    ----------
+      qi: float
+        The initial production rate in units of ``volume / day``.
+
+      Di: float
+        The initial decline rate in secant effective decline aka annual
+        effective percent decline, i.e.
+        ``Di = 1 - q(t=1 year) / qi``, or
+        ``Di = 1 - (1 + Dnom * b * 365.25) ** (-1 / b)``
+
+        where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+
+      bi: float
+        The (initial) hyperbolic parameter, defined as ``d[1 / D] / dt``.
+        This parameter is dimensionless.
+
+      Dterm: float
+        The terminal secant effective decline rate aka annual effective percent decline.
     """
     qi: float
     Di: float
@@ -259,7 +283,7 @@ class MH(MultisegmentHyperbolic):
         if Di_nom <= 0.0 or Dterm_nom <= 0.0 or self.bi == 0.0:
             return np.array([
                 [0.0, self.qi, Di_nom, self.bi, 0.0]
-            ], dtype=np.float64)
+            ], dtype=float)
 
         tterm = ((1.0 / Dterm_nom) - (1.0 / Di_nom)) / self.bi
         qterm = self._qcheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm))
@@ -268,7 +292,7 @@ class MH(MultisegmentHyperbolic):
         return np.array([
             [0.0, self.qi, Di_nom, self.bi, 0.0],
             [tterm, qterm, Dterm_nom, 0.0, Nterm]
-        ], dtype=np.float64)
+        ], dtype=float)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -289,7 +313,7 @@ class MH(MultisegmentHyperbolic):
             ParamDesc(  # TODO
                 'Dterm', 'Terminal decline [tan. eff. / yr]',
                 0.0, 1.0,
-                lambda r, n: np.zeros(n),
+                lambda r, n: np.zeros(n, dtype=float),
                 exclude_upper_bound=True)
         ]
 
@@ -312,6 +336,51 @@ class THM(MultisegmentHyperbolic):
     Performance of Unconventional Wells. Presented at Unconventional Resources
     Conference in Houston, Texas, USA, 23–25 July. URTeC-2903036.
     https://doi.org/10.15530/urtec-2018-2903036.
+
+    Parameters
+    ----------
+      qi: float
+        The initial production rate in units of ``volume / day``.
+
+      Di: float
+        The initial decline rate in secant effective decline aka annual
+        effective percent decline, i.e.
+
+        .. math::
+
+            Di = 1 - \\frac{q(t=1 \, year)}{qi}
+
+        .. math::
+
+            Di = 1 - \\frac{(1 + 365.25 \, D_{nom} \, b)}{1 / b}
+
+        where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+
+      bi: float
+        The initial hyperbolic parameter, defined as ``d[1 / D] / dt``. Is dimensionless.
+        Advised to always be set to ``2.0`` to represent transient linear flow.
+        See literature for more details.
+
+      bi: float
+        The final hyperbolic parameter after transition. Represents the boundary-dominated or
+        boundary-influenced flow regime.
+
+      telf: float
+        The time to end of linear flow in units of ``day``, or more specifically the time at
+        which ``b(t) < bi``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
+
+      bterm: Optional[float] = None
+        The terminal value of the hyperbolic parameter. Has two interpretations:
+
+        If ``tterm > 0`` then the terminal regime is a hyperbolic regime with ``b = bterm``
+        and the parameter is given as the hyperbolic parameter.
+
+        If ``tterm = 0`` then the terminal regime is an exponential regime with ``Dterm = bterm``
+        and the parameter is given as secant effective decline.
+
+      tterm: Optional[float] = None
+        The time to start of the terminal regime. Setting ``tterm = 0.0`` creates an exponential
+        terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic terminal regime.
     """
     qi: float
     Di: float
@@ -425,7 +494,11 @@ class THM(MultisegmentHyperbolic):
     def transient_rate(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
         Compute the rate function using full definition.
-        Uses `scipy.integrate.quadrature`.
+        Uses :func:`scipy.integrate.fixed_quad` to integrate :func:`transient_D`.
+
+        .. math::
+
+            q(t) = e^{-\int_0^t D(t) \, dt}
 
         Parameters
         ----------
@@ -433,7 +506,7 @@ class THM(MultisegmentHyperbolic):
             An array of time values to evaluate.
 
           **kwargs
-            Additional keyword arguments passed to `scipy.integrate.quadrature`.
+            Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
 
         Returns
         -------
@@ -445,6 +518,11 @@ class THM(MultisegmentHyperbolic):
     def transient_cum(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
         Compute the cumulative volume function using full definition.
+        Uses :func:`scipy.integrate.fixed_quad` to integrate :func:`transient_q`.
+
+        .. math::
+
+            N(t) = \int_0^t q(t) \, dt
 
         Parameters
         ----------
@@ -452,7 +530,7 @@ class THM(MultisegmentHyperbolic):
             An array of time values to evaluate.
 
           **kwargs
-            Additional keyword arguments passed to `scipy.integrate.quadrature`.
+            Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
 
         Returns
         -------
@@ -464,6 +542,12 @@ class THM(MultisegmentHyperbolic):
     def transient_D(self, t: Union[float, ndarray]) -> ndarray:
         """
         Compute the D-parameter function using full definition.
+
+        .. math::
+
+            D(t) = \\frac{1}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
+            (\\textrm{Ei}[-e^{-c \, (t -t_{elf}) + e^(\\gamma)}]
+            - \\textrm{Ei}[-e^{c \, t_{elf} + e^(\\gamma)}])}
 
         Parameters
         ----------
@@ -481,6 +565,12 @@ class THM(MultisegmentHyperbolic):
         """
         Compute the beta-parameter function using full definition.
 
+        .. math::
+
+            \\beta(t) = \\frac{t}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
+            (\\textrm{Ei}[-e^{-c \, (t -t_{elf}) + e^(\\gamma)}]
+            - \\textrm{Ei}[-e^{c \, t_{elf} + e^(\\gamma)}])}
+
         Parameters
         ----------
           t: Union[float, numpy.ndarray[float]]
@@ -496,6 +586,17 @@ class THM(MultisegmentHyperbolic):
     def transient_b(self, t: Union[float, ndarray]) -> ndarray:
         """
         Compute the b-parameter function using full definition.
+
+        .. math::
+
+            b(t) = b_i - (b_i - b_f) e^{-\\textrm{exp}[{-c * (t - t_{elf}) + e^{\\gamma}}]}
+
+        where:
+
+        .. math::
+
+            c & = \\frac{e^{\\gamma}}{1.5 \, t_{elf}} \\\\
+            \\gamma & = 0.57721566... \; \\textrm{(Euler-Mascheroni constant)}
 
         Parameters
         ----------
@@ -530,14 +631,12 @@ class THM(MultisegmentHyperbolic):
         tterm = self.tterm * DAYS_PER_YEAR
 
         if self.Di == 0.0:
-            return np.full_like(t, 0.0)
+            return np.full_like(t, 0.0, dtype=float)
 
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
 
         if Dnom_i <= 0.0:
             assert 'unreachable: negative Dnom in _transDfn'  # pragma: no cover
-
-        D = np.zeros_like(t)
 
         if telf > 0.001:
             # transient function
@@ -593,7 +692,7 @@ class THM(MultisegmentHyperbolic):
             c = self.EXP_GAMMA / (1.5 * telf)
             b = bi - (bi - bf) * np.exp(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
         else:
-            b = np.full_like(t, bf)
+            b = np.full_like(t, bf, dtype=float)
 
         # terminal regime
         if tterm != 0.0 or bterm != 0:
@@ -651,6 +750,7 @@ class THM(MultisegmentHyperbolic):
 class PLE(PrimaryPhase):
     """
     Power-Law Exponential Model
+
     Ilk, D., Perego, A. D., Rushing, J. A., and Blasingame, T. A. 2008.
     Exponential vs. Hyperbolic Decline in Tight Gas Sands – Understanding
     the Origin and Implications for Reserve Estimates Using Arps Decline Curves.
@@ -661,6 +761,21 @@ class PLE(PrimaryPhase):
     Decline Curve Analysis for HP/HT Gas Wells: Theory and Applications.
     Presented at SPE Annual Technical Conference and Exhibition in New Orleands,
     Louisiana, USA, 4–7 October. SPE-125031-MS. https://doi.org/10.2118/125031-MS.
+
+    Parameters
+    ----------
+      qi: float
+        The initial production rate in units of ``volume / day``.
+
+      Di: float
+        The initial decline rate in nominal decline rate defined as ``d[ln q] / dt``
+        and has units of ``1 / day``.
+
+      Dterm: float
+        The terminal decline rate in nominal decline rate, has units of ``1 / day``.
+
+      n: float
+        The n exponent.
     """
     qi: float
     Di: float
@@ -741,6 +856,21 @@ class SE(PrimaryPhase):
     Completion Records. 2009. Presented at SPE Hydraulic Fracturing
     Technology Conference in College Station, Texas, USA, 19–21 January.
     SPE-119369-MS. https://doi.org/10.2118/119369-MS.
+
+    Parameters
+    ----------
+      qi: float
+        The initial production rate in units of ``volume / day``.
+
+      tau: float
+        The tau parameter in units of ``day ** n``. Equivalent to:
+
+        .. math::
+
+            \\tau = D^n
+
+      n: float
+        The ``n`` exponent.
     """
     qi: float
     tau: float
@@ -801,9 +931,21 @@ class SE(PrimaryPhase):
 class Duong(PrimaryPhase):
     """
     Duong Model
+
     Duong, A. N. 2001. Rate-Decline Analysis for Fracture-Dominated
     Shale Reservoirs. SPE Res Eval & Eng 14 (3): 377–387. SPE-137748-PA.
     https://doi.org/10.2118/137748-PA.
+
+    Parameters
+    ----------
+      qi: float
+        The initial production rate in units of ``volume / day`` *defined at ``t=1 day``*.
+
+      a: float
+        The ``a`` parameter. Roughly speaking, controls slope of the :func:``q(t)`` function.
+
+      m: float
+        The ``m`` parameter. Roughly speaking, controls curvature of the :func:``q(t)`` function.
     """
     qi: float
     a: float

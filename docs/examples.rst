@@ -9,7 +9,7 @@ Each model, including the secondary phase models, implements all diagnostic func
 .. code-block:: python
 
     from petbox import dca
-    from data import (q_dat, t_data)
+    from data import rate as data_q, data_t as data_t
     import numpy as np
     import matplotlib.pyplot as plt
     import matplotlib as mpl
@@ -17,12 +17,21 @@ Each model, including the secondary phase models, implements all diagnostic func
     plt.style.use('seaborn-white')
     plt.rcParams['font.size'] = 16
 
-*Setup time series for Forecasts and calculate cumulative production of data*
 
 .. code-block:: python
 
-    t = np.power(10, np.linspace(0, 4, 101))
-    data_N = np.cumsum(rate * np.diff(time, prepend=t_data[0]))
+    # Setup time series for Forecasts and calculate cumulative production of data
+
+    # We have this function handy
+    # t = dca.get_time(n=1001)
+
+    # Calculate cumulative volume array of data
+    data_N = np.cumsum(data_q * np.diff(data_t, prepend=data_t[0]))
+
+    # Calculate diagnostic functions D, beta, and b
+    data_D = -dca.bourdet(data_q, data_t, L=0.35, xlog=False, ylog=True)
+    data_beta = data_D * data_t
+    data_b = dca.bourdet(1 / data_D, data_t, L=0.25, xlog=False, ylog=False)
 
 
 Primary Phase Decline Curve Models
@@ -41,7 +50,7 @@ Modified Hyperbolic Model
     D_mh = mh.D(t)
     b_mh = mh.b(t)
     beta_mh = mh.beta(t)
-    N_mh *= data_N[-1] / mh.cum(time[-1])
+    N_mh *= data_N[-1] / mh.cum(data_t[-1])
 
 
 Transient Hyperbolic Model
@@ -57,7 +66,7 @@ Transient Hyperbolic Model
     D_trans = thm.transient_D(t)
     b_trans = thm.transient_b(t)
     beta_trans = thm.transient_beta(t)
-    N_trans *= data_N[-1] / thm.transient_cum(time[-1])
+    N_trans *= data_N[-1] / thm.transient_cum(data_t[-1])
 
 
 Transient Hyperbolic Model Analytic Approximation
@@ -72,26 +81,24 @@ Transient Hyperbolic Model Analytic Approximation
     D_thm = thm.D(t)
     b_thm = thm.b(t)
     beta_thm = thm.beta(t)
-    N_thm *= data_N[-1] / thm.cum(time[-1])
+    N_thm *= data_N[-1] / thm.cum(data_t[-1])
 
 
 Timing Comparison
 ~~~~~~~~~~~~~~~~~
 
-If performance is a consideration, the approximation is about much faster.
+If performance is a consideration, the approximation is much faster.
 
 .. code-block:: python
 
-    %timeit thm.transient_rate(t)
-
-``64.9 ms ± 5.81 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)``
+    >>> %timeit thm.transient_rate(t)
+    64.9 ms ± 5.81 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
 
 
 .. code-block:: python
 
-    %timeit thm.rate(t)
-
-``86.9 µs ± 5.35 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)``
+    >>> %timeit thm.rate(t)
+    86.9 µs ± 5.35 µs per loop (mean ± std. dev. of 7 runs, 10000 loops each)``
 
 
 Power-Law Exponential Model
@@ -109,7 +116,7 @@ Power-Law Exponential Model
     D_ple = ple.D(t)
     b_ple = ple.b(t)
     beta_ple = ple.beta(t)
-    N_ple *= data_N[-1] /  ple.cum(time[-1])
+    N_ple *= data_N[-1] /  ple.cum(data_t[-1])
 
 
 Stretched Exponential
@@ -125,7 +132,7 @@ Stretched Exponential
     D_se = se.D(t)
     b_se = se.b(t)
     beta_se = se.beta(t)
-    N_se *= data_N[-1] / se.cum(time[-1])
+    N_se *= data_N[-1] / se.cum(data_t[-1])
 
 
 Duong Model
@@ -141,7 +148,7 @@ Duong Model
     D_dg = dg.D(t)
     b_dg = dg.b(t)
     beta_dg = dg.beta(t)
-    N_dg *= data_N[-1] / dg.cum(time[-1])
+    N_dg *= data_N[-1] / dg.cum(data_t[-1])
 
 
 Primary Phase Diagnostic Plots
@@ -157,28 +164,30 @@ Rate and Cumulative Production Plots
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
 
-    ax1.loglog(time, rate, 'o', mfc='w', label='Data')
-    ax1.loglog(t, q_thm, label='THM')
-    ax1.loglog(t, q_mh, label='MH')
-    ax1.loglog(t, q_ple, label='PLE')
-    ax1.loglog(t, q_se, label='SE')
-    ax1.loglog(t, q_dg, label='Duong')
+    ax1.plot(data_t, data_q, 'o', mfc='w', label='Data')
+    ax1.plot(t, q_thm, label='THM Transient')
+    ax1.plot(t, q_trans, ls='--', label='THM Approx')
+    ax1.plot(t, q_mh, label='MH')
+    ax1.plot(t, q_ple, label='PLE')
+    ax1.plot(t, q_se, label='SE')
+    ax1.plot(t, q_dg, label='Duong')
 
-    ax1.set(ylabel='Rate, BPD', xlabel='Time, Days')
+    ax1.set(xscale='log', yscale='log', ylabel='Rate, BPD', xlabel='Time, Days')
     ax1.set(ylim=(1e0, 1e4), xlim=(1e0, 1e4))
     ax1.set_aspect(1)
     ax1.grid()
     ax1.legend()
 
     # Cumulative Volume vs Time
-    ax2.loglog(time, data_N, 'o', mfc='w', label='Data')
-    ax2.loglog(t, N_thm, label='THM')
-    ax2.loglog(t, N_mh, label='MH')
-    ax2.loglog(t, N_ple, label='PLE')
-    ax2.loglog(t, N_se, label='SE')
-    ax2.loglog(t, N_dg, label='Duong')
+    ax2.plot(data_t, data_N, 'o', mfc='w', label='Data')
+    ax2.plot(t, N_trans, label='THM Transient')
+    ax2.plot(t, N_thm, ls='--', label='THM Approx')
+    ax2.plot(t, N_mh, label='MH')
+    ax2.plot(t, N_ple, label='PLE')
+    ax2.plot(t, N_se, label='SE')
+    ax2.plot(t, N_dg, label='Duong')
 
-    ax2.set(ylim=(1e2, 1e6), xlim=(1e0, 1e4))
+    ax2.set(xscale='log', yscale='log', ylim=(1e2, 1e6), xlim=(1e0, 1e4))
     ax2.set(ylabel='Cumulative Volume, MBbl', xlabel='Time, Days')
     ax2.set_aspect(1)
     ax2.grid()
@@ -200,47 +209,47 @@ Diagnostic Function Plots
     ax4 = fig.add_subplot(224)
 
     # D-parameter vs Time
-    ax1.loglog([], [])
-    ax1.loglog(t, D_trans, label='THM Transient')
-    ax1.loglog(t, D_thm, ls='--', label='THM Approx')
-    ax1.loglog(t, D_mh, label='MH')
-    ax1.loglog(t, D_ple, label='PLE')
-    ax1.loglog(t, D_se, label='SE')
-    ax1.loglog(t, D_dg, label='Duong')
-    ax1.set(ylim=(1e-4, 1e0))
+    ax1.plot(data_t, data_D, 'o', mfc='w', label='Data')
+    ax1.plot(t, D_trans, label='THM Transient')
+    ax1.plot(t, D_thm, ls='--', label='THM Approx')
+    ax1.plot(t, D_mh, label='MH')
+    ax1.plot(t, D_ple, label='PLE')
+    ax1.plot(t, D_se, label='SE')
+    ax1.plot(t, D_dg, label='Duong')
+    ax1.set(xscale='log', yscale='log', ylim=(1e-4, 1e0))
     ax1.set(ylabel='$D$-parameter, Days$^{-1}$', xlabel='Time, Days')
 
     # beta-parameter vs Time
-    ax2.loglog([], [])
-    ax2.loglog(t, beta_trans, label='THM Transient')
-    ax2.loglog(t, beta_thm, ls='--', label='THM Approx')
-    ax2.loglog(t, beta_mh, label='MH')
-    ax2.loglog(t, beta_ple, label='PLE')
-    ax2.loglog(t, beta_se, label='SE')
-    ax2.loglog(t, beta_dg, label='Duong')
-    ax2.set(ylim=(1e-2, 1e2))
+    ax2.plot(data_t, data_D * data_t, 'o', mfc='w', label='Data')
+    ax2.plot(t, beta_trans, label='THM Transient')
+    ax2.plot(t, beta_thm, ls='--', label='THM Approx')
+    ax2.plot(t, beta_mh, label='MH')
+    ax2.plot(t, beta_ple, label='PLE')
+    ax2.plot(t, beta_se, label='SE')
+    ax2.plot(t, beta_dg, label='Duong')
+    ax2.set(xscale='log', yscale='log', ylim=(1e-2, 1e2))
     ax2.set(ylabel=r'$\beta$-parameter, Dimensionless', xlabel='Time, Days')
 
     # b-parameter vs Time
-    ax3.semilogx([], [])
-    ax3.semilogx(t, b_trans, label='THM Transient')
-    ax3.semilogx(t, b_thm, ls='--', label='THM Approx')
-    ax3.semilogx(t, b_mh, label='MH')
-    ax3.semilogx(t, b_ple, label='PLE')
-    ax3.semilogx(t, b_se, label='SE')
-    ax3.semilogx(t, b_dg, label='Duong')
-    ax3.set(ylim=(0., 4.))
+    ax3.plot(data_t, data_b, 'o', mfc='w', label='Data')
+    ax3.plot(t, b_trans, label='THM Transient')
+    ax3.plot(t, b_thm, ls='--', label='THM Approx')
+    ax3.plot(t, b_mh, label='MH')
+    ax3.plot(t, b_ple, label='PLE')
+    ax3.plot(t, b_se, label='SE')
+    ax3.plot(t, b_dg, label='Duong')
+    ax3.set(xscale='log', yscale='linear', ylim=(0., 4.))
     ax3.set(ylabel='$b$-parameter, Dimensionless', xlabel='Time, Days')
 
     # q/N vs Time
-    ax4.loglog([], [])
-    ax4.loglog(t, q_trans / N_trans, label='THM Transient')
-    ax4.loglog(t, q_thm / N_thm, label='THM Approx')
-    ax4.loglog(t, q_mh / N_mh, label='MH')
-    ax4.loglog(t, q_ple / N_ple, label='PLE')
-    ax4.loglog(t, q_se / N_se, label='SE')
-    ax4.loglog(t, q_dg / N_dg, label='Duong')
-    ax4.set(ylim=(1e-7, 1e0), xlim=(1e0, 1e7))
+    ax4.plot(data_t, data_q / data_N, 'o', mfc='w', label='Data')
+    ax4.plot(t, q_trans / N_trans, label='THM Transient')
+    ax4.plot(t, q_thm / N_thm, ls='--', label='THM Approx')
+    ax4.plot(t, q_mh / N_mh, label='MH')
+    ax4.plot(t, q_ple / N_ple, label='PLE')
+    ax4.plot(t, q_se / N_se, label='SE')
+    ax4.plot(t, q_dg / N_dg, label='Duong')
+    ax4.set(xscale='log', yscale='log', ylim=(1e-7, 1e0), xlim=(1e0, 1e7))
     ax4.set(ylabel='$q_o / N_p$, Days$^{-1}$', xlabel='Time, Days')
 
     for ax in [ax1, ax2, ax3, ax4]:

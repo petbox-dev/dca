@@ -1,4 +1,6 @@
-sphinx
-sphinx_rtd_theme
-numpy
-scipy
+Package                       Version
+----------------------------- ----------
+numpy                         1.18.4
+scipy                         1.4.1
+Sphinx                        3.0.4
+sphinx-rtd-theme              0.4.3

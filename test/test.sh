@@ -11,5 +11,5 @@ echo mypy ../petbox/dca
 mypy $DIR/../petbox/dca
 echo
 
-echo pytest --cov=../petbox.dca --cov-report=term-missing --hypothesis-show-statistics -v .
-pytest --cov=$DIR/../petbox.dca --cov-report=term-missing --hypothesis-show-statistics -v .
+echo pytest --cov=petbox.dca --cov-report=term-missing --hypothesis-show-statistics -v .
+pytest --cov=petbox.dca --cov-report=term-missing --hypothesis-show-statistics -v .

@@ -23,6 +23,7 @@ from math import isnan
 import numpy as np
 
 from petbox import dca
+from data import rate as q_data, time as t_data
 
 # ignores = [
 #     'overflow encountered in multiply',
@@ -437,11 +438,11 @@ def test_decline_conv(D, b):
 def test_bound_errors():
     with pytest.raises(ValueError) as e:
         # < lower bound
-        thm = dca.PLE(-1000, 0.8, 0.0, 0.5)
+        ple = dca.PLE(-1000, 0.8, 0.0, 0.5)
 
     with pytest.raises(ValueError) as e:
         # lower bound excluded
-        thm = dca.PLE(1000, 0.8, 0.0, 0.0)
+        ple = dca.PLE(1000, 0.8, 0.0, 0.0)
 
     with pytest.raises(ValueError) as e:
         # > upper bound
@@ -464,11 +465,11 @@ def test_bound_errors():
 def test_terminal_exceeds():
     with pytest.raises(ValueError) as e:
         # Dinf > Di
-        thm = dca.PLE(1000, 0.8, 0.9, 0.5)
+        ple = dca.PLE(1000, 0.8, 0.9, 0.5)
 
     with pytest.raises(ValueError) as e:
         # Dterm > Di
-        thm = dca.MH(1000, 0.5, 1.0, 0.9)
+        mh = dca.MH(1000, 0.5, 1.0, 0.9)
 
     with pytest.raises(ValueError) as e:
         # bf > bi
@@ -524,7 +525,7 @@ def test_yield_min_max(qi, Di, bf, telf, bterm, tterm, c, m0, m, t0, _min, _max)
 def test_yield_errors():
     with pytest.raises(ValueError) as e:
         # < lower bound
-        thm = dca.PLE(-1000, 0.8, 0.0, 0.5)
+        ple = dca.PLE(-1000, 0.8, 0.0, 0.5)
 
     with pytest.raises(ValueError) as e:
         # lower bound excluded
@@ -546,3 +547,11 @@ def test_yield_errors():
     with pytest.raises(ValueError) as e:
         # invalid parameter sequence length
         thm = dca.THM.from_params([1000, 0.5, 2.0, 0.5])
+
+@given(
+    L=st.floats(0.0, 2.0),
+    xlog=st.booleans(),
+    ylog=st.booleans()
+)
+def test_bourdet(L, xlog, ylog):
+    der = dca.bourdet(q_data, t_data, L, xlog, ylog)
