@@ -32,9 +32,6 @@ from typing import cast
 
 LOG10 = log(10)
 
-warnings.filterwarnings('ignore')
-
-
 def _get_end_L(x: ndarray, L: float, i: int = 0) -> int:
     """
     Left-end points that lay outside of distance L.
@@ -68,29 +65,29 @@ def _get_L(y: ndarray, x: ndarray, L: float, i: int) -> Tuple[ndarray, ndarray]:
     Left-end points that lay inside of distance L.
     """
     dx = x[i] - x[:i]
-    _y = y[i] - y[:i]
+    dy = y[i] - y[:i]
     idx = np.where((dx <= L) & (dx >= 0.))[0]
 
     if idx.size > 0:
         idx = max(0, idx[0] - 1)
-        return dx[idx], _y[idx]
+        return dx[idx], dy[idx]
     else:
-        return dx[-1], _y[-1]
+        return dx[-1], dy[-1]
 
 
 def _get_R(y: ndarray, x: ndarray, L: float, i: int) -> Tuple[ndarray, ndarray]:
     """
     Right-end points that lay inside of distance L.
     """
-    dx = x[i:] - x[i]
-    _y = y[i:] - y[i]
+    dx = x[i + 1:] - x[i]
+    dy = y[i + 1:] - y[i]
     idx = np.where((dx <= L) & (dx >= 0.))[0]
 
     if idx.size > 0:
         idx = min(len(x) - 1, idx[-1] + 1)
-        return dx[idx], _y[idx]
+        return dx[idx], dy[idx]
     else:
-        return dx[0], _y[0]
+        return dx[0], dy[0]
 
 
 def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
@@ -125,66 +122,68 @@ def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
         The calculated derivative.
     """
 
-    x = np.atleast_1d(x).astype(float)
-    y = np.atleast_1d(y).astype(float)
+    with warnings.catch_warnings(record=True) as w:
 
-    log_x = cast(ndarray, np.log10(x))
+        x = np.atleast_1d(x).astype(float)
+        y = np.atleast_1d(y).astype(float)
 
-    if ylog:
-        y = cast(ndarray, np.log(y))
+        log_x = cast(ndarray, np.log10(x))
 
-    x_L = np.zeros_like(log_x, dtype=float)
-    x_R = np.zeros_like(log_x, dtype=float)
-    y_L = np.zeros_like(log_x, dtype=float)
-    y_R = np.zeros_like(log_x, dtype=float)
+        if ylog:
+            y = cast(ndarray, np.log(y))
 
-    # get points for forward and backward derivatives
-    k1 = _get_end_L(log_x, L)
-    k2 = _get_end_R(log_x, L)
+        x_L = np.zeros_like(log_x, dtype=float)
+        x_R = np.zeros_like(log_x, dtype=float)
+        y_L = np.zeros_like(log_x, dtype=float)
+        y_R = np.zeros_like(log_x, dtype=float)
 
-    # compute first & last points
-    x_L[0] = log_x[k1] - log_x[0]
-    y_L[0] = y[k1] - y[0]
+        # get points for forward and backward derivatives
+        k1 = _get_end_L(log_x, L)
+        k2 = _get_end_R(log_x, L)
 
-    x_R[-1] = log_x[-1] - log_x[k2]
-    y_R[-1] = y[-1] - y[k2]
+        # compute first & last points
+        x_L[0] = log_x[k1] - log_x[0]
+        y_L[0] = y[k1] - y[0]
 
-    # compute bourdet derivative
-    for i in range(k1, k2):
-        x_L[i], y_L[i] = _get_L(y, log_x, L, i)
-        x_R[i], y_R[i] = _get_R(y, log_x, L, i)
+        x_R[-1] = log_x[-1] - log_x[k2]
+        y_R[-1] = y[-1] - y[k2]
 
-    # if xlog:
-    x_L *= LOG10
-    x_R *= LOG10
-
-    der = (y_L / x_L * x_R + y_R / x_R * x_L) / (x_L + x_R)
-
-    # compute forward difference at left edge
-    for i in range(0, k1):
-        idx = _get_end_L(log_x, L, i)
-
-        dy = y[idx] - y[0]
-        dx = log_x[idx] - log_x[0]
+        # compute bourdet derivative
+        for i in range(k1, k2):
+            x_L[i], y_L[i] = _get_L(y, log_x, L, i)
+            x_R[i], y_R[i] = _get_R(y, log_x, L, i)
 
         # if xlog:
-        dx *= LOG10
+        x_L *= LOG10
+        x_R *= LOG10
 
-        der[i] = dy / dx
+        der = (y_L / x_L * x_R + y_R / x_R * x_L) / (x_L + x_R)
 
-    # compute backward difference at right edge
-    for i in range(k2, len(log_x)):
-        idx = _get_end_R(log_x, L, i)
+        # compute forward difference at left edge
+        for i in range(0, k1):
+            idx = _get_end_L(log_x, L, i)
 
-        dy = y[-1] - y[idx]
-        dx = log_x[-1] - log_x[idx]
+            dy = y[idx] - y[0]
+            dx = log_x[idx] - log_x[0]
 
-        # if xlog:
-        dx *= LOG10
+            # if xlog:
+            dx *= LOG10
 
-        der[i] = dy / dx
+            der[i] = dy / dx
 
-    if not xlog:
-        der /= x
+        # compute backward difference at right edge
+        for i in range(k2, len(log_x)):
+            idx = _get_end_R(log_x, L, i)
 
-    return der
+            dy = y[-1] - y[idx]
+            dx = log_x[-1] - log_x[idx]
+
+            # if xlog:
+            dx *= LOG10
+
+            der[i] = dy / dx
+
+        if not xlog:
+            der /= x
+
+        return der
