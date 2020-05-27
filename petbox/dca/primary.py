@@ -48,22 +48,22 @@ class NullPrimaryPhase(PrimaryPhase):
         pass
 
     def _qfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Dfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _betafn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _bfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -115,7 +115,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, q)
+            return np.full_like(t, q, dtype=float)
 
         if b < 1e-10:
             with warnings.catch_warnings(record=True) as w:
@@ -133,7 +133,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if q <= 0.0:
-            return np.atleast_1d(N) + np.zeros_like(t)
+            return np.atleast_1d(N) + np.zeros_like(t, dtype=float)
 
         if D <= 0.0:
             return np.atleast_1d(N + q * dt)
@@ -157,7 +157,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, D)
+            return np.full_like(t, D, dtype=float)
 
         return D / (1.0 + D * b * dt)
 
@@ -170,7 +170,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, D)
+            return np.full_like(t, D, dtype=float)
 
         Denom = 1.0 + D * b * dt
         return -b * D * D / (Denom * Denom)
@@ -283,7 +283,7 @@ class MH(MultisegmentHyperbolic):
         if Di_nom <= 0.0 or Dterm_nom <= 0.0 or self.bi == 0.0:
             return np.array([
                 [0.0, self.qi, Di_nom, self.bi, 0.0]
-            ], dtype=np.float64)
+            ], dtype=float)
 
         tterm = ((1.0 / Dterm_nom) - (1.0 / Di_nom)) / self.bi
         qterm = self._qcheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm))
@@ -292,7 +292,7 @@ class MH(MultisegmentHyperbolic):
         return np.array([
             [0.0, self.qi, Di_nom, self.bi, 0.0],
             [tterm, qterm, Dterm_nom, 0.0, Nterm]
-        ], dtype=np.float64)
+        ], dtype=float)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -313,7 +313,7 @@ class MH(MultisegmentHyperbolic):
             ParamDesc(  # TODO
                 'Dterm', 'Terminal decline [tan. eff. / yr]',
                 0.0, 1.0,
-                lambda r, n: np.zeros(n),
+                lambda r, n: np.zeros(n, dtype=float),
                 exclude_upper_bound=True)
         ]
 
@@ -631,14 +631,12 @@ class THM(MultisegmentHyperbolic):
         tterm = self.tterm * DAYS_PER_YEAR
 
         if self.Di == 0.0:
-            return np.full_like(t, 0.0)
+            return np.full_like(t, 0.0, dtype=float)
 
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
 
         if Dnom_i <= 0.0:
             assert 'unreachable: negative Dnom in _transDfn'  # pragma: no cover
-
-        D = np.zeros_like(t)
 
         if telf > 0.001:
             # transient function
@@ -694,7 +692,7 @@ class THM(MultisegmentHyperbolic):
             c = self.EXP_GAMMA / (1.5 * telf)
             b = bi - (bi - bf) * np.exp(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
         else:
-            b = np.full_like(t, bf)
+            b = np.full_like(t, bf, dtype=float)
 
         # terminal regime
         if tterm != 0.0 or bterm != 0:

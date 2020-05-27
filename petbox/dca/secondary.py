@@ -45,25 +45,25 @@ class NullSecondaryPhase(SecondaryPhase):
         pass
 
     def _yieldfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _qfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Dfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _betafn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     def _bfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t)
+        return np.zeros_like(t, dtype=float)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -121,8 +121,7 @@ class PLYield(SecondaryPhase):
     def _yieldfn(self, t: ndarray) -> ndarray:
         c = self.c
         t0 = self.t0
-        m = np.full_like(t, self.m)
-        m[t < t0] = self.m0
+        m = np.where(t < t0, self.m0, self.m)
 
         with warnings.catch_warnings(record=True) as w:
             if self.min is not None or self.max is not None:
@@ -137,27 +136,27 @@ class PLYield(SecondaryPhase):
             return self._integrate_with(self._qfn, t, **kwargs)
 
     def _Dfn(self, t: ndarray) -> ndarray:
+        c = self.c
         t0 = self.t0
-        m = np.full_like(t, self.m)
-        m[t < t0] = self.m0
+        m = np.where(t < t0, self.m0, self.m)
         y = self._yieldfn(t)
 
         if self.min is not None:
-            m[y == self.min] = 0
+            m[y <= self.min] = 0.0
         if self.max is not None:
-            m[y == self.max] = 0
+            m[y >= self.max] = 0.0
         return -m / t + self.primary._Dfn(t)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
+        c = self.c
         t0 = self.t0
-        m = np.full_like(t, self.m)
-        m[t < t0] = self.m0
+        m = np.where(t < t0, self.m0, self.m)
         y = self._yieldfn(t)
 
         if self.min is not None:
-            m[y == self.min] = 0
+            m[y <= self.min] = 0.0
         if self.max is not None:
-            m[y == self.max] = 0
+            m[y >= self.max] = 0.0
         return -m / (t * t)
 
     def _betafn(self, t: ndarray) -> ndarray:
@@ -174,7 +173,8 @@ class PLYield(SecondaryPhase):
             ParamDesc(
                 'c', 'Pivot point of early- and late-time functions [vol/vol]',
                 0.0, None,
-                lambda r, n: r.uniform(0.0, 1e6, n)),
+                lambda r, n: r.uniform(0.0, 1e6, n),
+                exclude_lower_bound=True),
             ParamDesc(
                 'm0', 'Early-time slope before pivot point',
                 -10.0, 10.0,

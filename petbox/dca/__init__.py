@@ -1,4 +1,4 @@
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
 from . import base, primary, secondary
 from .base import (get_time, get_time_monthly_vol,

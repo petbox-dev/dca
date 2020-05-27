@@ -125,15 +125,18 @@ def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
         The calculated derivative.
     """
 
-    log_x = np.log10(x)
+    x = np.atleast_1d(x).astype(float)
+    y = np.atleast_1d(y).astype(float)
+
+    log_x = cast(ndarray, np.log10(x))
 
     if ylog:
-        y = np.log(y)
+        y = cast(ndarray, np.log(y))
 
-    x_L = np.zeros_like(log_x)
-    x_R = np.zeros_like(log_x)
-    y_L = np.zeros_like(log_x)
-    y_R = np.zeros_like(log_x)
+    x_L = np.zeros_like(log_x, dtype=float)
+    x_R = np.zeros_like(log_x, dtype=float)
+    y_L = np.zeros_like(log_x, dtype=float)
+    y_R = np.zeros_like(log_x, dtype=float)
 
     # get points for forward and backward derivatives
     k1 = _get_end_L(log_x, L)
