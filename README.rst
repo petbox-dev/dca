@@ -17,9 +17,9 @@ Petroleum Engineering Toolbox
 
 Empirical analysis of production data requires implementation of several decline curve models spread over years and multiple SPE publications. Additionally, comprehensive analysis requires graphical analysis among multiple diagnostics plots and their respective plotting functions. While each model's ``q(t)`` (rate) function may be simple, the ``N(t)`` (cumulative volume) may not be. For example, the hyperbolic model has three different forms (hyperbolic, harmonic, exponential), and this is complicated by potentially multiple segments, each of which must be continuous in the rate derivatives. Or, as in the case of the Power-Law Exponential model, the ``N(t)`` function must be numerically evaluated.
 
-This library defines a single interface to each of the implemented decline curve models. Each model has validation checks for parameter values, provides simple-to-use methods for evaluating arrays of ``time`` to obtain the desired function output.
+This library defines a single interface to each of the implemented decline curve models. Each model has validation checks for parameter values and provides simple-to-use methods for evaluating arrays of ``time`` to obtain the desired function output.
 
-Additionally, we also defined an interface to attach a GOR/CGR yield function to any primary phase model. We can then obtain the outputs for the secondary phase as easily as the primary phase.
+Additionally, we also define an interface to attach a GOR/CGR yield function to any primary phase model. We can then obtain the outputs for the secondary phase as easily as the primary phase.
 
 Analytic functions are implemented wherever possible. When not possible, numerical evaluations are performed using ``scipy.integrate.quadrature``. Given that most of the functions of interest that must be numerically evaluated are monotonic, this generally works well.
 
