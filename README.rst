@@ -50,17 +50,17 @@ The following functions are exposed for use
 |                        | `transient_beta(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_beta>`_,                      |
 |                        | `transient_b(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_b>`_                             |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Primary Phase          | `add_secondary(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_secondary>`_              |
-|                        | `add_water(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_water>`_                      |
+| Primary Phase          | `add_secondary <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_secondary>`_,                  |
+|                        | `add_water <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_water>`_                           |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Secondary Phase        | `gor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.gor>`_,                                 |
 |                        | `cgr(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.cgr>`_                                  |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Water Phase            | `gor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.WaterPhase.wor>`_,                                     |
+| Water Phase            | `wor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.WaterPhase.wor>`_                                      |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Utility                | `bourdet(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.bourdet>`_,                                      |
-|                        | `get_time(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                    |
-|                        | `get_time_monthly_vol(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time_monthly_vol>`_             |
+| Utility                | `bourdet <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.bourdet>`_,                                           |
+|                        | `get_time <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                         |
+|                        | `get_time_monthly_vol <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time_monthly_vol>`_                  |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 
 
