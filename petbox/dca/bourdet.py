@@ -37,7 +37,6 @@ def _get_end_L(x: ndarray, L: float, i: int = 0) -> int:
     Left-end points that lay outside of distance L.
     """
     dx = x - x[i]
-
     k = len(dx) - 1
     idx = np.where((dx <= L) & (dx >= 0.))[0]
     if idx.size > 0:
@@ -51,7 +50,6 @@ def _get_end_R(x: ndarray, L: float, i: int = -1) -> int:
     Right-end points that lay outside of distance L.
     """
     dx = x[i] - x
-
     k = 0
     idx = np.where((dx <= L) & (dx >= 0.))[0]
     if idx.size > 0:
@@ -67,7 +65,6 @@ def _get_L(y: ndarray, x: ndarray, L: float, i: int) -> Tuple[ndarray, ndarray]:
     dx = x[i] - x[:i]
     dy = y[i] - y[:i]
     idx = np.where((dx <= L) & (dx >= 0.))[0]
-
     if idx.size > 0:
         idx = max(0, idx[0] - 1)
         return dx[idx], dy[idx]
@@ -108,7 +105,8 @@ def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
         An array of x values.
 
       L: float = 0.0
-        Smoothing factor in units of log-cycle fractions.
+        Smoothing factor in units of log-cycle fractions. A value of zero returns the
+        point-by-point first-order difference derivative.
 
       xlog: bool = True
         Calculate the derivative with respect to the log of x, i.e. ``dy / d[ln x]``.
@@ -153,34 +151,24 @@ def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
             x_L[i], y_L[i] = _get_L(y, log_x, L, i)
             x_R[i], y_R[i] = _get_R(y, log_x, L, i)
 
-        # if xlog:
         x_L *= LOG10
         x_R *= LOG10
-
         der = (y_L / x_L * x_R + y_R / x_R * x_L) / (x_L + x_R)
 
         # compute forward difference at left edge
         for i in range(0, k1):
             idx = _get_end_L(log_x, L, i)
-
             dy = y[idx] - y[0]
             dx = log_x[idx] - log_x[0]
-
-            # if xlog:
             dx *= LOG10
-
             der[i] = dy / dx
 
         # compute backward difference at right edge
         for i in range(k2, len(log_x)):
             idx = _get_end_R(log_x, L, i)
-
             dy = y[-1] - y[idx]
             dx = log_x[-1] - log_x[idx]
-
-            # if xlog:
             dx *= LOG10
-
             der[i] = dy / dx
 
         if not xlog:
