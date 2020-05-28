@@ -1,16 +1,14 @@
-Package                       Version
------------------------------ ----------
-attrs                         19.3.0
-coverage                      5.1
-coveralls                     2.0.0
-flake8                        3.8.2
-hypothesis                    5.16.0
-mypy                          0.770
-numpy                         1.18.4
-numpy-stubs                   0.0.1
-pytest                        5.4.2
-pytest-cov                    2.9.0
-scipy                         1.4.1
-Sphinx                        3.0.4
-sphinx-rtd-theme              0.4.3
-wheel                         0.34.2
+attrs>=19.3.0
+coverage>=5.1
+coveralls>=2.0.0
+flake8>=3.8.2
+hypothesis>=5.16.0
+mypy>=0.770
+numpy>=1.18.4
+numpy-stubs>=0.0.1
+pytest>=5.4.2
+pytest-cov>=2.9.0
+scipy>=1.4.1
+Sphinx>=3.0.4
+sphinx-rtd-theme>=0.4.3
+wheel>=0.34.2
