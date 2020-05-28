@@ -119,9 +119,9 @@ Applying the above, we can easily evaluate each model against a data set.
     >>> ax1 = fig.add_subplot(121)
     >>> ax2 = fig.add_subplot(122)
 
-    >>> ax1.plot(t_data, rate_data))
-    >>> ax2.plot(t_data, cum_data))
-
+    >>> ax1.plot(t_data, rate_data, 'o')
+    >>> ax2.plot(t_data, cum_data, 'o')
+    
     >>> ax1.plot(t, thm.rate(t))
     >>> ax2.plot(t, thm.cum(t) * cum_data[-1] / thm.cum(t_data[-1]))  # normalization
 
