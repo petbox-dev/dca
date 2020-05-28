@@ -115,8 +115,9 @@ Applying the above, we can easily evaluate each model against a data set.
 .. code-block:: python
 
     >>> import matplotlib.pyplot as plt
-    >>> ax1 = fig.add_subplot(221)
-    >>> ax2 = fig.add_subplot(222)
+    >>> fig = plt.figure()
+    >>> ax1 = fig.add_subplot(121)
+    >>> ax2 = fig.add_subplot(122)
 
     >>> ax1.plot(t_data, rate_data))
     >>> ax2.plot(t_data, cum_data))
