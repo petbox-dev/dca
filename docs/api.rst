@@ -3,11 +3,11 @@ API Reference
 =============
 
 Summary
--------
+=======
 
 
 Primary Phase Models
-~~~~~~~~~~~~~~~~~~~~
+--------------------
 
 .. currentmodule:: petbox.dca
 
@@ -18,6 +18,10 @@ Primary Phase Models
     PLE
     SE
     Duong
+
+
+Associated Phase Models
+-----------------------
 
 
 Secondary Phase Models
@@ -31,7 +35,7 @@ Secondary Phase Models
 
 
 Water Phase Models
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 
 .. currentmodule:: petbox.dca
 
@@ -41,9 +45,10 @@ Water Phase Models
 
 
 Model Functions
-~~~~~~~~~~~~~~~~~~~~~~~
+===============
 
 All Models
+----------
 
 .. currentmodule:: petbox.dca.DeclineCurve
 
@@ -61,6 +66,7 @@ All Models
 
 
 Primary Phase Models
+--------------------
 
 .. currentmodule:: petbox.dca.PrimaryPhase
 
@@ -69,7 +75,11 @@ Primary Phase Models
     add_water
 
 
+Associated Phase Models
+-----------------------
+
 Secondary Phase Models
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. currentmodule:: petbox.dca.SecondaryPhase
 
@@ -79,6 +89,7 @@ Secondary Phase Models
 
 
 Water Phase Models
+~~~~~~~~~~~~~~~~~~
 
 .. currentmodule:: petbox.dca.WaterPhase
 
@@ -87,6 +98,7 @@ Water Phase Models
 
 
 Transient Hyperbolic Specific
+-----------------------------
 
 .. currentmodule:: petbox.dca.THM
 
@@ -99,7 +111,7 @@ Transient Hyperbolic Specific
 
 
 Utility Functions
-~~~~~~~~~~~~~~~~~
+-----------------
 
 .. currentmodule:: petbox.dca
 
@@ -111,12 +123,12 @@ Utility Functions
 
 
 Detailed Reference
-------------------
+==================
 
 .. currentmodule:: petbox.dca
 
 Base Classes
-~~~~~~~~~~~~
+------------
 
 These classes define the basic functions that are exposed by all decline curve models.
 
@@ -152,7 +164,7 @@ These classes define the basic functions that are exposed by all decline curve m
 
 
 Primary Phase Models
-~~~~~~~~~~~~~~~~~~~~
+--------------------
 
 Implementations of primary phase decline curve models
 
@@ -218,8 +230,8 @@ Implementations of primary phase decline curve models
     .. automethod:: from_params
 
 
-Secondary Phase Models
-~~~~~~~~~~~~~~~~~~~~~~
+Associated Phase Models
+-----------------------
 
 Implementations of secondary (associated) phase GOR/CGR models
 
@@ -238,7 +250,7 @@ Implementations of secondary (associated) phase GOR/CGR models
 
 
 Utility Functions
-~~~~~~~~~~~~~~~~~
+-----------------
 
 .. autofunction:: bourdet
 .. autofunction:: get_time

@@ -26,14 +26,15 @@ from typing import (TypeVar, Type, List, Dict, Tuple, Any,
                     Sequence, Optional, Callable, ClassVar, Union)
 from typing import cast
 
-from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase, WaterPhase,
-                   DAYS_PER_MONTH, DAYS_PER_YEAR)
+from .base import (DeclineCurve, PrimaryPhase,
+                   AssociatedPhase, SecondaryPhase, WaterPhase, BothAssociatedPhase,
+                   ParamDesc, DAYS_PER_MONTH, DAYS_PER_YEAR)
 
 
 @dataclass
-class NullSecondaryPhase(SecondaryPhase):
+class NullAssociatedPhase(SecondaryPhase, WaterPhase):
     """
-    A null `SecondaryPhase` class that always returns zeroes.
+    A null :class:`AssociatedPhase` that always returns zeroes.
 
     Parameters
     ----------
@@ -41,7 +42,7 @@ class NullSecondaryPhase(SecondaryPhase):
     """
 
     def _set_defaults(self) -> None:
-        # Do not associate with the null secondary phase
+        # Do not associate with the null primary phase
         pass
 
     def _yieldfn(self, t: ndarray) -> ndarray:
@@ -71,9 +72,9 @@ class NullSecondaryPhase(SecondaryPhase):
 
 
 @dataclass(frozen=True)
-class PLYield(SecondaryPhase, WaterPhase):
+class PLYield(BothAssociatedPhase):
     """
-    Power-Law Secondary Phase Model.
+    Power-Law Associated Phase Model.
 
     Fulford, D.S. 2018. A Model-Based Diagnostic Workflow for Time-Rate
     Performance of Unconventional Wells. Presented at Unconventional Resources
@@ -125,17 +126,15 @@ class PLYield(SecondaryPhase, WaterPhase):
         t0 = self.t0
         m = np.where(t < t0, self.m0, self.m)
 
-        with warnings.catch_warnings(record=True) as w:
-            if self.min is not None or self.max is not None:
-                return np.where(t == 0.0, 0.0, np.clip(c * (t / t0) ** m, self.min, self.max))
-            return np.where(t == 0.0, 0.0, c * (t / t0) ** m)
+        if self.min is not None or self.max is not None:
+            return np.where(t == 0.0, 0.0, np.clip(c * (t / t0) ** m, self.min, self.max))
+        return np.where(t == 0.0, 0.0, c * (t / t0) ** m)
 
     def _qfn(self, t: ndarray) -> ndarray:
         return self._yieldfn(t) / 1000.0 * self.primary._qfn(t)
 
     def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
-        with warnings.catch_warnings(record=True) as w:
-            return self._integrate_with(self._qfn, t, **kwargs)
+        return self._integrate_with(self._qfn, t, **kwargs)
 
     def _Dfn(self, t: ndarray) -> ndarray:
         c = self.c
@@ -166,8 +165,7 @@ class PLYield(SecondaryPhase, WaterPhase):
 
     def _bfn(self, t: ndarray) -> ndarray:
         D = self._Dfn(t)
-        with warnings.catch_warnings(record=True) as w:
-            return np.where(D == 0.0, 0.0, (self._Dfn2(t) - self.primary._Dfn2(t)) / (D * D))
+        return np.where(D == 0.0, 0.0, (self._Dfn2(t) - self.primary._Dfn2(t)) / (D * D))
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:

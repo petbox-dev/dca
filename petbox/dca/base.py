@@ -57,19 +57,19 @@ def get_time(start: float = 1.0, end: float = 1e5, n: int = 101) -> ndarray:
 
     Parameters
     ----------
-      start: float
-        The first time value of the array.
+        start: float
+            The first time value of the array.
 
-      end: float
-        The last time value of the array.
+        end: float
+            The last time value of the array.
 
-      n: int
-        The number of element in the array.
+        n: int
+            The number of element in the array.
 
     Returns
     -------
-      time: numpy.ndarray[float]
-        An evenly-logspaced time series.
+        time: numpy.ndarray[float]
+            An evenly-logspaced time series.
     """
     return 10.0 ** np.linspace(log(start), log(end), n)
 
@@ -80,16 +80,16 @@ def get_time_monthly_vol(start: float = 1, end: int = 10_000) -> ndarray:
 
     Parameters
     ----------
-      start: float
-        The first time value of the array.
+        start: float
+            The first time value of the array.
 
-      end: float
-        The last time value of the array.
+        end: float
+            The last time value of the array.
 
     Returns
     -------
-      time: numpy.ndarray[float]
-        An evenly-monthly-spaced time series
+        time: numpy.ndarray[float]
+            An evenly-monthly-spaced time series
     """
     return (np.arange(start, end // DAYS_PER_MONTH) + 1) * DAYS_PER_MONTH
 
@@ -112,12 +112,12 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of times at which to evaluate the function.
 
         Returns
         -------
-          rate: numpy.ndarray[float]
+            rate: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._qfn(t)
@@ -132,15 +132,15 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of times at which to evaluate the function.
 
-          **kwargs
-            Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
+            **kwargs
+                Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
 
         Returns
         -------
-          cumulative volume: numpy.ndarray[float]
+            cumulative volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._Nfn(t, **kwargs)
@@ -158,15 +158,15 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of interval end times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of interval end times at which to evaluate the function.
 
-          t0: Optional[Union[float, numpy.ndarray[float]]]
-            A start time of the first interval. If not given, the first element
-            of ``t`` is used.
+            t0: Optional[Union[float, numpy.ndarray[float]]]
+                A start time of the first interval. If not given, the first element
+                of ``t`` is used.
 
-          **kwargs
-            Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
+            **kwargs
+                Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
 
         Returns
         -------
@@ -189,18 +189,18 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of interval end times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of interval end times at which to evaluate the function.
 
-          t0: Optional[Union[float, numpy.ndarray[float]]]
-            A start time of the first interval. If not given, assumed to be zero.
+            t0: Optional[Union[float, numpy.ndarray[float]]]
+                A start time of the first interval. If not given, assumed to be zero.
 
-          **kwargs
-            Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
+            **kwargs
+                Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
 
         Returns
         -------
-          monthly equivalent volume: numpy.ndarray[float]
+            monthly equivalent volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         if t0 is None:
@@ -219,12 +219,12 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of times at which to evaluate the function.
 
         Returns
         -------
-          D-parameter: numpy.ndarray[float]
+            D-parameter: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._Dfn(t)
@@ -239,11 +239,11 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of times at which to evaluate the function.
 
         Returns
-        -------
+            -------
           beta-parameter: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
@@ -259,12 +259,12 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of times at which to evaluate the function.
 
         Returns
         -------
-          b-parameter: numpy.ndarray[float]
+            b-parameter: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._bfn(t)
@@ -310,14 +310,14 @@ class DeclineCurve(ABC):
         self._set_defaults()
         for desc in self.get_param_descs():
             param = getattr(self, desc.name)
-            if desc.lower_bound is not None:
+            if param is not None and desc.lower_bound is not None:
                 if desc.exclude_lower_bound:
                     if param <= desc.lower_bound:
                         raise ValueError(f'{desc.name} <= {desc.lower_bound}')
                 else:
                     if param < desc.lower_bound:
                         raise ValueError(f'{desc.name} < {desc.lower_bound}')
-            if desc.upper_bound is not None:
+            if param is not None and desc.upper_bound is not None:
                 if desc.exclude_upper_bound:
                     if param >= desc.upper_bound:
                         raise ValueError(f'{desc.name} >= {desc.upper_bound}')
@@ -390,7 +390,7 @@ class PrimaryPhase(DeclineCurve):
     def _set_defaults(self) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        secondary = NullSecondaryPhase()
+        secondary = NullAssociatedPhase()
         object.__setattr__(secondary, 'primary', self)
         object.__setattr__(self, 'secondary', secondary)
         object.__setattr__(secondary, 'water', self)
@@ -402,11 +402,11 @@ class PrimaryPhase(DeclineCurve):
 
         Parameters
         ----------
-          secondary: SecondaryPhase
-            A model that inherits the :class:`SecondaryPhase` class.
+            secondary: SecondaryPhase
+                A model that inherits the :class:`SecondaryPhase` class.
 
         Returns
-        -------
+            -------
           None
         """
         # remove WOR if it exists
@@ -424,12 +424,12 @@ class PrimaryPhase(DeclineCurve):
 
         Parameters
         ----------
-          water: WaterPhase
-            A model that inherits the :class:`WaterPhase` class.
+            water: WaterPhase
+                A model that inherits the :class:`WaterPhase` class.
 
         Returns
         -------
-          None
+            None
         """
         # remove GOR if it exists
         if hasattr(water, 'gor'):
@@ -446,22 +446,37 @@ class PrimaryPhase(DeclineCurve):
         object.__setattr__(self, 'water', water)
 
 
-class SecondaryPhase(DeclineCurve):
+class AssociatedPhase(DeclineCurve):
+    """
+    Extends :class:`DeclineCurve` for an associated phase forecast.
+    Each model must implement the defined abstract :meth:`_yieldfn` method.
+    """
+    def _set_default(self, model: 'AssociatedPhase', name: str) -> None:
+        # this is a little naughty: bypass the "frozen" protection, just this once...
+        # naturally, this should only be called during the __post_init__ process
+        if hasattr(model, 'primary'):
+            primary = getattr(model, 'primary')
+        else:
+            primary = NullPrimaryPhase()
+        object.__setattr__(primary, name, model)
+        object.__setattr__(model, 'primary', primary)
+
+    @abstractmethod
+    def _yieldfn(self, t: ndarray) -> ndarray:
+        raise NotImplementedError
+
+
+class SecondaryPhase(AssociatedPhase):
     """
     Extends :class:`DeclineCurve` for a secondary (associated) phase forecast.
     Adds the capability to link a primary phase model.
     Defines the :meth:`gor` and :meth:`cgr` functions. Each model must implement the
     defined abstract method.
-
     """
     primary: 'PrimaryPhase'
 
     def _set_defaults(self) -> None:
-        # this is a little naughty: bypass the "frozen" protection, just this once...
-        # naturally, this should only be called during the __post_init__ process
-        primary = NullPrimaryPhase()
-        object.__setattr__(primary, 'secondary', self)
-        object.__setattr__(self, 'primary', primary)
+        super()._set_default(self, 'secondary')  # pragma: no cover
 
     def gor(self, t: Union[float, ndarray]) -> ndarray:
         """
@@ -470,13 +485,13 @@ class SecondaryPhase(DeclineCurve):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of times at which to evaluate the function.
 
         Returns
         -------
-          GOR: numpy.ndarray[float]
-            The gas-oil ratio function in units of ``Bbl / scf``.
+            GOR: numpy.ndarray[float]
+                The gas-oil ratio function in units of ``Bbl / scf``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)
@@ -488,23 +503,19 @@ class SecondaryPhase(DeclineCurve):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of times at which to evaluate the function.
 
         Returns
         -------
-          CGR: numpy.ndarray[float]
-            The condensate-gas ratio in units of ``MMscf / Bbl``.
+            CGR: numpy.ndarray[float]
+                The condensate-gas ratio in units of ``MMscf / Bbl``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)
 
-    @abstractmethod
-    def _yieldfn(self, t: ndarray) -> ndarray:
-        raise NotImplementedError
 
-
-class WaterPhase(DeclineCurve):
+class WaterPhase(AssociatedPhase):
     """
     Extends :class:`DeclineCurve` for a water (associated) phase forecast.
     Adds the capability to link a primary phase model.
@@ -515,11 +526,7 @@ class WaterPhase(DeclineCurve):
     primary: 'PrimaryPhase'
 
     def _set_defaults(self) -> None:
-        # this is a little naughty: bypass the "frozen" protection, just this once...
-        # naturally, this should only be called during the __post_init__ process
-        primary = NullPrimaryPhase()
-        object.__setattr__(primary, 'water', self)
-        object.__setattr__(self, 'primary', primary)
+        super()._set_default(self, 'water')  # pragma: no cover
 
     def wor(self, t: Union[float, ndarray]) -> ndarray:
         """
@@ -527,22 +534,31 @@ class WaterPhase(DeclineCurve):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of times at which to evaluate the function.
+            t: Union[float, numpy.ndarray[float]]
+                An array of times at which to evaluate the function.
 
         Returns
         -------
-          WOR: numpy.ndarray[float]
-            The water-oil ratio function in units of ``Bbl / Bbl``.
+            WOR: numpy.ndarray[float]
+                The water-oil ratio function in units of ``Bbl / Bbl``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)
 
-    @abstractmethod
-    def _yieldfn(self, t: ndarray) -> ndarray:
-        raise NotImplementedError
+
+class BothAssociatedPhase(SecondaryPhase, WaterPhase):
+    """
+    Extends :class:`DeclineCurve` for a general yield model used for both secondary phase
+    and water phase.
+
+    """
+    primary: 'PrimaryPhase'
+
+    def _set_defaults(self) -> None:
+        super()._set_default(self, 'secondary')
+        super()._set_default(self, 'water')
 
 
 # Must import these here to avoid circular dependency
 from .primary import NullPrimaryPhase
-from .secondary import NullSecondaryPhase
+from .associated import NullAssociatedPhase
