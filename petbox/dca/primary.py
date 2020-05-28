@@ -395,14 +395,12 @@ class THM(MultisegmentHyperbolic):
 
     def _validate(self) -> None:
         # TODO: do we want to deal with optional params at all?
-        # if (self.bterm is None and tterm is not None) or (bterm is not None and tterm is None):
-        #     raise ValueError('Must supply both or none of tterm and bterm.')
         if self.bi < self.bf:
             raise ValueError('bi < bf')
         if self.bf < self.bterm and self.tterm != 0.0:
             # raise ValueError('bf < bterm and tterm != 0')
             # cheat to fix this
-            # object.__setattr__(self, 'bterm', self.bf)
+            object.__setattr__(self, 'bterm', self.bf)
             pass
         if self.tterm != 0.0 and self.tterm * DAYS_PER_YEAR < self.telf:
             raise ValueError('tterm < telf')

@@ -116,7 +116,9 @@ class PLYield(SecondaryPhase, WaterPhase):
     max: Optional[float] = None
 
     def _validate(self) -> None:
-        pass
+        if self.min is not None and self.max is not None and self.max < self.min:
+            raise ValueError('max < min')
+        super()._validate()
 
     def _yieldfn(self, t: ndarray) -> ndarray:
         c = self.c
@@ -187,5 +189,13 @@ class PLYield(SecondaryPhase, WaterPhase):
                 't0', 'Time of pivot point [days]',
                 0, None,
                 lambda r, n: r.uniform(0.0, 1e5, n),
-                exclude_lower_bound=True)
+                exclude_lower_bound=True),
+            ParamDesc(
+                'min', 'Minimum value of yield function [vol/vol]',
+                0, None,
+                lambda r, n: r.uniform(0.0, 1e3, n)),
+            ParamDesc(
+                'min', 'Maximum value of yield function [vol/vol]',
+                0, None,
+                lambda r, n: r.uniform(0.0, 1e5, n))
         ]
