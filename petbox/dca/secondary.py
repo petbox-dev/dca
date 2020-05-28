@@ -26,7 +26,7 @@ from typing import (TypeVar, Type, List, Dict, Tuple, Any,
                     Sequence, Optional, Callable, ClassVar, Union)
 from typing import cast
 
-from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
+from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase, WaterPhase,
                    DAYS_PER_MONTH, DAYS_PER_YEAR)
 
 
@@ -71,7 +71,7 @@ class NullSecondaryPhase(SecondaryPhase):
 
 
 @dataclass(frozen=True)
-class PLYield(SecondaryPhase):
+class PLYield(SecondaryPhase, WaterPhase):
     """
     Power-Law Secondary Phase Model.
 

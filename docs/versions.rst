@@ -6,6 +6,17 @@ Version History
    :noindex:
 
 
+1.0.6
+-----
+
+* New functions
+    * Added :class:`WaterPhase` class
+    * Added :meth:`WaterPhase.wor` method
+    * Added :meth:`PrimaryPhase.add_water` method
+
+* Other Changes
+    * A ``yield`` model may inherit both :class:`SecondaryPhase` and :class:`WaterPhase`, with the respective methods removed upon attachment to a :class:`PrimaryPhase`.
+
 1.0.5
 -----
 

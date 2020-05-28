@@ -5,7 +5,7 @@ include docs/Makefile
 include docs/make.bat
 include docs/conf.py
 include docs/_static/*
-include docs/_image/*
-include tests/*.py
-include tests/test.bat
+include docs/img/*
+include test/*.py
+include test/test.bat
 include setup.cfg

@@ -13,6 +13,7 @@ Created on August 5, 2019
 """
 
 from math import exp, log, log1p, ceil as ceiling, floor
+from functools import partial
 from itertools import starmap
 import warnings
 
@@ -27,13 +28,16 @@ from scipy.special import expi as ei, gammainc  # type: ignore
 from scipy.integrate import fixed_quad  # type: ignore
 
 from abc import ABC, abstractmethod
-from typing import (TypeVar, Type, List, Dict, Tuple, Any,
+from typing import (TypeVar, Type, List, Dict, Tuple, Any, NoReturn,
                     Sequence, Iterator, Optional, Callable, ClassVar, Union)
 from typing import cast
 
 
 DAYS_PER_MONTH = 365.25 / 12.0
 DAYS_PER_YEAR = 365.25
+
+
+_Self = TypeVar('_Self', bound='DeclineCurve')
 
 
 @dataclass(frozen=True)
@@ -344,7 +348,7 @@ class DeclineCurve(ABC):
         raise NotImplementedError
 
     @classmethod
-    def from_params(cls: Type['DeclineCurve'], params: Sequence[float]) -> 'DeclineCurve':
+    def from_params(cls: Type[_Self], params: Sequence[float]) -> _Self:
         """
         Construct a model from a sequence of parameters.
         """
@@ -370,14 +374,6 @@ class DeclineCurve(ABC):
             t0 = t1
         return
 
-    @staticmethod
-    def get_time() -> ndarray:
-        return get_time()
-
-    @staticmethod
-    def get_time_monthly_vol() -> ndarray:
-        return get_time_monthly_vol()
-
 
 class PrimaryPhase(DeclineCurve):
     """
@@ -385,6 +381,11 @@ class PrimaryPhase(DeclineCurve):
     Adds the capability to link a secondary (associated) phase model.
     """
     secondary: 'SecondaryPhase'
+    water: 'WaterPhase'
+
+    @staticmethod
+    def removed_method(t: Union[float, ndarray], phase: str, method: str) -> NoReturn:
+        raise ValueError(f'This instance is a {phase} phase and has no `{method}` method.')
 
     def _set_defaults(self) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
@@ -392,6 +393,8 @@ class PrimaryPhase(DeclineCurve):
         secondary = NullSecondaryPhase()
         object.__setattr__(secondary, 'primary', self)
         object.__setattr__(self, 'secondary', secondary)
+        object.__setattr__(secondary, 'water', self)
+        object.__setattr__(self, 'water', secondary)
 
     def add_secondary(self, secondary: 'SecondaryPhase') -> None:
         """
@@ -406,9 +409,41 @@ class PrimaryPhase(DeclineCurve):
         -------
           None
         """
+        # remove WOR if it exists
+        if hasattr(secondary, 'wor'):
+            object.__setattr__(secondary, 'wor', partial(
+                self.removed_method, phase='secondary', method='wor'))
+
         # bypass the "frozen" protection to link to the secondary phase
         object.__setattr__(secondary, 'primary', self)
         object.__setattr__(self, 'secondary', secondary)
+
+    def add_water(self, water: 'WaterPhase') -> None:
+        """
+        Attach a water phase model to this primary phase model.
+
+        Parameters
+        ----------
+          water: WaterPhase
+            A model that inherits the :class:`WaterPhase` class.
+
+        Returns
+        -------
+          None
+        """
+        # remove GOR if it exists
+        if hasattr(water, 'gor'):
+            object.__setattr__(water, 'gor', partial(
+                self.removed_method, phase='water', method='gor'))
+
+        # remove CGR if it exists
+        if hasattr(water, 'cgr'):
+            object.__setattr__(water, 'cgr', partial(
+                self.removed_method, phase='water', method='cgr'))
+
+        # bypass the "frozen" protection to link to the water phase
+        object.__setattr__(water, 'primary', self)
+        object.__setattr__(self, 'water', water)
 
 
 class SecondaryPhase(DeclineCurve):
@@ -460,6 +495,45 @@ class SecondaryPhase(DeclineCurve):
         -------
           CGR: numpy.ndarray[float]
             The condensate-gas ratio in units of ``MMscf / Bbl``.
+        """
+        t = self._validate_ndarray(t)
+        return self._yieldfn(t)
+
+    @abstractmethod
+    def _yieldfn(self, t: ndarray) -> ndarray:
+        raise NotImplementedError
+
+
+class WaterPhase(DeclineCurve):
+    """
+    Extends :class:`DeclineCurve` for a water (associated) phase forecast.
+    Adds the capability to link a primary phase model.
+    Defines the :meth:`wor` function. Each model must implement the
+    defined abstract method.
+
+    """
+    primary: 'PrimaryPhase'
+
+    def _set_defaults(self) -> None:
+        # this is a little naughty: bypass the "frozen" protection, just this once...
+        # naturally, this should only be called during the __post_init__ process
+        primary = NullPrimaryPhase()
+        object.__setattr__(primary, 'water', self)
+        object.__setattr__(self, 'primary', primary)
+
+    def wor(self, t: Union[float, ndarray]) -> ndarray:
+        """
+        Defines the model WOR function.
+
+        Parameters
+        ----------
+          t: Union[float, numpy.ndarray[float]]
+            An array of times at which to evaluate the function.
+
+        Returns
+        -------
+          WOR: numpy.ndarray[float]
+            The water-oil ratio function in units of ``Bbl / Bbl``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)

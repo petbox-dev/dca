@@ -30,6 +30,16 @@ Secondary Phase Models
     PLYield
 
 
+Water Phase Models
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. currentmodule:: petbox.dca
+
+.. autosummary::
+
+    PLYield
+
+
 Model Functions
 ~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -45,6 +55,9 @@ All Models
     D
     beta
     b
+    get_param_desc
+    get_param_descs
+    from_params
 
 
 Primary Phase Models
@@ -53,6 +66,7 @@ Primary Phase Models
 
 .. autosummary::
     add_secondary
+    add_water
 
 
 Secondary Phase Models
@@ -62,6 +76,14 @@ Secondary Phase Models
 .. autosummary::
     gor
     cgr
+
+
+Water Phase Models
+
+.. currentmodule:: petbox.dca.WaterPhase
+
+.. autosummary::
+    wor
 
 
 Transient Hyperbolic Specific
@@ -107,15 +129,26 @@ These classes define the basic functions that are exposed by all decline curve m
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
+
 
 .. autoclass:: PrimaryPhase
 
     .. automethod:: add_secondary
+    .. automethod:: add_water
+
 
 .. autoclass:: SecondaryPhase
 
     .. automethod:: gor
     .. automethod:: cgr
+
+
+.. autoclass:: WaterPhase
+
+    .. automethod:: wor
 
 
 Primary Phase Models
@@ -136,6 +169,7 @@ Implementations of primary phase decline curve models
     .. automethod:: transient_beta
     .. automethod:: transient_b
 
+
 .. autoclass:: MH
 
     .. automethod:: rate
@@ -143,6 +177,10 @@ Implementations of primary phase decline curve models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
+
 
 .. autoclass:: PLE
 
@@ -151,6 +189,10 @@ Implementations of primary phase decline curve models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
+
 
 .. autoclass:: SE
 
@@ -159,6 +201,10 @@ Implementations of primary phase decline curve models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
+
 
 .. autoclass:: Duong
 
@@ -167,6 +213,9 @@ Implementations of primary phase decline curve models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
 
 
 Secondary Phase Models
@@ -183,6 +232,9 @@ Implementations of secondary (associated) phase GOR/CGR models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
 
 
 Utility Functions
