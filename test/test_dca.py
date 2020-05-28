@@ -23,7 +23,9 @@ from math import isnan
 import numpy as np
 
 from petbox import dca
-from data import rate as q_data, time as t_data
+
+# local import
+from data import rate as q_data, time as t_data  # noqa
 
 
 def signif(x: np.ndarray, p: int) -> np.ndarray:
