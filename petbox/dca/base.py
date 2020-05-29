@@ -178,10 +178,9 @@ class DeclineCurve(ABC):
         t0 = cast(ndarray, np.atleast_1d(t0).astype(float))
         return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0))
 
-    def monthly_vol(self, t: Union[float, ndarray], t0: Optional[Union[float, ndarray]] = None,
-                    **kwargs: Any) -> ndarray:
+    def monthly_vol(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
-        Defines the model interval volume function transformed to equivalent monthly volumes:
+        Defines the model fixed monthly interval volume function:
 
         .. math::
 
@@ -203,11 +202,9 @@ class DeclineCurve(ABC):
             monthly equivalent volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
-        if t0 is None:
-            t0 = 0.0
-        t0 = cast(ndarray, np.atleast_1d(t0).astype(float))
-        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0)) \
-            / np.diff(t, prepend=t0) * DAYS_PER_MONTH
+        return np.where(t < DAYS_PER_MONTH,
+                        0.0,
+                        self._Nfn(t, **kwargs) - self._Nfn(t - DAYS_PER_MONTH, **kwargs))
 
     def D(self, t: Union[float, ndarray]) -> ndarray:
         """
@@ -451,6 +448,7 @@ class AssociatedPhase(DeclineCurve):
     Extends :class:`DeclineCurve` for an associated phase forecast.
     Each model must implement the defined abstract :meth:`_yieldfn` method.
     """
+
     def _set_default(self, model: 'AssociatedPhase', name: str) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
