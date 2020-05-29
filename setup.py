@@ -34,6 +34,11 @@ def get_long_description() -> str:
         ':noindex:',
     ]
 
+    subs = [
+        r':func:`([a-zA-Z0-9._]+)`',
+        r':meth:`([a-zA-Z0-9._]+)`',
+    ]
+
     def replace(s: str) -> str:
         for r in replacements:
             s = s.replace(r, '')
@@ -49,14 +54,10 @@ def get_long_description() -> str:
             lines.append(line)
 
     version_history = ''.join(lines)
-    version_history = re.sub(r':func:`([a-zA-Z0-9._]+)`', r'\1', version_history)
-
-    for l in version_history:
-        if ':noindex:' in l:
-            print("STILL HERE")
+    for sub in subs:
+        version_history = re.sub(sub, r'\1', version_history)
 
     return readme + '\n\n' + version_history
-
 
 if sys.argv[-1] == 'build':
     print(f'\nBuilding version {__version__}...\n')
