@@ -40,7 +40,7 @@ class NullPrimaryPhase(PrimaryPhase):
 
     Parameters
     ----------
-      None
+        None
     """
 
     def _set_defaults(self) -> None:
@@ -118,11 +118,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return np.full_like(t, q, dtype=float)
 
         if b < 1e-10:
-            with warnings.catch_warnings(record=True) as w:
-                return q * np.exp(-D * dt)
+            return q * np.exp(-D * dt)
 
-        with warnings.catch_warnings(record=True) as w:
-            return q / (1.0 + D * b * dt) ** (1.0 / b)
+        return q / (1.0 + D * b * dt) ** (1.0 / b)
 
     @staticmethod
     def _Ncheck(t0: float, q: float, D: float, b: float, N: float,
@@ -139,14 +137,12 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return np.atleast_1d(N + q * dt)
 
         if b <= 1e-6:
-            with warnings.catch_warnings(record=True) as w:
-                return N + -q / D * np.expm1(-D * dt)
+            return N + -q / D * np.expm1(-D * dt)
 
         if abs(1.0 - b) == 0.0:
             return N + q / D * np.log1p(D * dt)
 
-        with warnings.catch_warnings(record=True) as w:
-            return N + q / ((1.0 - b) * D) * (1.0 - (1.0 + b * D * dt) ** (1.0 - 1.0 / b))
+        return N + q / ((1.0 - b) * D) * (1.0 - (1.0 + b * D * dt) ** (1.0 - 1.0 / b))
 
     @staticmethod
     def _Dcheck(t0: float, q: float, D: float, b: float, N: float,
@@ -212,19 +208,17 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def nominal_from_secant(cls, D: float, b: float) -> float:
-        with warnings.catch_warnings(record=True) as w:
-            if b != 0:
-                return ((1.0 - D) ** -b - 1.0) / b
-            else:
-                return cls.nominal_from_tangent(D)
+        if b != 0:
+            return ((1.0 - D) ** -b - 1.0) / b
+        else:
+            return cls.nominal_from_tangent(D)
 
     @classmethod
     def secant_from_nominal(cls, D: float, b: float) -> float:
-        with warnings.catch_warnings(record=True) as w:
-            if b != 0:
-                return 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
-            else:
-                return cls.tangent_from_nominal(D)
+        if b != 0:
+            return 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
+        else:
+            return cls.tangent_from_nominal(D)
 
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
@@ -245,23 +239,23 @@ class MH(MultisegmentHyperbolic):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day``.
+        qi: float
+            The initial production rate in units of ``volume / day``.
 
-      Di: float
-        The initial decline rate in secant effective decline aka annual
-        effective percent decline, i.e.
-        ``Di = 1 - q(t=1 year) / qi``, or
-        ``Di = 1 - (1 + Dnom * b * 365.25) ** (-1 / b)``
+        Di: float
+            The initial decline rate in secant effective decline aka annual
+            effective percent decline, i.e.
+            ``Di = 1 - q(t=1 year) / qi``, or
+            ``Di = 1 - (1 + Dnom * b * 365.25) ** (-1 / b)``
 
-        where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+            where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
 
-      bi: float
-        The (initial) hyperbolic parameter, defined as ``d[1 / D] / dt``.
-        This parameter is dimensionless.
+        bi: float
+            The (initial) hyperbolic parameter, defined as ``d[1 / D] / dt``.
+            This parameter is dimensionless.
 
-      Dterm: float
-        The terminal secant effective decline rate aka annual effective percent decline.
+        Dterm: float
+            The terminal secant effective decline rate aka annual effective percent decline.
     """
     qi: float
     Di: float
@@ -339,48 +333,48 @@ class THM(MultisegmentHyperbolic):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day``.
+        qi: float
+            The initial production rate in units of ``volume / day``.
 
-      Di: float
-        The initial decline rate in secant effective decline aka annual
-        effective percent decline, i.e.
+        Di: float
+            The initial decline rate in secant effective decline aka annual
+            effective percent decline, i.e.
 
-        .. math::
+            .. math::
 
-            Di = 1 - \\frac{q(t=1 \, year)}{qi}
+                Di = 1 - \\frac{q(t=1 \, year)}{qi}
 
-        .. math::
+            .. math::
 
             Di = 1 - \\frac{(1 + 365.25 \, D_{nom} \, b)}{1 / b}
 
-        where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+                where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
 
-      bi: float
-        The initial hyperbolic parameter, defined as ``d[1 / D] / dt``. Is dimensionless.
-        Advised to always be set to ``2.0`` to represent transient linear flow.
-        See literature for more details.
+        bi: float
+            The initial hyperbolic parameter, defined as ``d[1 / D] / dt``. Is dimensionless.
+            Advised to always be set to ``2.0`` to represent transient linear flow.
+            See literature for more details.
 
-      bi: float
-        The final hyperbolic parameter after transition. Represents the boundary-dominated or
-        boundary-influenced flow regime.
+        bi: float
+            The final hyperbolic parameter after transition. Represents the boundary-dominated or
+            boundary-influenced flow regime.
 
-      telf: float
-        The time to end of linear flow in units of ``day``, or more specifically the time at
-        which ``b(t) < bi``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
+        telf: float
+            The time to end of linear flow in units of ``day``, or more specifically the time at
+            which ``b(t) < bi``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
 
-      bterm: Optional[float] = None
-        The terminal value of the hyperbolic parameter. Has two interpretations:
+        bterm: Optional[float] = None
+            The terminal value of the hyperbolic parameter. Has two interpretations:
 
-        If ``tterm > 0`` then the terminal regime is a hyperbolic regime with ``b = bterm``
-        and the parameter is given as the hyperbolic parameter.
+            If ``tterm > 0`` then the terminal regime is a hyperbolic regime with ``b = bterm``
+            and the parameter is given as the hyperbolic parameter.
 
-        If ``tterm = 0`` then the terminal regime is an exponential regime with ``Dterm = bterm``
-        and the parameter is given as secant effective decline.
+            If ``tterm = 0`` then the terminal regime is an exponential regime with
+            ``Dterm = bterm`` and the parameter is given as secant effective decline.
 
-      tterm: Optional[float] = None
-        The time to start of the terminal regime. Setting ``tterm = 0.0`` creates an exponential
-        terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic terminal regime.
+        tterm: Optional[float] = None
+            The time to start of the terminal regime. Setting ``tterm = 0.0`` creates an exponential
+            terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic terminal regime.
     """
     qi: float
     Di: float
@@ -395,12 +389,10 @@ class THM(MultisegmentHyperbolic):
 
     def _validate(self) -> None:
         # TODO: do we want to deal with optional params at all?
-        # if (self.bterm is None and tterm is not None) or (bterm is not None and tterm is None):
-        #     raise ValueError('Must supply both or none of tterm and bterm.')
         if self.bi < self.bf:
             raise ValueError('bi < bf')
         if self.bf < self.bterm and self.tterm != 0.0:
-            # raise ValueError('bf < bterm and tterm != 0')
+            raise ValueError('bf < bterm and tterm != 0')
             # cheat to fix this
             # object.__setattr__(self, 'bterm', self.bf)
             pass
@@ -502,15 +494,15 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
-          **kwargs
-            Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
+            **kwargs
+                Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transqfn(t, **kwargs)
@@ -526,15 +518,15 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
-          **kwargs
-            Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
+            **kwargs
+                Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transNfn(t, **kwargs)
@@ -551,12 +543,12 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transDfn(t)
@@ -573,12 +565,12 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transDfn(t) * t
@@ -600,25 +592,23 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transbfn(t)
 
     def _transNfn(self, t: ndarray, **kwargs: Any) -> ndarray:
-        with warnings.catch_warnings(record=True) as w:
-            return self._integrate_with(self._transqfn, t, **kwargs)
+        return self._integrate_with(self._transqfn, t, **kwargs)
 
     def _transqfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         qi = self.qi
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
-        with warnings.catch_warnings(record=True) as w:
-            return qi * np.exp(Dnom_i - self._integrate_with(self._transDfn, t, **kwargs))
+        return qi * np.exp(Dnom_i - self._integrate_with(self._transDfn, t, **kwargs))
 
     def _transDfn(self, t: ndarray) -> ndarray:
 
@@ -641,13 +631,12 @@ class THM(MultisegmentHyperbolic):
         if telf > 0.001:
             # transient function
             c = self.EXP_GAMMA / (1.5 * telf)
-            with warnings.catch_warnings(record=True) as w:
-                D = 1.0 / (
-                    1.0 / Dnom_i
-                    + bi * t
-                    + (bi - bf) / c * ei(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
-                    - ei(-np.exp(c * telf + self.EXP_GAMMA))
-                )
+            D = 1.0 / (
+                1.0 / Dnom_i
+                + bi * t
+                + (bi - bf) / c * ei(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
+                - ei(-np.exp(c * telf + self.EXP_GAMMA))
+            )
 
         else:
             # telf is too small to compute transient function
@@ -764,18 +753,18 @@ class PLE(PrimaryPhase):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day``.
+        qi: float
+            The initial production rate in units of ``volume / day``.
 
-      Di: float
-        The initial decline rate in nominal decline rate defined as ``d[ln q] / dt``
-        and has units of ``1 / day``.
+        Di: float
+            The initial decline rate in nominal decline rate defined as ``d[ln q] / dt``
+            and has units of ``1 / day``.
 
-      Dterm: float
-        The terminal decline rate in nominal decline rate, has units of ``1 / day``.
+        Dterm: float
+            The terminal decline rate in nominal decline rate, has units of ``1 / day``.
 
-      n: float
-        The n exponent.
+        n: float
+            The n exponent.
     """
     qi: float
     Di: float
@@ -794,8 +783,7 @@ class PLE(PrimaryPhase):
         return qi * np.exp(-Di * t ** n - Dinf * t)
 
     def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
-        with warnings.catch_warnings(record=True) as w:
-            return self._integrate_with(self._qfn, t, **kwargs)
+        return self._integrate_with(self._qfn, t, **kwargs)
 
     def _Dfn(self, t: ndarray) -> ndarray:
         Di = self.Di
@@ -859,18 +847,18 @@ class SE(PrimaryPhase):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day``.
+        qi: float
+            The initial production rate in units of ``volume / day``.
 
-      tau: float
-        The tau parameter in units of ``day ** n``. Equivalent to:
+        tau: float
+            The tau parameter in units of ``day ** n``. Equivalent to:
 
-        .. math::
+            .. math::
 
-            \\tau = D^n
+                \\tau = D^n
 
-      n: float
-        The ``n`` exponent.
+        n: float
+            The ``n`` exponent.
     """
     qi: float
     tau: float
@@ -938,14 +926,15 @@ class Duong(PrimaryPhase):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day`` *defined at ``t=1 day``*.
+        qi: float
+            The initial production rate in units of ``volume / day`` *defined at ``t=1 day``*.
 
-      a: float
-        The ``a`` parameter. Roughly speaking, controls slope of the :func:``q(t)`` function.
+        a: float
+            The ``a`` parameter. Roughly speaking, controls slope of the :func:``q(t)`` function.
 
-      m: float
-        The ``m`` parameter. Roughly speaking, controls curvature of the :func:``q(t)`` function.
+        m: float
+            The ``m`` parameter. Roughly speaking, controls curvature of the:func:``q(t)``
+            function.
     """
     qi: float
     a: float
@@ -955,18 +944,14 @@ class Duong(PrimaryPhase):
         qi = self.qi
         a = self.a
         m = self.m
-        with warnings.catch_warnings(record=True) as w:
-            q = np.where(t == 0.0, 0.0,
-                         qi * t ** -m * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
-        return q
+        return np.where(t == 0.0, 0.0,
+                        qi * t ** -m * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
 
     def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         qi = self.qi
         a = self.a
         m = self.m
-        with warnings.catch_warnings(record=True) as w:
-            N = np.where(t == 0.0, 0.0, qi / a * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
-        return N
+        return np.where(t == 0.0, 0.0, qi / a * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
 
     def _Dfn(self, t: ndarray) -> ndarray:
         a = self.a
@@ -989,9 +974,8 @@ class Duong(PrimaryPhase):
         a = self.a
         m = self.m
         Denom = a * t - m * t ** m
-        with warnings.catch_warnings(record=True) as w:
-            return np.where(
-                Denom == 0.0, 0.0, m * t ** m * (t ** m - a * t) / (Denom * Denom))
+        return np.where(
+            Denom == 0.0, 0.0, m * t ** m * (t ** m - a * t) / (Denom * Denom))
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:

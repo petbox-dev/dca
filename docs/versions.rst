@@ -6,6 +6,17 @@ Version History
    :noindex:
 
 
+1.0.6
+-----
+
+* New functions
+    * Added ``WaterPhase`` class
+    * Added ``WaterPhase.wor`` method
+    * Added ``PrimaryPhase.add_water`` method
+
+* Other Changes
+    * A ``yield`` model may inherit both ``SecondaryPhase`` and ``WaterPhase``, with the respective methods removed upon attachment to a ``PrimaryPhase``.
+
 1.0.5
 -----
 

@@ -32,6 +32,8 @@ Analytic functions are implemented wherever possible. When not possible, numeric
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Secondary Phase        | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_                                    |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Water Phase            | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_                                    |
++------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 
 The following functions are exposed for use
 
@@ -48,14 +50,17 @@ The following functions are exposed for use
 |                        | `transient_beta(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_beta>`_,                      |
 |                        | `transient_b(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_b>`_                             |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Primary Phase          | `add_secondary(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_secondary>`_              |
+| Primary Phase          | `add_secondary <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_secondary>`_,                  |
+|                        | `add_water <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_water>`_                           |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Secondary Phase        | `gor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.gor>`_,                                 |
 |                        | `cgr(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.cgr>`_                                  |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Utility                | `bourdet(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.bourdet>`_,                                      |
-|                        | `get_time(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                    |
-|                        | `get_time_monthly_vol(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time_monthly_vol>`_             |
+| Water Phase            | `wor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.WaterPhase.wor>`_                                      |
++------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Utility                | `bourdet <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.bourdet>`_,                                           |
+|                        | `get_time <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                         |
+|                        | `get_time_monthly_vol <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time_monthly_vol>`_                  |
 +------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 
 
@@ -75,18 +80,22 @@ A default time array of evenly-logspaced values over 5 log cycles is provided as
 
     >>> from petbox import dca
     >>> t = dca.get_time()
-    >>> mh = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)2
+    >>> mh = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)
     >>> mh.rate(t)
     array([986.738, 982.789, 977.692, ..., 0.000])
 
 
-We can also attach a secondary phase model, and evaluate the rate just as easily.
+We can also attach secondary phase and water phase models, and evaluate the rate just as easily.
 
 .. code-block:: python
 
     >>> mh.add_secondary(dca.PLYield(c=1200.0, m0=0.0, m=0.6, t0=180.0, min=None, max=20_000.0))
     >>> mh.secondary.rate(t)
     array([1184.086, 1179.346, 1173.231, ..., 0.000])
+
+    >>> mh.add_water(dca.PLYield(c=2.0, m0=0.0, m=0.1, t0=90.0, min=None, max=10.0))
+    >>> mh.water.rate(t)
+    array([1.950, 1.935, 1.917, ..., 0.000])
 
 
 Once instantiated, the same functions and process for attaching a secondary phase work for any model.
@@ -121,7 +130,7 @@ Applying the above, we can easily evaluate each model against a data set.
 
     >>> ax1.plot(t_data, rate_data, 'o')
     >>> ax2.plot(t_data, cum_data, 'o')
-    
+
     >>> ax1.plot(t, thm.rate(t))
     >>> ax2.plot(t, thm.cum(t) * cum_data[-1] / thm.cum(t_data[-1]))  # normalization
 
