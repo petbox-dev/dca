@@ -10,12 +10,12 @@ Version History
 -----
 
 * New functions
-    * Added :class:`WaterPhase` class
-    * Added :meth:`WaterPhase.wor` method
-    * Added :meth:`PrimaryPhase.add_water` method
+    * Added ``WaterPhase`` class
+    * Added ``WaterPhase.wor`` method
+    * Added ``PrimaryPhase.add_water`` method
 
 * Other Changes
-    * A ``yield`` model may inherit both :class:`SecondaryPhase` and :class:`WaterPhase`, with the respective methods removed upon attachment to a :class:`PrimaryPhase`.
+    * A ``yield`` model may inherit both ``SecondaryPhase`` and ``WaterPhase``, with the respective methods removed upon attachment to a ``PrimaryPhase``.
 
 1.0.5
 -----

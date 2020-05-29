@@ -40,7 +40,7 @@ class NullPrimaryPhase(PrimaryPhase):
 
     Parameters
     ----------
-      None
+        None
     """
 
     def _set_defaults(self) -> None:
@@ -239,23 +239,23 @@ class MH(MultisegmentHyperbolic):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day``.
+        qi: float
+            The initial production rate in units of ``volume / day``.
 
-      Di: float
-        The initial decline rate in secant effective decline aka annual
-        effective percent decline, i.e.
-        ``Di = 1 - q(t=1 year) / qi``, or
-        ``Di = 1 - (1 + Dnom * b * 365.25) ** (-1 / b)``
+        Di: float
+            The initial decline rate in secant effective decline aka annual
+            effective percent decline, i.e.
+            ``Di = 1 - q(t=1 year) / qi``, or
+            ``Di = 1 - (1 + Dnom * b * 365.25) ** (-1 / b)``
 
-        where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+            where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
 
-      bi: float
-        The (initial) hyperbolic parameter, defined as ``d[1 / D] / dt``.
-        This parameter is dimensionless.
+        bi: float
+            The (initial) hyperbolic parameter, defined as ``d[1 / D] / dt``.
+            This parameter is dimensionless.
 
-      Dterm: float
-        The terminal secant effective decline rate aka annual effective percent decline.
+        Dterm: float
+            The terminal secant effective decline rate aka annual effective percent decline.
     """
     qi: float
     Di: float
@@ -333,48 +333,48 @@ class THM(MultisegmentHyperbolic):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day``.
+        qi: float
+            The initial production rate in units of ``volume / day``.
 
-      Di: float
-        The initial decline rate in secant effective decline aka annual
-        effective percent decline, i.e.
+        Di: float
+            The initial decline rate in secant effective decline aka annual
+            effective percent decline, i.e.
 
-        .. math::
+            .. math::
 
-            Di = 1 - \\frac{q(t=1 \, year)}{qi}
+                Di = 1 - \\frac{q(t=1 \, year)}{qi}
 
-        .. math::
+            .. math::
 
             Di = 1 - \\frac{(1 + 365.25 \, D_{nom} \, b)}{1 / b}
 
-        where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+                where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
 
-      bi: float
-        The initial hyperbolic parameter, defined as ``d[1 / D] / dt``. Is dimensionless.
-        Advised to always be set to ``2.0`` to represent transient linear flow.
-        See literature for more details.
+        bi: float
+            The initial hyperbolic parameter, defined as ``d[1 / D] / dt``. Is dimensionless.
+            Advised to always be set to ``2.0`` to represent transient linear flow.
+            See literature for more details.
 
-      bi: float
-        The final hyperbolic parameter after transition. Represents the boundary-dominated or
-        boundary-influenced flow regime.
+        bi: float
+            The final hyperbolic parameter after transition. Represents the boundary-dominated or
+            boundary-influenced flow regime.
 
-      telf: float
-        The time to end of linear flow in units of ``day``, or more specifically the time at
-        which ``b(t) < bi``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
+        telf: float
+            The time to end of linear flow in units of ``day``, or more specifically the time at
+            which ``b(t) < bi``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
 
-      bterm: Optional[float] = None
-        The terminal value of the hyperbolic parameter. Has two interpretations:
+        bterm: Optional[float] = None
+            The terminal value of the hyperbolic parameter. Has two interpretations:
 
-        If ``tterm > 0`` then the terminal regime is a hyperbolic regime with ``b = bterm``
-        and the parameter is given as the hyperbolic parameter.
+            If ``tterm > 0`` then the terminal regime is a hyperbolic regime with ``b = bterm``
+            and the parameter is given as the hyperbolic parameter.
 
-        If ``tterm = 0`` then the terminal regime is an exponential regime with ``Dterm = bterm``
-        and the parameter is given as secant effective decline.
+            If ``tterm = 0`` then the terminal regime is an exponential regime with ``Dterm = bterm``
+            and the parameter is given as secant effective decline.
 
-      tterm: Optional[float] = None
-        The time to start of the terminal regime. Setting ``tterm = 0.0`` creates an exponential
-        terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic terminal regime.
+        tterm: Optional[float] = None
+            The time to start of the terminal regime. Setting ``tterm = 0.0`` creates an exponential
+            terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic terminal regime.
     """
     qi: float
     Di: float
@@ -494,15 +494,15 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
-          **kwargs
-            Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
+            **kwargs
+                Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transqfn(t, **kwargs)
@@ -518,15 +518,15 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
-          **kwargs
-            Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
+            **kwargs
+                Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transNfn(t, **kwargs)
@@ -543,12 +543,12 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transDfn(t)
@@ -565,12 +565,12 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transDfn(t) * t
@@ -592,12 +592,12 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-          t: Union[float, numpy.ndarray[float]]
-            An array of time values to evaluate.
+            t: Union[float, numpy.ndarray[float]]
+                An array of time values to evaluate.
 
         Returns
         -------
-          numpy.ndarray[float]
+            numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
         return self._transbfn(t)
@@ -753,18 +753,18 @@ class PLE(PrimaryPhase):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day``.
+        qi: float
+            The initial production rate in units of ``volume / day``.
 
-      Di: float
-        The initial decline rate in nominal decline rate defined as ``d[ln q] / dt``
-        and has units of ``1 / day``.
+        Di: float
+            The initial decline rate in nominal decline rate defined as ``d[ln q] / dt``
+            and has units of ``1 / day``.
 
-      Dterm: float
-        The terminal decline rate in nominal decline rate, has units of ``1 / day``.
+        Dterm: float
+            The terminal decline rate in nominal decline rate, has units of ``1 / day``.
 
-      n: float
-        The n exponent.
+        n: float
+            The n exponent.
     """
     qi: float
     Di: float
@@ -847,18 +847,18 @@ class SE(PrimaryPhase):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day``.
+        qi: float
+            The initial production rate in units of ``volume / day``.
 
-      tau: float
-        The tau parameter in units of ``day ** n``. Equivalent to:
+        tau: float
+            The tau parameter in units of ``day ** n``. Equivalent to:
 
-        .. math::
+            .. math::
 
-            \\tau = D^n
+                \\tau = D^n
 
-      n: float
-        The ``n`` exponent.
+        n: float
+            The ``n`` exponent.
     """
     qi: float
     tau: float
@@ -926,14 +926,14 @@ class Duong(PrimaryPhase):
 
     Parameters
     ----------
-      qi: float
-        The initial production rate in units of ``volume / day`` *defined at ``t=1 day``*.
+        qi: float
+            The initial production rate in units of ``volume / day`` *defined at ``t=1 day``*.
 
-      a: float
-        The ``a`` parameter. Roughly speaking, controls slope of the :func:``q(t)`` function.
+        a: float
+            The ``a`` parameter. Roughly speaking, controls slope of the :func:``q(t)`` function.
 
-      m: float
-        The ``m`` parameter. Roughly speaking, controls curvature of the :func:``q(t)`` function.
+        m: float
+            The ``m`` parameter. Roughly speaking, controls curvature of the :func:``q(t)`` function.
     """
     qi: float
     a: float

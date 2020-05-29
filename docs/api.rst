@@ -122,6 +122,16 @@ Utility Functions
     get_time_monthly_vol
 
 
+Utility Constants
+-----------------
+
++--------------------------+-----------------------+
+| :attr:`DAYS_PER_MONTH`   | 365.25 / 12 = 30.4375 |
++--------------------------+-----------------------+
+| :attr:`DAYS_PER_YEAR`    | 365.25                |
++--------------------------+-----------------------+
+
+
 Detailed Reference
 ==================
 
@@ -255,3 +265,15 @@ Utility Functions
 .. autofunction:: bourdet
 .. autofunction:: get_time
 .. autofunction:: get_time_monthly_vol
+
+
+Other Classes
+-------------
+
+.. autoclass:: AssociatedPhase
+
+.. autoclass:: BothAssociatedPhase
+
+.. currentmodule:: petbox.dca.base
+
+.. autoclass:: ParamDesc

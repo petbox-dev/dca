@@ -240,7 +240,7 @@ class DeclineCurve(ABC):
                 An array of times at which to evaluate the function.
 
         Returns
-            -------
+        -------
           beta-parameter: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
@@ -322,11 +322,35 @@ class DeclineCurve(ABC):
     @classmethod
     @abstractmethod
     def get_param_descs(cls) -> List[ParamDesc]:
+        """
+        Get the parameter descriptions.
+
+        Parameters
+        ----------
+
+        Returns
+        -------
+            parameter description: List[:class:`ParamDesc`]
+                A list of parameter descriptions.
+        """
         raise NotImplementedError
 
     # don't call this in a loop - it's a utility for e.g. test suites
     @classmethod
     def get_param_desc(cls, name: str) -> ParamDesc:
+        """
+        Get a single parameter description.
+
+        Parameters
+        ----------
+            name: str
+                The parameter name.
+
+        Returns
+        -------
+            parameter description: :class:`ParamDesc`
+                A parameter description.
+        """
         for p in cls.get_param_descs():
             if p.name == name:
                 return p  # pragma: no cover
@@ -340,6 +364,14 @@ class DeclineCurve(ABC):
     def from_params(cls: Type[_Self], params: Sequence[float]) -> _Self:
         """
         Construct a model from a sequence of parameters.
+
+        Parameters
+        ----------
+
+        Returns
+        -------
+            decline curve: :class:`DeclineCurve`
+                The constructed decline curve model class.
         """
         if len(cls.get_param_descs()) != len(params):
             raise ValueError('Params sequence does not have required length')
@@ -405,8 +437,7 @@ class PrimaryPhase(DeclineCurve):
                 A model that inherits the :class:`SecondaryPhase` class.
 
         Returns
-            -------
-          None
+        -------
         """
         # remove WOR if it exists
         if hasattr(secondary, 'wor'):
@@ -428,7 +459,6 @@ class PrimaryPhase(DeclineCurve):
 
         Returns
         -------
-            None
         """
         # remove GOR if it exists
         if hasattr(water, 'gor'):

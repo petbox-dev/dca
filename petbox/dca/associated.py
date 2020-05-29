@@ -91,23 +91,23 @@ class PLYield(BothAssociatedPhase):
 
     Parameters
     ----------
-      c: float
-        The value of GOR that acts as the anchor or pivot at ``t=t0``.
+        c: float
+            The value of GOR that acts as the anchor or pivot at ``t=t0``.
 
-      m0: float
-        Early-time power-law slope.
+        m0: float
+            Early-time power-law slope.
 
-      m: float
-        Late-time power-law slope.
+        m: float
+            Late-time power-law slope.
 
-      t0: float
-        The time of the anchor or pivot value ``c``.
+        t0: float
+            The time of the anchor or pivot value ``c``.
 
-      min: Optional[float] = None
-        The minimum allowed value. Would be used e.g. to limit minimum CGR.
+        min: Optional[float] = None
+            The minimum allowed value. Would be used e.g. to limit minimum CGR.
 
-      max: Optional[float] = None
-        The maximum allowed value. Would be used e.g. to limit maximum GOR.
+        max: Optional[float] = None
+            The maximum allowed value. Would be used e.g. to limit maximum GOR.
     """
     c: float
     m0: float
