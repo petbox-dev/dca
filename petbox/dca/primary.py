@@ -369,8 +369,8 @@ class THM(MultisegmentHyperbolic):
             If ``tterm > 0`` then the terminal regime is a hyperbolic regime with ``b = bterm``
             and the parameter is given as the hyperbolic parameter.
 
-            If ``tterm = 0`` then the terminal regime is an exponential regime with ``Dterm = bterm``
-            and the parameter is given as secant effective decline.
+            If ``tterm = 0`` then the terminal regime is an exponential regime with
+            ``Dterm = bterm`` and the parameter is given as secant effective decline.
 
         tterm: Optional[float] = None
             The time to start of the terminal regime. Setting ``tterm = 0.0`` creates an exponential
@@ -933,7 +933,8 @@ class Duong(PrimaryPhase):
             The ``a`` parameter. Roughly speaking, controls slope of the :func:``q(t)`` function.
 
         m: float
-            The ``m`` parameter. Roughly speaking, controls curvature of the :func:``q(t)`` function.
+            The ``m`` parameter. Roughly speaking, controls curvature of the:func:``q(t)``
+            function.
     """
     qi: float
     a: float
