@@ -179,7 +179,7 @@ def check_yield_model(model: Union[dca.SecondaryPhase, dca.WaterPhase],
             # assert is_monotonic_nondecreasing(cum)
         assert np.all(np.isfinite(cum))
 
-        mvolume = model.monthly_vol(t, t0=t0)
+        mvolume = model.monthly_vol(t)
         mavg_rate = np.gradient(mvolume, t)
         # assert is_float_array_like(mvolume, t)
         # assert is_monotonic_nonincreasing(mavg_rate)

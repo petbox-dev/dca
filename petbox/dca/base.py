@@ -12,7 +12,7 @@ Notes
 Created on August 5, 2019
 """
 
-from math import exp, log, log1p, ceil as ceiling, floor
+from math import exp, log, log10, log1p, ceil as ceiling, floor
 from functools import partial
 from itertools import starmap
 import warnings
@@ -71,7 +71,7 @@ def get_time(start: float = 1.0, end: float = 1e5, n: int = 101) -> ndarray:
         time: numpy.ndarray[float]
             An evenly-logspaced time series.
     """
-    return 10.0 ** np.linspace(log(start), log(end), n)
+    return 10.0 ** np.linspace(log10(start), log10(end), n)
 
 
 def get_time_monthly_vol(start: float = 1, end: int = 10_000) -> ndarray:
@@ -176,7 +176,7 @@ class DeclineCurve(ABC):
         if t0 is None:
             t0 = t[0]
         t0 = cast(ndarray, np.atleast_1d(t0).astype(float))
-        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0))
+        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
 
     def monthly_vol(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
@@ -290,14 +290,6 @@ class DeclineCurve(ABC):
     def _bfn(self, t: ndarray) -> ndarray:
         raise NotImplementedError
 
-    def _integrate_with(self, fn: Callable[[ndarray], ndarray], t: ndarray,
-                        **kwargs: Any) -> ndarray:
-        kwargs.setdefault('n', 100)
-        return np.cumsum(list(starmap(
-            lambda t0, t1: fixed_quad(fn, t0, t1, **kwargs)[0],
-            self._iter_t(t)
-        )))
-
     def _validate(self) -> None:
         # this will be called by the __post_init__ hook - subclasses should
         #   do any necessary additional validation or caching here
@@ -370,6 +362,16 @@ class DeclineCurve(ABC):
             yield(t0, t1)
             t0 = t1
         return
+
+    def _integrate_with(self, fn: Callable[[ndarray], ndarray], t: ndarray,
+                        **kwargs: Any) -> ndarray:
+        kwargs.setdefault('n', 100)
+        integral = np.array(list(starmap(
+            lambda t0, t1: fixed_quad(fn, t0, t1, **kwargs)[0],
+            self._iter_t(t)
+        )), dtype=float)
+        integral[np.isnan(integral)] = 0.0
+        return np.cumsum(integral)
 
 
 class PrimaryPhase(DeclineCurve):
