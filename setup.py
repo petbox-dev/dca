@@ -14,7 +14,7 @@ Created on August 5, 2019
 
 import os
 import sys
-from re import sub
+import re
 
 from petbox.dca import __version__
 
@@ -49,7 +49,7 @@ def get_long_description() -> str:
             lines.append(line)
 
     version_history = ''.join(lines)
-    version_history = sub(r':func:`([a-zA-Z0-9._]+)`', r'\1', version_history)
+    version_history = re.sub(r':func:`([a-zA-Z0-9._]+)`', r'\1', version_history)
 
     for l in version_history:
         if ':noindex:' in l:
