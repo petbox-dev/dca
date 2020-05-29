@@ -72,7 +72,7 @@ setup(
     long_description_content_type="text/x-rst",
     url='https://github.com/petbox-dev/dca',
     author='David S. Fulford',
-    author_email='dsfulford@gmail.com',
+    author_email='petbox-dev@gmail.com',
     license='MIT',
     install_requires=['numpy>=1.17', 'scipy'],
     zip_safe=False,
