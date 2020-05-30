@@ -12,10 +12,10 @@
 #
 import os
 import sys
-import sphinx_rtd_theme  # type: ignore
+
+sys.path.insert(0, os.path.abspath('..'))
 from petbox import dca
 
-sys.path.insert(0, os.path.abspath('.'))
 
 # -- Project information -----------------------------------------------------
 
