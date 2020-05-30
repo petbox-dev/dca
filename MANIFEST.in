@@ -6,6 +6,10 @@ include docs/make.bat
 include docs/conf.py
 include docs/_static/*
 include docs/img/*
+include docs/requirements.txt
 include test/*.py
 include test/test.bat
+include test/test.sh
+include .coveragerc
+include dev-requirements.txt
 include setup.cfg
