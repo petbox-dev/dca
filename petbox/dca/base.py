@@ -480,8 +480,19 @@ class AssociatedPhase(DeclineCurve):
     Extends :class:`DeclineCurve` for an associated phase forecast.
     Each model must implement the defined abstract :meth:`_yieldfn` method.
     """
+    primary = 'PrimaryPhase'
 
     def _set_default(self, model: 'AssociatedPhase', name: str) -> None:
+        # this is a little naughty: bypass the "frozen" protection, just this once...
+        # naturally, this should only be called during the __post_init__ process
+        if hasattr(model, 'primary'):
+            primary = getattr(model, 'primary')
+        else:
+            primary = NullPrimaryPhase()
+        object.__setattr__(primary, name, model)
+        object.__setattr__(model, 'primary', primary)
+
+    def _set_phase(self, model: 'AssociatedPhase', name: str) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
         if hasattr(model, 'primary'):
@@ -503,8 +514,6 @@ class SecondaryPhase(AssociatedPhase):
     Defines the :meth:`gor` and :meth:`cgr` functions. Each model must implement the
     defined abstract method.
     """
-    primary: 'PrimaryPhase'
-
     def _set_defaults(self) -> None:
         super()._set_default(self, 'secondary')  # pragma: no cover
 
@@ -551,10 +560,7 @@ class WaterPhase(AssociatedPhase):
     Adds the capability to link a primary phase model.
     Defines the :meth:`wor` function. Each model must implement the
     defined abstract method.
-
     """
-    primary: 'PrimaryPhase'
-
     def _set_defaults(self) -> None:
         super()._set_default(self, 'water')  # pragma: no cover
 
@@ -580,10 +586,7 @@ class BothAssociatedPhase(SecondaryPhase, WaterPhase):
     """
     Extends :class:`DeclineCurve` for a general yield model used for both secondary phase
     and water phase.
-
     """
-    primary: 'PrimaryPhase'
-
     def _set_defaults(self) -> None:
         super()._set_default(self, 'secondary')
         super()._set_default(self, 'water')

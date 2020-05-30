@@ -15,3 +15,4 @@ Contents
 
     testing
     versions
+    genindex
