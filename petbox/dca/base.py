@@ -480,7 +480,7 @@ class AssociatedPhase(DeclineCurve):
     Extends :class:`DeclineCurve` for an associated phase forecast.
     Each model must implement the defined abstract :meth:`_yieldfn` method.
     """
-    primary = 'PrimaryPhase'
+    primary: 'PrimaryPhase'
 
     def _set_default(self, model: 'AssociatedPhase', name: str) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
