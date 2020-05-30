@@ -108,7 +108,7 @@ class DeclineCurve(ABC):
 
             q(t) = f(t)
 
-        where ``f(t)`` is defined by each model.
+        where :math:`f(t)` is defined by each model.
 
         Parameters
         ----------
@@ -212,7 +212,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            D \equiv \\frac{d[\\textrm{ln} \, q]}{dt}
+            D(t) \equiv \\frac{d}{dt}\\textrm{ln} \, q \equiv \\frac{1}{q}\\frac{dq}{dt}
 
         Parameters
         ----------
@@ -232,7 +232,8 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            \\beta \equiv \\frac{\\textrm{ln} \, q}{\\textrm{ln} \, t} = t \, D(t)
+            \\beta(t) \equiv \\frac{d \, \\textrm{ln} \, q}{d \, \\textrm{ln} \, t}
+            \equiv \\frac{t}{q}\\frac{dq}{dt} \equiv t \, D(t)
 
         Parameters
         ----------
@@ -252,7 +253,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            b \equiv \\frac{d\\frac{1}{D}}{dt}
+            b(t) \equiv \\frac{d}{dt}\\frac{1}{D}
 
         Parameters
         ----------

@@ -245,13 +245,20 @@ class MH(MultisegmentHyperbolic):
         Di: float
             The initial decline rate in secant effective decline aka annual
             effective percent decline, i.e.
-            ``Di = 1 - q(t=1 year) / qi``, or
-            ``Di = 1 - (1 + Dnom * b * 365.25) ** (-1 / b)``
 
-            where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+            .. math::
+
+                D_i = 1 - \\frac{q(t=1 \, year)}{qi}
+
+            .. math::
+
+                D_i = 1 - (1 + 365.25 \, D_{nom} \, b) ^ \\frac{-1}{b}
+
+            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \, q`
+            and has units of ``1 / day``.
 
         bi: float
-            The (initial) hyperbolic parameter, defined as ``d[1 / D] / dt``.
+            The (initial) hyperbolic parameter, defined as :math:`\\frac{d}{dt}\\frac{1}{D}`.
             This parameter is dimensionless.
 
         Dterm: float
@@ -342,17 +349,19 @@ class THM(MultisegmentHyperbolic):
 
             .. math::
 
-                Di = 1 - \\frac{q(t=1 \, year)}{qi}
+                D_i = 1 - \\frac{q(t=1 \, year)}{qi}
 
             .. math::
 
-                Di = 1 - \\frac{(1 + 365.25 \, D_{nom} \, b)}{1 / b}
+                D_i = 1 - (1 + 365.25 \, D_{nom} \, b) ^ \\frac{-1}{b}
 
-            where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \, q`
+            and has units of ``1 / day``.
 
         bi: float
-            The initial hyperbolic parameter, defined as ``d[1 / D] / dt``. Is dimensionless.
-            Advised to always be set to ``2.0`` to represent transient linear flow.
+            The initial hyperbolic parameter, defined as :math:`\\frac{d}{dt}\\frac{1}{D}`.
+            This parameter is dimensionless. Advised to always be set to ``2.0`` to represent
+            transient linear flow.
             See literature for more details.
 
         bi: float
