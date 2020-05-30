@@ -346,9 +346,9 @@ class THM(MultisegmentHyperbolic):
 
             .. math::
 
-            Di = 1 - \\frac{(1 + 365.25 \, D_{nom} \, b)}{1 / b}
+                Di = 1 - \\frac{(1 + 365.25 \, D_{nom} \, b)}{1 / b}
 
-                where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
+            where ``Dnom`` is defined as ``d[ln q] / dt`` and has units of ``1 / day``.
 
         bi: float
             The initial hyperbolic parameter, defined as ``d[1 / D] / dt``. Is dimensionless.
