@@ -6,6 +6,9 @@ Decline Curve Models ``petbox-dca``
 Petroleum Engineering Toolbox
 -----------------------------
 
+.. image:: https://img.shields.io/pypi/v/petbox-dca.svg
+    :target: https://pypi.org/project/petbox-dca/
+    
 .. image:: https://travis-ci.org/petbox-dev/dca.svg?branch=master
     :target: https://travis-ci.org/github/petbox-dev/dca
 
