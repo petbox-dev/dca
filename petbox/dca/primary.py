@@ -364,7 +364,7 @@ class THM(MultisegmentHyperbolic):
             transient linear flow.
             See literature for more details.
 
-        bi: float
+        bf: float
             The final hyperbolic parameter after transition. Represents the boundary-dominated or
             boundary-influenced flow regime.
 
