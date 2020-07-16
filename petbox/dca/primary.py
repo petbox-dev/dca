@@ -372,7 +372,7 @@ class THM(MultisegmentHyperbolic):
 
         telf: float
             The time to end of linear flow in units of ``day``, or more specifically the time at
-            which ``b(t) < bf``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
+            which ``b(t) < bi``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
 
         bterm: Optional[float] = None
             The terminal value of the hyperbolic parameter. Has two interpretations:
