@@ -366,13 +366,13 @@ class THM(MultisegmentHyperbolic):
             transient linear flow.
             See literature for more details.
 
-        bi: float
+        bf: float
             The final hyperbolic parameter after transition. Represents the boundary-dominated or
             boundary-influenced flow regime.
 
         telf: float
             The time to end of linear flow in units of ``day``, or more specifically the time at
-            which ``b(t) < bi``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
+            which ``b(t) < bf``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
 
         bterm: Optional[float] = None
             The terminal value of the hyperbolic parameter. Has two interpretations:
