@@ -112,7 +112,7 @@ def _get_R_der(x: ndarray, L: float, i: int = -1) -> int:
     if idx.size > 0:
         return idx[-1]
 
-    return 0
+    return 0  # pragma: no cover
 
 
 def bourdet(y: ndarray, x: ndarray, L: float = 0.0,

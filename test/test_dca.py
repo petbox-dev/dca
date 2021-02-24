@@ -462,6 +462,19 @@ def test_MH_harmonic(qi: float, Di: float, Dterm: float) -> None:
 
 
 @given(
+    qi=st.floats(0.0, 1e6),
+    Di=st.floats(0.0, 1.0, exclude_max=True),
+    Dterm=st.floats(0.0, 1.0, exclude_max=True),
+)
+def test_MH_no_validate(qi: float, Di: float, Dterm: float) -> None:
+    assume(dca.MH.nominal_from_secant(Di, 1.0) >= dca.MH.nominal_from_tangent(Dterm))
+    with pytest.raises(ValueError) as e:
+        mh = dca.MH(qi, Di, 2.5, Dterm)
+
+    mh = dca.MH(qi, Di, 2.5, Dterm, validate_params=[True, True, False, True])
+
+
+@given(
     D=st.floats(0.0, 1.0, exclude_max=True),
     b=st.floats(0.0, 2.0),
 )
