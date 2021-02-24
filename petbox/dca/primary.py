@@ -208,17 +208,17 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def nominal_from_secant(cls, D: float, b: float) -> float:
-        if b != 0:
-            return ((1.0 - D) ** -b - 1.0) / b
-        else:
+        if b <= 1e-10:
             return cls.nominal_from_tangent(D)
+
+        return ((1.0 - D) ** -b - 1.0) / b
 
     @classmethod
     def secant_from_nominal(cls, D: float, b: float) -> float:
-        if b != 0:
-            return 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
-        else:
+        if b <= 1e-10:
             return cls.tangent_from_nominal(D)
+
+        return 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
 
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
