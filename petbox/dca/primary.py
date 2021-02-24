@@ -16,7 +16,7 @@ from math import exp, log, log1p, ceil as ceiling, floor
 import warnings
 
 import dataclasses as dc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from numpy import ndarray
 import numpy as np
@@ -26,7 +26,7 @@ from scipy.integrate import fixed_quad  # type: ignore
 
 from abc import ABC, abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any,
-                    Sequence, Optional, Callable, ClassVar, Union)
+                    Sequence, Iterable, Optional, Callable, ClassVar, Union)
 from typing import cast
 
 from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
@@ -269,6 +269,8 @@ class MH(MultisegmentHyperbolic):
     bi: float
     Dterm: float
 
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 4)
+
     def _validate(self) -> None:
         if self.nominal_from_secant(self.Di, self.bi) < self.nominal_from_tangent(self.Dterm):
             raise ValueError('Di < Dterm')
@@ -392,6 +394,8 @@ class THM(MultisegmentHyperbolic):
     telf: float
     bterm: float = 0.0
     tterm: float = 0.0
+
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 7)
 
     EXP_GAMMA: ClassVar[float] = exp(0.5572156)
     EXP_1: ClassVar[float] = exp(1.0)
@@ -780,6 +784,8 @@ class PLE(PrimaryPhase):
     Dinf: float
     n: float
 
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 4)
+
     def _validate(self) -> None:
         if self.Dinf > self.Di:
             raise ValueError('Dinf > Di')
@@ -873,6 +879,8 @@ class SE(PrimaryPhase):
     tau: float
     n: float
 
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
+
     def _qfn(self, t: ndarray) -> ndarray:
         qi = self.qi
         tau = self.tau
@@ -948,6 +956,8 @@ class Duong(PrimaryPhase):
     qi: float
     a: float
     m: float
+
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
 
     def _qfn(self, t: ndarray) -> ndarray:
         qi = self.qi

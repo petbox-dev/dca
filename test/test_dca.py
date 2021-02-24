@@ -605,5 +605,7 @@ def test_yield_errors() -> None:
     ylog=st.booleans()
 )
 def test_bourdet(L: float, xlog: bool, ylog: bool) -> None:
+    print(q_data)
+    print(t_data)
     with warnings.catch_warnings(record=True) as w:
         der = dca.bourdet(q_data, t_data, L, xlog, ylog)

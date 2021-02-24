@@ -29,7 +29,7 @@ from scipy.integrate import fixed_quad  # type: ignore
 
 from abc import ABC, abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any, NoReturn,
-                    Sequence, Iterator, Optional, Callable, ClassVar, Union)
+                    Sequence, Iterable, Iterator, Optional, Callable, ClassVar, Union)
 from typing import cast
 
 
@@ -99,6 +99,7 @@ class DeclineCurve(ABC):
     Base class for decline curve models. Each model must implement the defined
     abstract methods.
     """
+    validate_params: Iterable[bool] = [True]
 
     def rate(self, t: Union[float, ndarray]) -> ndarray:
         """
@@ -298,7 +299,10 @@ class DeclineCurve(ABC):
 
     def __post_init__(self) -> None:
         self._set_defaults()
-        for desc in self.get_param_descs():
+
+        for desc, do_validate in zip(self.get_param_descs(), self.validate_params):
+            if not do_validate:
+                continue
             param = getattr(self, desc.name)
             if param is not None and desc.lower_bound is not None:
                 if desc.exclude_lower_bound:

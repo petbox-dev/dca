@@ -89,18 +89,30 @@ def _get_L_der(x: ndarray, L: float, i: int = 0) -> int:
     """
     Forward derivative indices for left-end points that lay outside of distance L.
     """
+    if L == 0:
+        return i + 1
+
     dx = x - x[i]
-    k = len(dx) - 1
-    return np.where((dx >= L) & (dx >= 0.))[0][0]
+    idx = np.where((dx >= L) & (dx >= 0.))[0]
+    if idx.size > 0:
+        return idx[0]
+
+    return len(dx) - 1
 
 
 def _get_R_der(x: ndarray, L: float, i: int = -1) -> int:
     """
     Backward derivative indices for right-end points that lay outside of distance L.
     """
+    if L == 0:
+        return i - 1
+
     dx = x[i] - x
-    k = 0
-    return np.where((dx < L) & (dx >= 0.))[0][-1]
+    idx = np.where((dx < L) & (dx >= 0.))[0]
+    if idx.size > 0:
+        return idx[-1]
+
+    return 0
 
 
 def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
