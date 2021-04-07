@@ -9,7 +9,7 @@ Each model, including the secondary phase models, implements all diagnostic func
 .. code-block:: python
 
     from petbox import dca
-    from data import rate as data_q, data_t as data_t
+    from data import rate as data_q, time as data_t
     import numpy as np
     import matplotlib.pyplot as plt
     import matplotlib as mpl
@@ -23,7 +23,7 @@ Each model, including the secondary phase models, implements all diagnostic func
     # Setup time series for Forecasts and calculate cumulative production of data
 
     # We have this function handy
-    # t = dca.get_time(n=1001)
+    t = dca.get_time(n=1001)
 
     # Calculate cumulative volume array of data
     data_N = np.cumsum(data_q * np.diff(data_t, prepend=data_t[0]))
