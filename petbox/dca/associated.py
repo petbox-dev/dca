@@ -127,7 +127,9 @@ class PLYield(BothAssociatedPhase):
         m = np.where(t < t0, self.m0, self.m)
 
         if self.min is not None or self.max is not None:
-            return np.where(t == 0.0, 0.0, np.clip(c * (t / t0) ** m, self.min, self.max))  # type: ignore
+            return np.where(
+                t == 0.0, 0.0,
+                np.clip(c * (t / t0) ** m, self.min, self.max))  # type: ignore
         return np.where(t == 0.0, 0.0, c * (t / t0) ** m)
 
     def _qfn(self, t: ndarray) -> ndarray:
