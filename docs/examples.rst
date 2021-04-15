@@ -165,8 +165,8 @@ Rate and Cumulative Production Plots
     ax2 = fig.add_subplot(122)
 
     ax1.plot(data_t, data_q, 'o', mfc='w', label='Data')
-    ax1.plot(t, q_thm, label='THM Transient')
-    ax1.plot(t, q_trans, ls='--', label='THM Approx')
+    ax1.plot(t, q_trans, label='THM Transient')
+    ax1.plot(t, q_thm, ls='--', label='THM Approx')
     ax1.plot(t, q_mh, label='MH')
     ax1.plot(t, q_ple, label='PLE')
     ax1.plot(t, q_se, label='SE')
@@ -313,7 +313,7 @@ Numeric calculation provided to verify analytic relationships
     # Cumulative Volume vs Time
     q_N = thm.cum(t)
     g_N = thm.secondary.cum(t)
-    _g_N = np.cumsum(g_q * np.diff(t, prepend=0))
+    _g_N = np.cumsum(g * np.diff(t, prepend=0))
 
     ax2.plot(t, q_N, c='C2', label='Oil')
     ax2.plot(t, g_N, c='C3', label='Gas')
@@ -325,9 +325,9 @@ Numeric calculation provided to verify analytic relationships
 
 
     # Time vs Monthly Volume
-    q_MN = thm.monthly_vol(t, t0=0.0)
-    g_MN = thm.secondary.monthly_vol(t, t0=0.0)
-    _g_MN = np.diff(np.cumsum(g_q * np.diff(t, prepend=0)), prepend=0) \
+    q_MN = thm.monthly_vol(t)
+    g_MN = thm.secondary.monthly_vol(t)
+    _g_MN = np.diff(np.cumsum(g * np.diff(t, prepend=0)), prepend=0) \
         / np.diff(t, prepend=0) * dca.DAYS_PER_MONTH
 
     ax3.plot(t, q_MN, c='C2', label='Oil')
@@ -341,7 +341,7 @@ Numeric calculation provided to verify analytic relationships
     # Time vs Interval Volume
     q_IN = thm.interval_vol(t, t0=0.0)
     g_IN = thm.secondary.interval_vol(t, t0=0.0)
-    _g_IN = np.diff(np.cumsum(g_q * np.diff(t, prepend=0)), prepend=0)
+    _g_IN = np.diff(np.cumsum(g * np.diff(t, prepend=0)), prepend=0)
 
     ax4.plot(t, q_IN, c='C2', label='Oil')
     ax4.plot(t, g_IN, c='C3', label='Gas')
@@ -408,7 +408,7 @@ Diagnotic Function Plots
     # q/N vs Time
     q_Ng = thm.rate(t) / thm.cum(t)
     g_Ng = thm.secondary.rate(t) / thm.secondary.cum(t)
-    _g_Ng = thm.secondary.rate(t) / np.cumsum(g_q * np.diff(t, prepend=0))
+    _g_Ng = thm.secondary.rate(t) / np.cumsum(g * np.diff(t, prepend=0))
 
     ax4.plot(t, q_Ng, c='C2', label='Oil')
     ax4.plot(t, g_Ng, c='C3', ls='--', label='Gas')
