@@ -97,7 +97,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
             [t_2, q_2, D_2, b_2, N_2],
             [..., ..., ..., ..., ...],
             [t_m, q_n, D_n, b_n, N_m],
-        ], dtype=np.float)
+        ], dtype=np.float64)
         """
         raise NotImplementedError
 
@@ -175,9 +175,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         Vectorize the computation of a parameter
         """
-        t = cast(ndarray, np.atleast_1d(t))
+        t = np.atleast_1d(t)
         p = self.segment_params
-        x = np.zeros_like(t, dtype=np.float)
+        x = np.zeros_like(t, dtype=np.float64)
 
         for i in range(p.shape[0]):
             where_seg = t >= p[i, self.T_IDX]
@@ -437,7 +437,7 @@ class THM(MultisegmentHyperbolic):
                     [t2, None, None, b2, None],
                     [t3, None, None, b3, None]
                 ],
-                dtype=np.float,
+                dtype=np.float64
             )
 
         elif tterm != 0.0:
@@ -451,7 +451,7 @@ class THM(MultisegmentHyperbolic):
                     [t3, None, None, b3, None],
                     [t4, None, None, b4, None],
                 ],
-                dtype=np.float,
+                dtype=np.float64
             )
 
         elif tterm == 0.0 and bterm != 0.0:
@@ -473,7 +473,7 @@ class THM(MultisegmentHyperbolic):
                         [t2, None, None, b2, None],
                         [t4, None, None, b4, None],
                     ],
-                    dtype=np.float,
+                    dtype=np.float64
                 )
             else:
                 segments = np.array(
@@ -483,7 +483,7 @@ class THM(MultisegmentHyperbolic):
                         [t3, None, None, b3, None],
                         [t4, None, None, b4, None],
                     ],
-                    dtype=np.float,
+                    dtype=np.float64
                 )
 
         # Compute initial values for each segment after the first, from the
@@ -625,7 +625,7 @@ class THM(MultisegmentHyperbolic):
 
     def _transDfn(self, t: ndarray) -> ndarray:
 
-        t = cast(ndarray, np.atleast_1d(t))
+        t = np.atleast_1d(t)
         qi = self.qi
         bi = self.bi
         bf = self.bf
@@ -683,7 +683,7 @@ class THM(MultisegmentHyperbolic):
 
     def _transbfn(self, t: ndarray) -> ndarray:
 
-        t = cast(ndarray, np.atleast_1d(t))
+        t = np.atleast_1d(t)
         bi = self.bi
         bf = self.bf
         telf = self.telf

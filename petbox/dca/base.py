@@ -176,7 +176,7 @@ class DeclineCurve(ABC):
         t = self._validate_ndarray(t)
         if t0 is None:
             t0 = t[0]
-        t0 = cast(ndarray, np.atleast_1d(t0).astype(float))
+        t0 = np.atleast_1d(t0).astype(np.float64)
         return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
 
     def monthly_vol(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
@@ -387,7 +387,7 @@ class DeclineCurve(ABC):
         """
         Ensure the time array is a 1d arary of floats.
         """
-        return np.atleast_1d(x).astype(float)
+        return np.atleast_1d(x).astype(np.float64)
 
     @staticmethod
     def _iter_t(t: ndarray) -> Iterator[Tuple[float, float]]:

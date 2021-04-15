@@ -55,7 +55,6 @@ def _get_R_bourdet(x: ndarray, L: float, i: int = -1) -> int:
     return k
 
 
-
 def _get_L(y: ndarray, x: ndarray, L: float, i: int) -> Tuple[ndarray, ndarray]:
     """
     Bourdet indices for left-end points that lay inside of distance L.
@@ -147,8 +146,8 @@ def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
       der: numpy.ndarray[float]
         The calculated derivative.
     """
-    x = np.atleast_1d(x).astype(float)
-    y = np.atleast_1d(y).astype(float)
+    x = np.atleast_1d(x).astype(np.float64)
+    y = np.atleast_1d(y).astype(np.float64)
 
     log_x = cast(ndarray, np.log10(x))
 
