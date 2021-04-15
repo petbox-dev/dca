@@ -46,25 +46,25 @@ class NullAssociatedPhase(SecondaryPhase, WaterPhase):
         pass
 
     def _yieldfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _qfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Dfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _betafn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _bfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:

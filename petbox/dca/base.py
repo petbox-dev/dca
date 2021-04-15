@@ -406,7 +406,7 @@ class DeclineCurve(ABC):
         integral = np.array(list(starmap(
             lambda t0, t1: fixed_quad(fn, t0, t1, **kwargs)[0],
             self._iter_t(t)
-        )), dtype=float)
+        )), dtype=np.float64)
         integral[np.isnan(integral)] = 0.0
         return np.cumsum(integral)
 
