@@ -278,7 +278,7 @@ Power-Law GOR/CGR Model
 .. code-block:: python
 
     thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
-    thm.add_secondary(dca.Yield(c=1000, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10_000))
+    thm.add_secondary(dca.PLYield(c=1000, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10_000))
 
 
 Secondary Phase Diagnostic Plots
