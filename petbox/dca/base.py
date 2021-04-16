@@ -232,7 +232,7 @@ class DeclineCurve(ABC):
             monthly equivalent volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
-        t0 = cast(ndarray, np.atleast_1d(0.0).astype(np.float64))
+        t0 = np.atleast_1d(0.0).astype(np.float64)
         return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0)) \
             / np.diff(t, prepend=t0) * DAYS_PER_MONTH
 
