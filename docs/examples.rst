@@ -26,7 +26,7 @@ Each model, including the secondary phase models, implements all diagnostic func
     t = dca.get_time(n=1001)
 
     # Calculate cumulative volume array of data
-    data_N = np.cumsum(data_q * np.diff(data_t, prepend=data_t[0]))
+    data_N = np.cumsum(data_q * np.r_[data_t[0], np.diff(data_t)])
 
     # Calculate diagnostic functions D, beta, and b
     data_D = -dca.bourdet(data_q, data_t, L=0.35, xlog=False, ylog=True)
