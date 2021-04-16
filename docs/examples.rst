@@ -325,8 +325,8 @@ Numeric calculation provided to verify analytic relationships
 
 
     # Time vs Monthly Volume
-    q_MN = thm.monthly_vol(t)
-    g_MN = thm.secondary.monthly_vol(t)
+    q_MN = thm.monthly_vol_equiv(t)
+    g_MN = thm.secondary.monthly_vol_equiv(t)
     _g_MN = np.diff(np.cumsum(g * np.diff(t, prepend=0)), prepend=0) \
         / np.diff(t, prepend=0) * dca.DAYS_PER_MONTH
 
