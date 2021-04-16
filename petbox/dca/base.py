@@ -12,7 +12,8 @@ Notes
 Created on August 5, 2019
 """
 
-from math import exp, log, log10, log1p, ceil as ceiling, floor
+import sys
+from math import exp, expm1, log, log10, log1p, ceil as ceiling, floor
 from functools import partial
 from itertools import starmap
 import warnings
@@ -35,6 +36,8 @@ from typing import cast
 
 DAYS_PER_MONTH = 365.25 / 12.0
 DAYS_PER_YEAR = 365.25
+LOG_EPSILON = log(sys.float_info.max)
+MIN_EPSILON = sys.float_info.min
 
 
 _Self = TypeVar('_Self', bound='DeclineCurve')
@@ -181,11 +184,37 @@ class DeclineCurve(ABC):
 
     def monthly_vol(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
-        Defines the model fixed monthly interval volume function:
+        Defines the model fixed monthly interval volume function. If t < 1 month, the interval
+        begin at zero:
 
         .. math::
 
             N(t) = \int_{t-{1 \, month}}^{t} q \, dt
+
+        Parameters
+        ----------
+            t: Union[float, numpy.ndarray[float]]
+                An array of interval end times at which to evaluate the function.
+
+            **kwargs
+                Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
+
+        Returns
+        -------
+            monthly equivalent volume: numpy.ndarray[float]
+        """
+        t = self._validate_ndarray(t)
+        return self._Nfn(t, **kwargs) \
+            - np.where(t < DAYS_PER_MONTH, 0, self._Nfn(t - DAYS_PER_MONTH, **kwargs))
+
+    def monthly_vol_equiv(self, t: Union[float, ndarray],
+                          t0: Optional[Union[float, ndarray]] = None, **kwargs: Any) -> ndarray:
+        """
+        Defines the model equivalent monthly interval volume function:
+
+        .. math::
+
+            N(t) = \int_{t-{1 \, month}}^{t} q \, dt * \frac{\frac{365.25}{12}}{dt}
 
         Parameters
         ----------
@@ -203,9 +232,9 @@ class DeclineCurve(ABC):
             monthly equivalent volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
-        return np.where(t < DAYS_PER_MONTH,
-                        0.0,
-                        self._Nfn(t, **kwargs) - self._Nfn(t - DAYS_PER_MONTH, **kwargs))
+        t0 = cast(ndarray, np.atleast_1d(0.0).astype(np.float64))
+        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0)) \
+            / np.diff(t, prepend=t0) * DAYS_PER_MONTH
 
     def D(self, t: Union[float, ndarray]) -> ndarray:
         """
