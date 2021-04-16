@@ -137,16 +137,9 @@ class PLYield(BothAssociatedPhase):
         np.putmask(t_m, mask=t_m < -LOG_EPSILON, values=-np.inf)
 
         if self.min is not None or self.max is not None:
-<<<<<<< HEAD
             return np.where(t == 0.0, 0.0,
                             np.clip(c * np.exp(t_m), self.min, self.max))  # type: ignore
         return np.where(t == 0.0, 0.0, c * np.exp(t_m))
-=======
-            return np.where(
-                t == 0.0, 0.0,
-                np.clip(c * (t / t0) ** m, self.min, self.max))  # type: ignore
-        return np.where(t == 0.0, 0.0, c * (t / t0) ** m)
->>>>>>> 57e40f8d1f0b9ca5a8650622d0b58a9e562cfd2e
 
     def _qfn(self, t: ndarray) -> ndarray:
         return self._yieldfn(t) / 1000.0 * self.primary._qfn(t)
