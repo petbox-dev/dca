@@ -12,7 +12,6 @@ Notes
 Created on August 5, 2019
 """
 
-import sys
 from math import exp, expm1, log, log1p, ceil as ceiling, floor
 import warnings
 
@@ -31,10 +30,7 @@ from typing import (TypeVar, Type, List, Dict, Tuple, Any,
 from typing import cast
 
 from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
-                   DAYS_PER_MONTH, DAYS_PER_YEAR)
-
-
-EXP_EPSILON = log(sys.float_info.max)
+                   DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON)
 
 
 @dataclass
@@ -122,16 +118,17 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if D == 0.0:
             return np.full_like(t, q, dtype=np.float64)
 
+        # Handle overflow for these function
+        # q * np.exp(-D * dt)
+        # q * np.log(1.0 + D * b * dt) ** (1.0 / b)
         if b <= MultisegmentHyperbolic.B_EPSILON:
             D_dt = D * dt
         else:
             D_dt = 1.0 / b * np.log(1.0 + D * b * dt)
 
-        where_eps = np.abs(D_dt) > EXP_EPSILON
-        result = np.zeros_like(dt, dtype=np.float64)
-        result[where_eps] = 0.0
-        result[~where_eps] = q * np.exp(-D_dt[~where_eps])
-        return result
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
+        return q * np.exp(-D_dt)
 
     @staticmethod
     def _Ncheck(t0: float, q: float, D: float, b: float, N: float,
@@ -150,21 +147,18 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if abs(1.0 - b) == 0.0:
             return N + q / D * np.log1p(D * dt)
 
-        # could comebine these as in _qcheck, but probably more efficient not to
+        # Handle overflow for this function
+        # N + q / ((1.0 - b) * D) * (1.0 - (1.0 + b * D * dt) ** (1.0 - 1.0 / b))
         if b <= MultisegmentHyperbolic.B_EPSILON:
-            D_dt = D * dt
-            where_eps = np.abs(D_dt) > EXP_EPSILON
-            result = np.zeros_like(dt, dtype=np.float64)
-            result[where_eps] =  N + q / D
-            result[~where_eps] = N - q / D * np.expm1(-D_dt[~where_eps])
-            return result
+            D_dt = -D * dt
+            q_b_D = q / D
+        else:
+            D_dt = (1.0 - 1.0 / b) * np.log(1.0 + b * D * dt)
+            q_b_D = q / ((1.0 - b) * D)
 
-        D_dt = (1.0 - 1.0 / b) * np.log(1.0 + b * D * dt)
-        where_eps = np.abs(D_dt) > EXP_EPSILON
-        result = np.zeros_like(dt, dtype=np.float64)
-        result[where_eps] =  N + q / ((1.0 - b) * D)
-        result[~where_eps] = N - q / ((1.0 - b) * D) * np.expm1(D_dt[~where_eps])
-        return result
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
+        return N - q_b_D * np.expm1(D_dt)
 
     @staticmethod
     def _Dcheck(t0: float, q: float, D: float, b: float, N: float,
@@ -233,6 +227,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if b <= MultisegmentHyperbolic.B_EPSILON:
             return cls.nominal_from_tangent(D)
 
+        if D == 0.0:
+            return 0.0
+
+        if D >= 1.0:
+            return np.inf
+
+        # D < 1 per validation, so this should never overflow
         return ((1.0 - D) ** -b - 1.0) / b
 
     @classmethod
@@ -240,23 +241,43 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if b <= MultisegmentHyperbolic.B_EPSILON:
             return cls.tangent_from_nominal(D)
 
+        # Handle overflow for this function
+        # Deff = 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
+
+        if D == 0:
+            return 0.0
+
         D_b = 1.0 + D * b
-        if D_b < 0.0:
+        if D_b <= 0.0:
             return -np.inf
 
-        D_dt = 1.0 / b * np.log(D_b)
-        if np.abs(D_dt) > EXP_EPSILON:
+        D_dt = -1.0 / b * np.log(D_b)
+        if D_dt > LOG_EPSILON:
+            # >= 100% decline is not possible
             return 1.0
 
         return -expm1(-D_dt)
 
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
+        if D == 0.0:
+            return 0.0
+
+        if D >= 1.0:
+            return np.inf
+
         return -log1p(-D)
 
     @classmethod
     def tangent_from_nominal(cls, D: float) -> float:
-        return 1.0 - exp(-D)
+        if D == 0:
+            return 0.0
+
+        if D > LOG_EPSILON:
+            # >= 100% decline is not possible
+            return 1.0
+
+        return -expm1(-D)
 
 
 @dataclass(frozen=True)
@@ -652,7 +673,7 @@ class THM(MultisegmentHyperbolic):
         qi = self.qi
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
         D_dt = Dnom_i - self._integrate_with(self._transDfn, t, **kwargs)
-        where_eps = abs(D_dt) > EXP_EPSILON
+        where_eps = abs(D_dt) > LOG_EPSILON
         result = np.zeros_like(t, dtype=np.float64)
         result[where_eps] = 0.0
         result[~where_eps] = qi * np.exp(D_dt)
