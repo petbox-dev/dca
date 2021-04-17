@@ -12,7 +12,8 @@ Notes
 Created on August 5, 2019
 """
 
-from math import exp, log, log10, log1p, ceil as ceiling, floor
+import sys
+from math import exp, expm1, log, log10, log1p, ceil as ceiling, floor
 from functools import partial
 from itertools import starmap
 import warnings
@@ -29,12 +30,14 @@ from scipy.integrate import fixed_quad  # type: ignore
 
 from abc import ABC, abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any, NoReturn,
-                    Sequence, Iterator, Optional, Callable, ClassVar, Union)
+                    Sequence, Iterable, Iterator, Optional, Callable, ClassVar, Union)
 from typing import cast
 
 
 DAYS_PER_MONTH = 365.25 / 12.0
 DAYS_PER_YEAR = 365.25
+LOG_EPSILON = log(sys.float_info.max)
+MIN_EPSILON = sys.float_info.min
 
 
 _Self = TypeVar('_Self', bound='DeclineCurve')
@@ -99,6 +102,7 @@ class DeclineCurve(ABC):
     Base class for decline curve models. Each model must implement the defined
     abstract methods.
     """
+    validate_params: Iterable[bool] = [True]
 
     def rate(self, t: Union[float, ndarray]) -> ndarray:
         """
@@ -128,7 +132,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            N(t) = \int_0^t q \, dt
+            N(t) = \\int_0^t q \\, dt
 
         Parameters
         ----------
@@ -152,7 +156,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            N(t) = \int_{t_{i-1}}^{t_i} q \, dt
+            N(t) = \\int_{t_{i-1}}^{t_i} q \\, dt
 
         for each element of ``t``.
 
@@ -175,16 +179,43 @@ class DeclineCurve(ABC):
         t = self._validate_ndarray(t)
         if t0 is None:
             t0 = t[0]
-        t0 = cast(ndarray, np.atleast_1d(t0).astype(float))
+        t0 = np.atleast_1d(t0).astype(np.float64)
         return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
 
     def monthly_vol(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
         """
-        Defines the model fixed monthly interval volume function:
+        Defines the model fixed monthly interval volume function. If t < 1 month, the interval
+        begin at zero:
 
         .. math::
 
-            N(t) = \int_{t-{1 \, month}}^{t} q \, dt
+            N(t) = \\int_{t-{1 \\, month}}^{t} q \\, dt
+
+        Parameters
+        ----------
+            t: Union[float, numpy.ndarray[float]]
+                An array of interval end times at which to evaluate the function.
+
+            **kwargs
+                Additional arguments passed to :func:`scipy.integrate.fixed_quad` if needed.
+
+        Returns
+        -------
+            monthly equivalent volume: numpy.ndarray[float]
+        """
+        t = self._validate_ndarray(t)
+        return self._Nfn(t, **kwargs) \
+            - np.where(t < DAYS_PER_MONTH, 0, self._Nfn(t - DAYS_PER_MONTH, **kwargs))
+
+    def monthly_vol_equiv(self, t: Union[float, ndarray],
+                          t0: Optional[Union[float, ndarray]] = None, **kwargs: Any) -> ndarray:
+        """
+        Defines the model equivalent monthly interval volume function:
+
+        .. math::
+
+            N(t) = \\frac{\\frac{365.25}{12}}{t-(t-1 \\, month)}
+            \\int_{t-{1 \\, month}}^{t} q \\, dt
 
         Parameters
         ----------
@@ -202,9 +233,9 @@ class DeclineCurve(ABC):
             monthly equivalent volume: numpy.ndarray[float]
         """
         t = self._validate_ndarray(t)
-        return np.where(t < DAYS_PER_MONTH,
-                        0.0,
-                        self._Nfn(t, **kwargs) - self._Nfn(t - DAYS_PER_MONTH, **kwargs))
+        t0 = np.atleast_1d(0.0).astype(np.float64)
+        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0)) \
+            / np.diff(t, prepend=t0) * DAYS_PER_MONTH
 
     def D(self, t: Union[float, ndarray]) -> ndarray:
         """
@@ -212,7 +243,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            D(t) \equiv \\frac{d}{dt}\\textrm{ln} \, q \equiv \\frac{1}{q}\\frac{dq}{dt}
+            D(t) \\equiv \\frac{d}{dt}\\textrm{ln} \\, q \equiv \\frac{1}{q}\\frac{dq}{dt}
 
         Parameters
         ----------
@@ -232,8 +263,8 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            \\beta(t) \equiv \\frac{d \, \\textrm{ln} \, q}{d \, \\textrm{ln} \, t}
-            \equiv \\frac{t}{q}\\frac{dq}{dt} \equiv t \, D(t)
+            \\beta(t) \\equiv \\frac{d \, \\textrm{ln} \\, q}{d \\, \\textrm{ln} \\, t}
+            \\equiv \\frac{t}{q}\\frac{dq}{dt} \\equiv t \\, D(t)
 
         Parameters
         ----------
@@ -253,7 +284,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            b(t) \equiv \\frac{d}{dt}\\frac{1}{D}
+            b(t) \\equiv \\frac{d}{dt}\\frac{1}{D}
 
         Parameters
         ----------
@@ -298,7 +329,10 @@ class DeclineCurve(ABC):
 
     def __post_init__(self) -> None:
         self._set_defaults()
-        for desc in self.get_param_descs():
+
+        for desc, do_validate in zip(self.get_param_descs(), self.validate_params):
+            if not do_validate:
+                continue
             param = getattr(self, desc.name)
             if param is not None and desc.lower_bound is not None:
                 if desc.exclude_lower_bound:
@@ -383,7 +417,7 @@ class DeclineCurve(ABC):
         """
         Ensure the time array is a 1d arary of floats.
         """
-        return np.atleast_1d(x).astype(float)
+        return np.atleast_1d(x).astype(np.float64)
 
     @staticmethod
     def _iter_t(t: ndarray) -> Iterator[Tuple[float, float]]:
@@ -402,7 +436,7 @@ class DeclineCurve(ABC):
         integral = np.array(list(starmap(
             lambda t0, t1: fixed_quad(fn, t0, t1, **kwargs)[0],
             self._iter_t(t)
-        )), dtype=float)
+        )), dtype=np.float64)
         integral[np.isnan(integral)] = 0.0
         return np.cumsum(integral)
 

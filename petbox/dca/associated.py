@@ -28,7 +28,7 @@ from typing import cast
 
 from .base import (DeclineCurve, PrimaryPhase,
                    AssociatedPhase, SecondaryPhase, WaterPhase, BothAssociatedPhase,
-                   ParamDesc, DAYS_PER_MONTH, DAYS_PER_YEAR)
+                   ParamDesc, DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON)
 
 
 @dataclass
@@ -46,25 +46,25 @@ class NullAssociatedPhase(SecondaryPhase, WaterPhase):
         pass
 
     def _yieldfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _qfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Dfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _betafn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _bfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -85,7 +85,7 @@ class PLYield(BothAssociatedPhase):
 
     .. math::
 
-        GOR = c \, t^m
+        GOR = c \\, t^m
 
     and allows independent early-time and late-time slopes ``m0`` and ``m`` respectively.
 
@@ -116,6 +116,9 @@ class PLYield(BothAssociatedPhase):
     min: Optional[float] = None
     max: Optional[float] = None
 
+    # def _set_defaults(self) -> None:
+    #     object.__setattr__(self, 't0', 1.0)
+
     def _validate(self) -> None:
         if self.min is not None and self.max is not None and self.max < self.min:
             raise ValueError('max < min')
@@ -124,11 +127,19 @@ class PLYield(BothAssociatedPhase):
     def _yieldfn(self, t: ndarray) -> ndarray:
         c = self.c
         t0 = self.t0
+
         m = np.where(t < t0, self.m0, self.m)
 
+        t_t0 = t / t0
+        np.putmask(t_t0, mask=t_t0 <= 0, values=MIN_EPSILON)
+        t_m = m * np.log(t_t0)
+        np.putmask(t_m, mask=t_m > LOG_EPSILON, values=np.inf)
+        np.putmask(t_m, mask=t_m < -LOG_EPSILON, values=-np.inf)
+
         if self.min is not None or self.max is not None:
-            return np.where(t == 0.0, 0.0, np.clip(c * (t / t0) ** m, self.min, self.max))
-        return np.where(t == 0.0, 0.0, c * (t / t0) ** m)
+            return np.where(t == 0.0, 0.0,
+                            np.clip(c * np.exp(t_m), self.min, self.max))  # type: ignore
+        return np.where(t == 0.0, 0.0, c * np.exp(t_m))
 
     def _qfn(self, t: ndarray) -> ndarray:
         return self._yieldfn(t) / 1000.0 * self.primary._qfn(t)

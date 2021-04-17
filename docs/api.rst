@@ -57,6 +57,7 @@ All Models
     cum
     interval_vol
     monthly_vol
+    monthly_vol_equiv
     D
     beta
     b
@@ -148,6 +149,7 @@ These classes define the basic functions that are exposed by all decline curve m
     .. automethod:: cum
     .. automethod:: interval_vol
     .. automethod:: monthly_vol
+    .. automethod:: monthly_vol_equiv
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b

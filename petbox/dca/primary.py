@@ -12,11 +12,11 @@ Notes
 Created on August 5, 2019
 """
 
-from math import exp, log, log1p, ceil as ceiling, floor
+from math import exp, expm1, log, log1p, ceil as ceiling, floor
 import warnings
 
 import dataclasses as dc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from numpy import ndarray
 import numpy as np
@@ -26,11 +26,11 @@ from scipy.integrate import fixed_quad  # type: ignore
 
 from abc import ABC, abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any,
-                    Sequence, Optional, Callable, ClassVar, Union)
+                    Sequence, Iterable, Optional, Callable, ClassVar, Union)
 from typing import cast
 
 from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
-                   DAYS_PER_MONTH, DAYS_PER_YEAR)
+                   DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON)
 
 
 @dataclass
@@ -48,22 +48,22 @@ class NullPrimaryPhase(PrimaryPhase):
         pass
 
     def _qfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Dfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _Dfn2(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _betafn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     def _bfn(self, t: ndarray) -> ndarray:
-        return np.zeros_like(t, dtype=float)
+        return np.zeros_like(t, dtype=np.float64)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -83,6 +83,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
     D_IDX: ClassVar[int] = 2
     B_IDX: ClassVar[int] = 3
     N_IDX: ClassVar[int] = 4
+    B_EPSILON: ClassVar[float] = 1e-10
 
     segment_params: ndarray
 
@@ -97,7 +98,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
             [t_2, q_2, D_2, b_2, N_2],
             [..., ..., ..., ..., ...],
             [t_m, q_n, D_n, b_n, N_m],
-        ], dtype=np.float)
+        ], dtype=np.float64)
         """
         raise NotImplementedError
 
@@ -115,12 +116,19 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, q, dtype=float)
+            return np.full_like(t, q, dtype=np.float64)
 
-        if b < 1e-10:
-            return q * np.exp(-D * dt)
+        # Handle overflow for these function
+        # q * np.exp(-D * dt)
+        # q * np.log(1.0 + D * b * dt) ** (1.0 / b)
+        if b <= MultisegmentHyperbolic.B_EPSILON:
+            D_dt = D * dt
+        else:
+            D_dt = 1.0 / b * np.log(1.0 + D * b * dt)
 
-        return q / (1.0 + D * b * dt) ** (1.0 / b)
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
+        return q * np.exp(-D_dt)
 
     @staticmethod
     def _Ncheck(t0: float, q: float, D: float, b: float, N: float,
@@ -131,18 +139,26 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if q <= 0.0:
-            return np.atleast_1d(N) + np.zeros_like(t, dtype=float)
+            return np.atleast_1d(N) + np.zeros_like(t, dtype=np.float64)
 
         if D <= 0.0:
             return np.atleast_1d(N + q * dt)
 
-        if b <= 1e-6:
-            return N + -q / D * np.expm1(-D * dt)
-
         if abs(1.0 - b) == 0.0:
             return N + q / D * np.log1p(D * dt)
 
-        return N + q / ((1.0 - b) * D) * (1.0 - (1.0 + b * D * dt) ** (1.0 - 1.0 / b))
+        # Handle overflow for this function
+        # N + q / ((1.0 - b) * D) * (1.0 - (1.0 + b * D * dt) ** (1.0 - 1.0 / b))
+        if b <= MultisegmentHyperbolic.B_EPSILON:
+            D_dt = -D * dt
+            q_b_D = q / D
+        else:
+            D_dt = (1.0 - 1.0 / b) * np.log(1.0 + b * D * dt)
+            q_b_D = q / ((1.0 - b) * D)
+
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
+        return N - q_b_D * np.expm1(D_dt)
 
     @staticmethod
     def _Dcheck(t0: float, q: float, D: float, b: float, N: float,
@@ -153,7 +169,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, D, dtype=float)
+            return np.full_like(t, D, dtype=np.float64)
 
         return D / (1.0 + D * b * dt)
 
@@ -166,7 +182,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if D == 0.0:
-            return np.full_like(t, D, dtype=float)
+            return np.full_like(t, D, dtype=np.float64)
 
         Denom = 1.0 + D * b * dt
         return -b * D * D / (Denom * Denom)
@@ -175,9 +191,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         Vectorize the computation of a parameter
         """
-        t = cast(ndarray, np.atleast_1d(t))
+        t = np.atleast_1d(t)
         p = self.segment_params
-        x = np.zeros_like(t, dtype=np.float)
+        x = np.zeros_like(t, dtype=np.float64)
 
         for i in range(p.shape[0]):
             where_seg = t >= p[i, self.T_IDX]
@@ -208,25 +224,60 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def nominal_from_secant(cls, D: float, b: float) -> float:
-        if b != 0:
-            return ((1.0 - D) ** -b - 1.0) / b
-        else:
+        if b <= MultisegmentHyperbolic.B_EPSILON:
             return cls.nominal_from_tangent(D)
+
+        if D == 0.0:
+            return 0.0 # pragma: no cover
+
+        if D >= 1.0:
+            return np.inf # pragma: no cover
+
+        # D < 1 per validation, so this should never overflow
+        return ((1.0 - D) ** -b - 1.0) / b
 
     @classmethod
     def secant_from_nominal(cls, D: float, b: float) -> float:
-        if b != 0:
-            return 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
-        else:
+        if b <= MultisegmentHyperbolic.B_EPSILON:
             return cls.tangent_from_nominal(D)
+
+        # Handle overflow for this function
+        # Deff = 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
+
+        if D == 0:
+            return 0.0 # pragma: no cover
+
+        D_b = 1.0 + D * b
+        if D_b <= 0.0:
+            return -np.inf # pragma: no cover
+
+        D_dt = -1.0 / b * np.log(D_b)
+        if D_dt > LOG_EPSILON:
+            # >= 100% decline is not possible
+            return 1.0 # pragma: no cover
+
+        return -expm1(-D_dt)
 
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
+        if D == 0.0:
+            return 0.0 # pragma: no cover
+
+        if D >= 1.0:
+            return np.inf # pragma: no cover
+
         return -log1p(-D)
 
     @classmethod
     def tangent_from_nominal(cls, D: float) -> float:
-        return 1.0 - exp(-D)
+        if D == 0:
+            return 0.0 # pragma: no cover
+
+        if D > LOG_EPSILON:
+            # >= 100% decline is not possible
+            return 1.0 # pragma: no cover
+
+        return -expm1(-D)
 
 
 @dataclass(frozen=True)
@@ -248,13 +299,13 @@ class MH(MultisegmentHyperbolic):
 
             .. math::
 
-                D_i = 1 - \\frac{q(t=1 \, year)}{qi}
+                D_i = 1 - \\frac{q(t=1 \\, year)}{qi}
 
             .. math::
 
-                D_i = 1 - (1 + 365.25 \, D_{nom} \, b) ^ \\frac{-1}{b}
+                D_i = 1 - (1 + 365.25 \\, D_{nom} \\, b) ^ \\frac{-1}{b}
 
-            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \, q`
+            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \\, q`
             and has units of ``1 / day``.
 
         bi: float
@@ -268,6 +319,8 @@ class MH(MultisegmentHyperbolic):
     Di: float
     bi: float
     Dterm: float
+
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 4)
 
     def _validate(self) -> None:
         if self.nominal_from_secant(self.Di, self.bi) < self.nominal_from_tangent(self.Dterm):
@@ -284,16 +337,16 @@ class MH(MultisegmentHyperbolic):
         if Di_nom <= 0.0 or Dterm_nom <= 0.0 or self.bi == 0.0:
             return np.array([
                 [0.0, self.qi, Di_nom, self.bi, 0.0]
-            ], dtype=float)
+            ], dtype=np.float64)
 
         tterm = ((1.0 / Dterm_nom) - (1.0 / Di_nom)) / self.bi
-        qterm = self._qcheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm))
-        Nterm = self._Ncheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm))
+        qterm = self._qcheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm)).item()
+        Nterm = self._Ncheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm)).item()
 
         return np.array([
             [0.0, self.qi, Di_nom, self.bi, 0.0],
             [tterm, qterm, Dterm_nom, 0.0, Nterm]
-        ], dtype=float)
+        ], dtype=np.float64)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -314,7 +367,7 @@ class MH(MultisegmentHyperbolic):
             ParamDesc(  # TODO
                 'Dterm', 'Terminal decline [tan. eff. / yr]',
                 0.0, 1.0,
-                lambda r, n: np.zeros(n, dtype=float),
+                lambda r, n: np.zeros(n, dtype=np.float64),
                 exclude_upper_bound=True)
         ]
 
@@ -349,13 +402,13 @@ class THM(MultisegmentHyperbolic):
 
             .. math::
 
-                D_i = 1 - \\frac{q(t=1 \, year)}{qi}
+                D_i = 1 - \\frac{q(t=1 \\, year)}{qi}
 
             .. math::
 
-                D_i = 1 - (1 + 365.25 \, D_{nom} \, b) ^ \\frac{-1}{b}
+                D_i = 1 - (1 + 365.25 \\, D_{nom} \\, b) ^ \\frac{-1}{b}
 
-            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \, q`
+            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \\, q`
             and has units of ``1 / day``.
 
         bi: float
@@ -392,6 +445,8 @@ class THM(MultisegmentHyperbolic):
     telf: float
     bterm: float = 0.0
     tterm: float = 0.0
+
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 7)
 
     EXP_GAMMA: ClassVar[float] = exp(0.5572156)
     EXP_1: ClassVar[float] = exp(1.0)
@@ -433,7 +488,7 @@ class THM(MultisegmentHyperbolic):
                     [t2, None, None, b2, None],
                     [t3, None, None, b3, None]
                 ],
-                dtype=np.float,
+                dtype=np.float64
             )
 
         elif tterm != 0.0:
@@ -447,7 +502,7 @@ class THM(MultisegmentHyperbolic):
                     [t3, None, None, b3, None],
                     [t4, None, None, b4, None],
                 ],
-                dtype=np.float,
+                dtype=np.float64
             )
 
         elif tterm == 0.0 and bterm != 0.0:
@@ -469,7 +524,7 @@ class THM(MultisegmentHyperbolic):
                         [t2, None, None, b2, None],
                         [t4, None, None, b4, None],
                     ],
-                    dtype=np.float,
+                    dtype=np.float64
                 )
             else:
                 segments = np.array(
@@ -479,7 +534,7 @@ class THM(MultisegmentHyperbolic):
                         [t3, None, None, b3, None],
                         [t4, None, None, b4, None],
                     ],
-                    dtype=np.float,
+                    dtype=np.float64
                 )
 
         # Compute initial values for each segment after the first, from the
@@ -499,7 +554,7 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            q(t) = e^{-\int_0^t D(t) \, dt}
+            q(t) = e^{-\\int_0^t D(t) \\, dt}
 
         Parameters
         ----------
@@ -523,7 +578,7 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            N(t) = \int_0^t q(t) \, dt
+            N(t) = \\int_0^t q(t) \\, dt
 
         Parameters
         ----------
@@ -547,8 +602,8 @@ class THM(MultisegmentHyperbolic):
         .. math::
 
             D(t) = \\frac{1}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
-            (\\textrm{Ei}[-e^{-c \, (t -t_{elf}) + e^(\\gamma)}]
-            - \\textrm{Ei}[-e^{c \, t_{elf} + e^(\\gamma)}])}
+            (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^(\\gamma)}]
+            - \\textrm{Ei}[-e^{c \\, t_{elf} + e^(\\gamma)}])}
 
         Parameters
         ----------
@@ -569,8 +624,8 @@ class THM(MultisegmentHyperbolic):
         .. math::
 
             \\beta(t) = \\frac{t}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
-            (\\textrm{Ei}[-e^{-c \, (t -t_{elf}) + e^(\\gamma)}]
-            - \\textrm{Ei}[-e^{c \, t_{elf} + e^(\\gamma)}])}
+            (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^(\\gamma)}]
+            - \\textrm{Ei}[-e^{c \\, t_{elf} + e^(\\gamma)}])}
 
         Parameters
         ----------
@@ -596,8 +651,8 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            c & = \\frac{e^{\\gamma}}{1.5 \, t_{elf}} \\\\
-            \\gamma & = 0.57721566... \; \\textrm{(Euler-Mascheroni constant)}
+            c & = \\frac{e^{\\gamma}}{1.5 \\, t_{elf}} \\\\
+            \\gamma & = 0.57721566... \\; \\textrm{(Euler-Mascheroni constant)}
 
         Parameters
         ----------
@@ -617,11 +672,16 @@ class THM(MultisegmentHyperbolic):
     def _transqfn(self, t: ndarray, **kwargs: Any) -> ndarray:
         qi = self.qi
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
-        return qi * np.exp(Dnom_i - self._integrate_with(self._transDfn, t, **kwargs))
+        D_dt = Dnom_i - self._integrate_with(self._transDfn, t, **kwargs)
+        where_eps = abs(D_dt) > LOG_EPSILON
+        result = np.zeros_like(t, dtype=np.float64)
+        result[where_eps] = 0.0
+        result[~where_eps] = qi * np.exp(D_dt)
+        return result
 
     def _transDfn(self, t: ndarray) -> ndarray:
 
-        t = cast(ndarray, np.atleast_1d(t))
+        t = np.atleast_1d(t)
         qi = self.qi
         bi = self.bi
         bf = self.bf
@@ -630,7 +690,7 @@ class THM(MultisegmentHyperbolic):
         tterm = self.tterm * DAYS_PER_YEAR
 
         if self.Di == 0.0:
-            return np.full_like(t, 0.0, dtype=float)
+            return np.full_like(t, 0.0, dtype=np.float64)
 
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
 
@@ -679,7 +739,7 @@ class THM(MultisegmentHyperbolic):
 
     def _transbfn(self, t: ndarray) -> ndarray:
 
-        t = cast(ndarray, np.atleast_1d(t))
+        t = np.atleast_1d(t)
         bi = self.bi
         bf = self.bf
         telf = self.telf
@@ -690,7 +750,7 @@ class THM(MultisegmentHyperbolic):
             c = self.EXP_GAMMA / (1.5 * telf)
             b = bi - (bi - bf) * np.exp(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
         else:
-            b = np.full_like(t, bf, dtype=float)
+            b = np.full_like(t, bf, dtype=np.float64)
 
         # terminal regime
         if tterm != 0.0 or bterm != 0:
@@ -779,6 +839,8 @@ class PLE(PrimaryPhase):
     Di: float
     Dinf: float
     n: float
+
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 4)
 
     def _validate(self) -> None:
         if self.Dinf > self.Di:
@@ -873,6 +935,8 @@ class SE(PrimaryPhase):
     tau: float
     n: float
 
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
+
     def _qfn(self, t: ndarray) -> ndarray:
         qi = self.qi
         tau = self.tau
@@ -948,6 +1012,8 @@ class Duong(PrimaryPhase):
     qi: float
     a: float
     m: float
+
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
 
     def _qfn(self, t: ndarray) -> ndarray:
         qi = self.qi

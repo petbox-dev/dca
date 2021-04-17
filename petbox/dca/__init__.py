@@ -1,4 +1,4 @@
-__version__ = '1.0.6'
+__version__ = '1.0.7'
 
 from .base import (get_time, get_time_monthly_vol,
                    DeclineCurve, PrimaryPhase,
