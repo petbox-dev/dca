@@ -14,6 +14,7 @@ Created on August 5, 2019
 """
 import sys
 import warnings
+from datetime import timedelta
 import pytest # type: ignore
 import hypothesis
 from hypothesis import assume, given, settings, note, strategies as st
@@ -107,6 +108,13 @@ def check_model(model: dca.DeclineCurve, qi: float) -> bool:
         assert np.all(np.isfinite(ivolume))
         assert np.all(np.isfinite(iavg_rate))
 
+        evolume = model.monthly_vol_equiv(t)
+        mavg_rate = np.gradient(evolume, t)
+        # assert is_float_array_like(evolume, t)
+        # assert is_monotonic_nonincreasing(mavg_rate)
+        assert np.all(np.isfinite(evolume))
+        assert np.all(np.isfinite(mavg_rate))
+
         D = model.D(t)
         assert is_float_array_like(D, t)
         # assert is_monotonic_nonincreasing(D)
@@ -192,6 +200,13 @@ def check_yield_model(model: Union[dca.SecondaryPhase, dca.WaterPhase],
         # assert is_monotonic_nonincreasing(iavg_rate)
         assert np.all(np.isfinite(ivolume))
         assert np.all(np.isfinite(iavg_rate))
+
+        evolume = model.monthly_vol_equiv(t)
+        mavg_rate = np.gradient(evolume, t)
+        # assert is_float_array_like(evolume, t)
+        # assert is_monotonic_nonincreasing(mavg_rate)
+        assert np.all(np.isfinite(evolume))
+        assert np.all(np.isfinite(mavg_rate))
 
         D = model.D(t)
         assert is_float_array_like(D, t)
@@ -539,6 +554,7 @@ def test_terminal_exceeds() -> None:
     m=st.floats(-1.0, 1.0),
     t0=st.floats(1e-10, 365.25),
 )
+@settings(deadline=None)  # type: ignore
 def test_yield(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm: float,
                c: float, m0: float, m: float, t0: float) -> None:
     assume(tterm * dca.DAYS_PER_YEAR > telf)
@@ -548,6 +564,7 @@ def test_yield(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm
     thm.add_secondary(sec)
     check_yield_model(thm.secondary, 'secondary', qi)
 
+    thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     wtr = dca.PLYield(c, m0, m, t0)
     thm.add_water(wtr)
     check_yield_model(thm.water, 'water', qi)
@@ -567,6 +584,7 @@ def test_yield(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm
     _min=st.floats(0, 100.0),
     _max=st.floats(1e4, 5e5)
 )
+@settings(deadline=None)  # type: ignore
 def test_yield_min_max(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm: float,
                        c: float, m0: float, m: float, t0: float, _min: float, _max: float) -> None:
     assume(tterm * dca.DAYS_PER_YEAR > telf)
