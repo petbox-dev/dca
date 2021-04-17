@@ -228,7 +228,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return cls.nominal_from_tangent(D)
 
         if D == 0.0:
-            return 0.0
+            return 0.0 #pragma: no cover
 
         if D >= 1.0:
             return np.inf
@@ -245,7 +245,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # Deff = 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
 
         if D == 0:
-            return 0.0
+            return 0.0 #pragma: no cover
 
         D_b = 1.0 + D * b
         if D_b <= 0.0:
@@ -261,7 +261,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
         if D == 0.0:
-            return 0.0
+            return 0.0 #pragma: no cover
 
         if D >= 1.0:
             return np.inf
@@ -271,7 +271,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
     @classmethod
     def tangent_from_nominal(cls, D: float) -> float:
         if D == 0:
-            return 0.0
+            return 0.0 #pragma: no cover
 
         if D > LOG_EPSILON:
             # >= 100% decline is not possible
