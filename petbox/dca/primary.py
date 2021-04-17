@@ -340,8 +340,8 @@ class MH(MultisegmentHyperbolic):
             ], dtype=np.float64)
 
         tterm = ((1.0 / Dterm_nom) - (1.0 / Di_nom)) / self.bi
-        qterm = self._qcheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm))
-        Nterm = self._Ncheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm))
+        qterm = self._qcheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm)).item()
+        Nterm = self._Ncheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm)).item()
 
         return np.array([
             [0.0, self.qi, Di_nom, self.bi, 0.0],
