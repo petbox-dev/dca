@@ -132,7 +132,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            N(t) = \int_0^t q \, dt
+            N(t) = \\int_0^t q \\, dt
 
         Parameters
         ----------
@@ -156,7 +156,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            N(t) = \int_{t_{i-1}}^{t_i} q \, dt
+            N(t) = \\int_{t_{i-1}}^{t_i} q \\, dt
 
         for each element of ``t``.
 
@@ -189,7 +189,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            N(t) = \int_{t-{1 \, month}}^{t} q \, dt
+            N(t) = \\int_{t-{1 \\, month}}^{t} q \\, dt
 
         Parameters
         ----------
@@ -214,7 +214,8 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            N(t) = \int_{t-{1 \, month}}^{t} q \, dt * \frac{\frac{365.25}{12}}{dt}
+            N(t) = \\frac{\\frac{365.25}{12}}{t-(t-1 \\, month)}
+            \\int_{t-{1 \\, month}}^{t} q \\, dt
 
         Parameters
         ----------
@@ -242,7 +243,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            D(t) \equiv \\frac{d}{dt}\\textrm{ln} \, q \equiv \\frac{1}{q}\\frac{dq}{dt}
+            D(t) \equiv \\frac{d}{dt}\\textrm{ln} \\, q \equiv \\frac{1}{q}\\frac{dq}{dt}
 
         Parameters
         ----------
@@ -262,8 +263,8 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            \\beta(t) \equiv \\frac{d \, \\textrm{ln} \, q}{d \, \\textrm{ln} \, t}
-            \equiv \\frac{t}{q}\\frac{dq}{dt} \equiv t \, D(t)
+            \\beta(t) \\equiv \\frac{d \, \\textrm{ln} \\, q}{d \\, \\textrm{ln} \\, t}
+            \\equiv \\frac{t}{q}\\frac{dq}{dt} \equiv t \\, D(t)
 
         Parameters
         ----------
@@ -283,7 +284,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            b(t) \equiv \\frac{d}{dt}\\frac{1}{D}
+            b(t) \\equiv \\frac{d}{dt}\\frac{1}{D}
 
         Parameters
         ----------

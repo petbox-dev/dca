@@ -299,13 +299,13 @@ class MH(MultisegmentHyperbolic):
 
             .. math::
 
-                D_i = 1 - \\frac{q(t=1 \, year)}{qi}
+                D_i = 1 - \\frac{q(t=1 \\, year)}{qi}
 
             .. math::
 
-                D_i = 1 - (1 + 365.25 \, D_{nom} \, b) ^ \\frac{-1}{b}
+                D_i = 1 - (1 + 365.25 \\, D_{nom} \\, b) ^ \\frac{-1}{b}
 
-            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \, q`
+            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \\, q`
             and has units of ``1 / day``.
 
         bi: float
@@ -402,13 +402,13 @@ class THM(MultisegmentHyperbolic):
 
             .. math::
 
-                D_i = 1 - \\frac{q(t=1 \, year)}{qi}
+                D_i = 1 - \\frac{q(t=1 \\, year)}{qi}
 
             .. math::
 
-                D_i = 1 - (1 + 365.25 \, D_{nom} \, b) ^ \\frac{-1}{b}
+                D_i = 1 - (1 + 365.25 \\, D_{nom} \\, b) ^ \\frac{-1}{b}
 
-            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \, q`
+            where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \\, q`
             and has units of ``1 / day``.
 
         bi: float
@@ -554,7 +554,7 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            q(t) = e^{-\int_0^t D(t) \, dt}
+            q(t) = e^{-\\int_0^t D(t) \\, dt}
 
         Parameters
         ----------
@@ -578,7 +578,7 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            N(t) = \int_0^t q(t) \, dt
+            N(t) = \\int_0^t q(t) \\, dt
 
         Parameters
         ----------
@@ -602,8 +602,8 @@ class THM(MultisegmentHyperbolic):
         .. math::
 
             D(t) = \\frac{1}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
-            (\\textrm{Ei}[-e^{-c \, (t -t_{elf}) + e^(\\gamma)}]
-            - \\textrm{Ei}[-e^{c \, t_{elf} + e^(\\gamma)}])}
+            (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^(\\gamma)}]
+            - \\textrm{Ei}[-e^{c \\, t_{elf} + e^(\\gamma)}])}
 
         Parameters
         ----------
@@ -624,8 +624,8 @@ class THM(MultisegmentHyperbolic):
         .. math::
 
             \\beta(t) = \\frac{t}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
-            (\\textrm{Ei}[-e^{-c \, (t -t_{elf}) + e^(\\gamma)}]
-            - \\textrm{Ei}[-e^{c \, t_{elf} + e^(\\gamma)}])}
+            (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^(\\gamma)}]
+            - \\textrm{Ei}[-e^{c \\, t_{elf} + e^(\\gamma)}])}
 
         Parameters
         ----------
@@ -651,7 +651,7 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            c & = \\frac{e^{\\gamma}}{1.5 \, t_{elf}} \\\\
+            c & = \\frac{e^{\\gamma}}{1.5 \\, t_{elf}} \\\\
             \\gamma & = 0.57721566... \; \\textrm{(Euler-Mascheroni constant)}
 
         Parameters
