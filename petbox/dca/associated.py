@@ -85,7 +85,7 @@ class PLYield(BothAssociatedPhase):
 
     .. math::
 
-        GOR = c \, t^m
+        GOR = c \\, t^m
 
     and allows independent early-time and late-time slopes ``m0`` and ``m`` respectively.
 

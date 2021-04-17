@@ -243,7 +243,7 @@ class DeclineCurve(ABC):
 
         .. math::
 
-            D(t) \equiv \\frac{d}{dt}\\textrm{ln} \\, q \equiv \\frac{1}{q}\\frac{dq}{dt}
+            D(t) \\equiv \\frac{d}{dt}\\textrm{ln} \\, q \equiv \\frac{1}{q}\\frac{dq}{dt}
 
         Parameters
         ----------
@@ -264,7 +264,7 @@ class DeclineCurve(ABC):
         .. math::
 
             \\beta(t) \\equiv \\frac{d \, \\textrm{ln} \\, q}{d \\, \\textrm{ln} \\, t}
-            \\equiv \\frac{t}{q}\\frac{dq}{dt} \equiv t \\, D(t)
+            \\equiv \\frac{t}{q}\\frac{dq}{dt} \\equiv t \\, D(t)
 
         Parameters
         ----------

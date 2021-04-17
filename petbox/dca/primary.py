@@ -652,7 +652,7 @@ class THM(MultisegmentHyperbolic):
         .. math::
 
             c & = \\frac{e^{\\gamma}}{1.5 \\, t_{elf}} \\\\
-            \\gamma & = 0.57721566... \; \\textrm{(Euler-Mascheroni constant)}
+            \\gamma & = 0.57721566... \\; \\textrm{(Euler-Mascheroni constant)}
 
         Parameters
         ----------
