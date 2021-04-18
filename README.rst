@@ -29,45 +29,49 @@ Additionally, we also define an interface to attach a GOR/CGR yield function to 
 
 Analytic functions are implemented wherever possible. When not possible, numerical evaluations are performed using ``scipy.integrate.fixed_quad``. Given that most of the functions of interest that must be numerically evaluated are monotonic, this generally works well.
 
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Primary Phase          | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |
-|                        | `Modified Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.MH>`_,                                    |
-|                        | `Power-Law Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLE>`_,                                 |
-|                        | `Stretched Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SE>`_,                                  |
-|                        | `Duong <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.Duong>`_                                                |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Secondary Phase        | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_                                    |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Water Phase            | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_                                    |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Primary Phase              | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |
+|                            | `Modified Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.MH>`_,                                    |
+|                            | `Power-Law Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLE>`_,                                 |
+|                            | `Stretched Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SE>`_,                                  |
+|                            | `Duong <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.Duong>`_                                                |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Secondary Phase            | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_                                    |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Water Phase                | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_                                    |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 
 The following functions are exposed for use
 
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Base Functions         | `rate(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.rate>`_,                                 |
-|                        | `cum(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.cum>`_,                                   |
-|                        | `D(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.D>`_,                                       |
-|                        | `beta(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.beta>`_,                                 |
-|                        | `b(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.b>`_,                                       |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Transient Hyperbolic   | `transient_rate(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_rate>`_,                      |
-|                        | `transient_cum(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_cum>`_,                        |
-|                        | `transient_D(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_D>`_,                            |
-|                        | `transient_beta(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_beta>`_,                      |
-|                        | `transient_b(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_b>`_                             |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Primary Phase          | `add_secondary <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_secondary>`_,                  |
-|                        | `add_water <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_water>`_                           |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Secondary Phase        | `gor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.gor>`_,                                 |
-|                        | `cgr(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.cgr>`_                                  |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Water Phase            | `wor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.WaterPhase.wor>`_                                      |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Utility                | `bourdet <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.bourdet>`_,                                           |
-|                        | `get_time <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                         |
-|                        | `get_time_monthly_vol <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time_monthly_vol>`_                  |
-+------------------------+---------------------------------------------------------------------------------------------------------------------------------+
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Base Functions             | `rate(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.rate>`_,                                 |
+|                            | `cum(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.cum>`_,                                   |
+|                            | `D(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.D>`_,                                       |
+|                            | `beta(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.beta>`_,                                 |
+|                            | `b(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.b>`_,                                       |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Interval Volumes           | `interval_vol(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.interval_vol>`_,                 |
+|                            | `monthly_vol(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.monthly_vol>`_,                   |
+|                            | `monthly_vol_equiv(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.DeclineCurve.monthly_vol_equiv>`_,       |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Transient Hyperbolic       | `transient_rate(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_rate>`_,                      |
+|                            | `transient_cum(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_cum>`_,                        |
+|                            | `transient_D(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_D>`_,                            |
+|                            | `transient_beta(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_beta>`_,                      |
+|                            | `transient_b(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM.transient_b>`_                             |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Primary Phase              | `add_secondary(model) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_secondary>`_,           |
+|                            | `add_water(model) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PrimaryPhase.add_water>`_                    |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Secondary Phase            | `gor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.gor>`_,                                 |
+|                            | `cgr(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.cgr>`_                                  |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Water Phase                | `wor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.WaterPhase.wor>`_                                      |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
+| Utility                    | `bourdet(y, x, ...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.bourdet>`_,                                |
+|                            | `get_time(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                    |
+|                            | `get_time_monthly_vol(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time_monthly_vol>`_             |
++----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 
 
 Getting Started
