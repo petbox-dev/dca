@@ -6,6 +6,13 @@ Version History
    :noindex:
 
 
+1.0.7
+-----
+
+* Allow disabling of parameter checks by passing an interable of booleans, each indicating a check
+    to each model parameter.
+* Explicitly handle floating point overflow errors rather than relying on `numpy`.
+
 1.0.6
 -----
 

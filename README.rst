@@ -8,9 +8,11 @@ Petroleum Engineering Toolbox
 
 .. image:: https://img.shields.io/pypi/v/petbox-dca.svg
     :target: https://pypi.org/project/petbox-dca/
-    
+    :alt: PyPi Version
+
 .. image:: https://travis-ci.org/petbox-dev/dca.svg?branch=master
     :target: https://travis-ci.org/github/petbox-dev/dca
+    :alt: Build Status
 
 .. image:: https://readthedocs.org/projects/petbox-dca/badge/?version=latest
     :target: https://petbox-dca.readthedocs.io/en/latest/?badge=latest
@@ -19,6 +21,10 @@ Petroleum Engineering Toolbox
 .. image:: https://coveralls.io/repos/github/petbox-dev/dca/badge.svg
     :target: https://coveralls.io/github/petbox-dev/dca
     :alt: Coverage Status
+
+.. image:: https://open.vscode.dev/badges/open-in-vscode.svg
+    :target: https://open.vscode.dev/petbox-dev/dca
+    :alt: Open in Visual Studio Code
 
 
 Empirical analysis of production data requires implementation of several decline curve models spread over years and multiple SPE publications. Additionally, comprehensive analysis requires graphical analysis among multiple diagnostics plots and their respective plotting functions. While each model's ``q(t)`` (rate) function may be simple, the ``N(t)`` (cumulative volume) may not be. For example, the hyperbolic model has three different forms (hyperbolic, harmonic, exponential), and this is complicated by potentially multiple segments, each of which must be continuous in the rate derivatives. Or, as in the case of the Power-Law Exponential model, the ``N(t)`` function must be numerically evaluated.
