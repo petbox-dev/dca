@@ -6,6 +6,16 @@ Version History
    :noindex:
 
 
+1.0.8
+-----
+
+* New functions
+    * Added ``WaterPhase.wgr`` method
+
+* Other changes
+    * Adjust yield model rate function to return consistent units if primary phase is oil or gas
+    * Update to `numpy v1.20` typing
+
 1.0.7
 -----
 
@@ -21,7 +31,7 @@ Version History
     * Added ``WaterPhase.wor`` method
     * Added ``PrimaryPhase.add_water`` method
 
-* Other Changes
+* Other changes
     * A ``yield`` model may inherit both ``SecondaryPhase`` and ``WaterPhase``, with the respective methods removed upon attachment to a ``PrimaryPhase``.
 
 1.0.5
@@ -30,7 +40,7 @@ Version History
 * New functions
     * Bourdet algorithm
 
-* Other Changes
+* Other changes
     * Update docstrings
     * Add bourdet data derivatives to detailed use examples
 

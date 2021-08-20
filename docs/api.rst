@@ -96,6 +96,7 @@ Water Phase Models
 
 .. autosummary::
     wor
+    wgr
 
 
 Transient Hyperbolic Specific
@@ -173,6 +174,7 @@ These classes define the basic functions that are exposed by all decline curve m
 .. autoclass:: WaterPhase
 
     .. automethod:: wor
+    .. automethod:: wgr
 
 
 Primary Phase Models
