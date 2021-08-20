@@ -247,7 +247,7 @@ Implementations of primary phase decline curve models
 Associated Phase Models
 -----------------------
 
-Implementations of associated (secondary and water) phase GOR/CGR/WOR models
+Implementations of associated (secondary and water) phase GOR/CGR/WOR/WGR models
 
 .. autoclass:: PLYield
 
