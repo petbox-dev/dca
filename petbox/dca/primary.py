@@ -318,7 +318,7 @@ class MH(MultisegmentHyperbolic):
     qi: float
     Di: float
     bi: float
-    Dterm: float
+    Dterm: float = 0.0
 
     validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 4)
 
