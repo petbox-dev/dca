@@ -18,7 +18,6 @@ import warnings
 import dataclasses as dc
 from dataclasses import dataclass, field
 
-from numpy import ndarray
 import numpy as np
 
 from scipy.special import expi as ei, gammainc  # type: ignore
@@ -27,10 +26,13 @@ from scipy.integrate import fixed_quad  # type: ignore
 from abc import ABC, abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any,
                     Sequence, Iterable, Optional, Callable, ClassVar, Union)
+from numpy.typing import NDArray
 from typing import cast
 
 from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
                    DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON)
+
+NDFloat = NDArray[np.float64]
 
 
 @dataclass
@@ -47,22 +49,22 @@ class NullPrimaryPhase(PrimaryPhase):
         # Do not associate with the null secondary phase
         pass
 
-    def _qfn(self, t: ndarray) -> ndarray:
+    def _qfn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
+    def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _Dfn(self, t: ndarray) -> ndarray:
+    def _Dfn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _Dfn2(self, t: ndarray) -> ndarray:
+    def _Dfn2(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _betafn(self, t: ndarray) -> ndarray:
+    def _betafn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _bfn(self, t: ndarray) -> ndarray:
+    def _bfn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
     @classmethod
@@ -85,10 +87,10 @@ class MultisegmentHyperbolic(PrimaryPhase):
     N_IDX: ClassVar[int] = 4
     B_EPSILON: ClassVar[float] = 1e-10
 
-    segment_params: ndarray
+    segment_params: NDFloat
 
     @abstractmethod
-    def _segments(self) -> ndarray:
+    def _segments(self) -> NDFloat:
         """
         Precache the initial conditions of each hyperbolic segment. Should assign a list of params
         for the start condition of each segment like:
@@ -109,7 +111,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @staticmethod
     def _qcheck(t0: float, q: float, D: float, b: float, N: float,
-                t: Union[float, ndarray]) -> ndarray:
+                t: Union[float, NDFloat]) -> NDFloat:
         """
         Compute the proper Arps form of q
         """
@@ -126,13 +128,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
         else:
             D_dt = 1.0 / b * np.log(1.0 + D * b * dt)
 
-        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)
-        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
         return q * np.exp(-D_dt)
 
     @staticmethod
     def _Ncheck(t0: float, q: float, D: float, b: float, N: float,
-                t: Union[float, ndarray]) -> ndarray:
+                t: Union[float, NDFloat]) -> NDFloat:
         """
         Compute the proper Arps form of N
         """
@@ -156,13 +158,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
             D_dt = (1.0 - 1.0 / b) * np.log(1.0 + b * D * dt)
             q_b_D = q / ((1.0 - b) * D)
 
-        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)
-        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
         return N - q_b_D * np.expm1(D_dt)
 
     @staticmethod
     def _Dcheck(t0: float, q: float, D: float, b: float, N: float,
-                t: Union[float, ndarray]) -> ndarray:
+                t: Union[float, NDFloat]) -> NDFloat:
         """
         Compute the proper Arps form of D
         """
@@ -175,7 +177,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @staticmethod
     def _Dcheck2(t0: float, q: float, D: float, b: float, N: float,
-                 t: Union[float, ndarray]) -> ndarray:
+                 t: Union[float, NDFloat]) -> NDFloat:
         """
         Compute the derivative of the proper Arps form of D
         """
@@ -187,7 +189,8 @@ class MultisegmentHyperbolic(PrimaryPhase):
         Denom = 1.0 + D * b * dt
         return -b * D * D / (Denom * Denom)
 
-    def _vectorize(self, fn: Callable[..., ndarray], t: Union[float, ndarray]) -> ndarray:
+    def _vectorize(self, fn: Callable[..., NDFloat],
+                   t: Union[float, NDFloat]) -> NDFloat:
         """
         Vectorize the computation of a parameter
         """
@@ -204,22 +207,22 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         return x
 
-    def _qfn(self, t: ndarray) -> ndarray:
+    def _qfn(self, t: NDFloat) -> NDFloat:
         return self._vectorize(self._qcheck, t)
 
-    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
+    def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         return self._vectorize(self._Ncheck, t)
 
-    def _Dfn(self, t: ndarray) -> ndarray:
+    def _Dfn(self, t: NDFloat) -> NDFloat:
         return self._vectorize(self._Dcheck, t)
 
-    def _Dfn2(self, t: ndarray) -> ndarray:
+    def _Dfn2(self, t: NDFloat) -> NDFloat:
         return self._vectorize(self._Dcheck2, t)
 
-    def _betafn(self, t: ndarray) -> ndarray:
+    def _betafn(self, t: NDFloat) -> NDFloat:
         return self._vectorize(self._Dcheck, t) * t
 
-    def _bfn(self, t: ndarray) -> ndarray:
+    def _bfn(self, t: NDFloat) -> NDFloat:
         return self._vectorize(lambda *p: p[self.B_IDX], t)
 
     @classmethod
@@ -327,7 +330,7 @@ class MH(MultisegmentHyperbolic):
             raise ValueError('Di < Dterm')
         super()._validate()
 
-    def _segments(self) -> ndarray:
+    def _segments(self) -> NDFloat:
         """
         Precache the initial conditions of each hyperbolic segment.
         """
@@ -464,7 +467,7 @@ class THM(MultisegmentHyperbolic):
             raise ValueError('tterm < telf')
         super()._validate()
 
-    def _segments(self) -> ndarray:
+    def _segments(self) -> NDFloat:
 
         t1 = 0.0
         t2 = self.telf * (self.EXP_1 - 1.0)
@@ -547,7 +550,7 @@ class THM(MultisegmentHyperbolic):
 
         return segments
 
-    def transient_rate(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
+    def transient_rate(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
         """
         Compute the rate function using full definition.
         Uses :func:`scipy.integrate.fixed_quad` to integrate :func:`transient_D`.
@@ -558,7 +561,7 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of time values to evaluate.
 
             **kwargs
@@ -566,12 +569,12 @@ class THM(MultisegmentHyperbolic):
 
         Returns
         -------
-            numpy.ndarray[float]
+            numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._transqfn(t, **kwargs)
 
-    def transient_cum(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
+    def transient_cum(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
         """
         Compute the cumulative volume function using full definition.
         Uses :func:`scipy.integrate.fixed_quad` to integrate :func:`transient_q`.
@@ -582,7 +585,7 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of time values to evaluate.
 
             **kwargs
@@ -590,12 +593,12 @@ class THM(MultisegmentHyperbolic):
 
         Returns
         -------
-            numpy.ndarray[float]
+            numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._transNfn(t, **kwargs)
 
-    def transient_D(self, t: Union[float, ndarray]) -> ndarray:
+    def transient_D(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Compute the D-parameter function using full definition.
 
@@ -607,17 +610,17 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of time values to evaluate.
 
         Returns
         -------
-            numpy.ndarray[float]
+            numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._transDfn(t)
 
-    def transient_beta(self, t: Union[float, ndarray]) -> ndarray:
+    def transient_beta(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Compute the beta-parameter function using full definition.
 
@@ -629,17 +632,17 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of time values to evaluate.
 
         Returns
         -------
-            numpy.ndarray[float]
+            numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._transDfn(t) * t
 
-    def transient_b(self, t: Union[float, ndarray]) -> ndarray:
+    def transient_b(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Compute the b-parameter function using full definition.
 
@@ -656,20 +659,20 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of time values to evaluate.
 
         Returns
         -------
-            numpy.ndarray[float]
+            numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._transbfn(t)
 
-    def _transNfn(self, t: ndarray, **kwargs: Any) -> ndarray:
+    def _transNfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         return self._integrate_with(self._transqfn, t, **kwargs)
 
-    def _transqfn(self, t: ndarray, **kwargs: Any) -> ndarray:
+    def _transqfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         qi = self.qi
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
         D_dt = Dnom_i - self._integrate_with(self._transDfn, t, **kwargs)
@@ -679,7 +682,7 @@ class THM(MultisegmentHyperbolic):
         result[~where_eps] = qi * np.exp(D_dt)
         return result
 
-    def _transDfn(self, t: ndarray) -> ndarray:
+    def _transDfn(self, t: NDFloat) -> NDFloat:
 
         t = np.atleast_1d(t)
         qi = self.qi
@@ -720,7 +723,7 @@ class THM(MultisegmentHyperbolic):
                 if np.count_nonzero(where_term) > 0:
                     Dterm = D[where_term][-1].item()
                 else:
-                    Dterm = None
+                    Dterm = 0.0
             elif tterm == 0.0:
                 # exponential
                 Dterm = self.nominal_from_tangent(bterm) / DAYS_PER_YEAR
@@ -737,7 +740,7 @@ class THM(MultisegmentHyperbolic):
 
         return D
 
-    def _transbfn(self, t: ndarray) -> ndarray:
+    def _transbfn(self, t: NDFloat) -> NDFloat:
 
         t = np.atleast_1d(t)
         bi = self.bi
@@ -846,35 +849,35 @@ class PLE(PrimaryPhase):
         if self.Dinf > self.Di:
             raise ValueError('Dinf > Di')
 
-    def _qfn(self, t: ndarray) -> ndarray:
+    def _qfn(self, t: NDFloat) -> NDFloat:
         qi = self.qi
         Di = self.Di
         Dinf = self.Dinf
         n = self.n
         return qi * np.exp(-Di * t ** n - Dinf * t)
 
-    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
+    def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         return self._integrate_with(self._qfn, t, **kwargs)
 
-    def _Dfn(self, t: ndarray) -> ndarray:
+    def _Dfn(self, t: NDFloat) -> NDFloat:
         Di = self.Di
         Dinf = self.Dinf
         n = self.n
         return Dinf + Di * n * t ** (n - 1.0)
 
-    def _Dfn2(self, t: ndarray) -> ndarray:
+    def _Dfn2(self, t: NDFloat) -> NDFloat:
         Di = self.Di
         Dinf = self.Dinf
         n = self.n
         return Dinf + Di * n * (n - 1.0) * t ** (n - 2.0)
 
-    def _betafn(self, t: ndarray) -> ndarray:
+    def _betafn(self, t: NDFloat) -> NDFloat:
         Di = self.Di
         Dinf = self.Dinf
         n = self.n
         return Dinf * t + Di * n * t ** n
 
-    def _bfn(self, t: ndarray) -> ndarray:
+    def _bfn(self, t: NDFloat) -> NDFloat:
         Di = self.Di
         Dinf = self.Dinf
         n = self.n
@@ -937,34 +940,34 @@ class SE(PrimaryPhase):
 
     validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
 
-    def _qfn(self, t: ndarray) -> ndarray:
+    def _qfn(self, t: NDFloat) -> NDFloat:
         qi = self.qi
         tau = self.tau
         n = self.n
         return qi * np.exp(-(t / tau) ** n)
 
-    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
+    def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         qi = self.qi
         tau = self.tau
         n = self.n
         return qi * tau / n * gammainc(1.0 / n, (t / tau) ** n)
 
-    def _Dfn(self, t: ndarray) -> ndarray:
+    def _Dfn(self, t: NDFloat) -> NDFloat:
         tau = self.tau
         n = self.n
         return n * tau ** -n * t ** (n - 1.0)
 
-    def _Dfn2(self, t: ndarray) -> ndarray:
+    def _Dfn2(self, t: NDFloat) -> NDFloat:
         tau = self.tau
         n = self.n
         return n * (n - 1.0) * tau ** -n * t ** (n - 2.0)
 
-    def _betafn(self, t: ndarray) -> ndarray:
+    def _betafn(self, t: NDFloat) -> NDFloat:
         tau = self.tau
         n = self.n
         return n * tau ** -n * t ** n
 
-    def _bfn(self, t: ndarray) -> ndarray:
+    def _bfn(self, t: NDFloat) -> NDFloat:
         tau = self.tau
         n = self.n
         return (1.0 - n) / n * tau ** n * t ** -n
@@ -1015,37 +1018,37 @@ class Duong(PrimaryPhase):
 
     validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
 
-    def _qfn(self, t: ndarray) -> ndarray:
+    def _qfn(self, t: NDFloat) -> NDFloat:
         qi = self.qi
         a = self.a
         m = self.m
         return np.where(t == 0.0, 0.0,
                         qi * t ** -m * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
 
-    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
+    def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         qi = self.qi
         a = self.a
         m = self.m
         return np.where(t == 0.0, 0.0, qi / a * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
 
-    def _Dfn(self, t: ndarray) -> ndarray:
+    def _Dfn(self, t: NDFloat) -> NDFloat:
         a = self.a
         m = self.m
         # alternative form: D = m * t ** -1.0 - a * t ** -m
         return m / t - a * t ** -m
 
-    def _Dfn2(self, t: ndarray) -> ndarray:
+    def _Dfn2(self, t: NDFloat) -> NDFloat:
         a = self.a
         m = self.m
         # alternative form: D = m * t ** -1.0 - a * t ** -m
         return -m / (t * t) + m * a * t ** (-m - 1.0)
 
-    def _betafn(self, t: ndarray) -> ndarray:
+    def _betafn(self, t: NDFloat) -> NDFloat:
         a = self.a
         m = self.m
         return m - a * t ** (1.0 - m)
 
-    def _bfn(self, t: ndarray) -> ndarray:
+    def _bfn(self, t: NDFloat) -> NDFloat:
         a = self.a
         m = self.m
         Denom = a * t - m * t ** m

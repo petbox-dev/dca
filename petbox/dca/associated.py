@@ -17,18 +17,20 @@ import warnings
 import dataclasses as dc
 from dataclasses import dataclass
 
-from numpy import ndarray
 import numpy as np
 
 from scipy.integrate import fixed_quad  # type: ignore
 
 from typing import (TypeVar, Type, List, Dict, Tuple, Any,
                     Sequence, Optional, Callable, ClassVar, Union)
+from numpy.typing import NDArray
 from typing import cast
 
 from .base import (DeclineCurve, PrimaryPhase,
                    AssociatedPhase, SecondaryPhase, WaterPhase, BothAssociatedPhase,
                    ParamDesc, DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON)
+
+NDFloat = NDArray[np.float64]
 
 
 @dataclass
@@ -45,25 +47,25 @@ class NullAssociatedPhase(SecondaryPhase, WaterPhase):
         # Do not associate with the null primary phase
         pass
 
-    def _yieldfn(self, t: ndarray) -> ndarray:
+    def _yieldfn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _qfn(self, t: ndarray) -> ndarray:
+    def _qfn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
+    def _Nfn(self, t: NDFloat, **kwargs: Dict[Any, Any]) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _Dfn(self, t: ndarray) -> ndarray:
+    def _Dfn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _Dfn2(self, t: ndarray) -> ndarray:
+    def _Dfn2(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _betafn(self, t: ndarray) -> ndarray:
+    def _betafn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _bfn(self, t: ndarray) -> ndarray:
+    def _bfn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
     @classmethod
@@ -92,7 +94,10 @@ class PLYield(BothAssociatedPhase):
     Parameters
     ----------
         c: float
-            The value of GOR that acts as the anchor or pivot at ``t=t0``.
+            The value of GOR/CGR/WOR/CGR that acts as the anchor or pivot at ``t=t0``.
+            Units should be correctly specified for the respective yield function.
+            Assumed volumes units per phase must be ``Bbl`` for oil and water and ``Mscf`` for gas
+            in order to resolve any inconsistencies in unit magnitude.
 
         m0: float
             Early-time power-law slope.
@@ -124,30 +129,30 @@ class PLYield(BothAssociatedPhase):
             raise ValueError('max < min')
         super()._validate()
 
-    def _yieldfn(self, t: ndarray) -> ndarray:
+    def _yieldfn(self, t: NDFloat) -> NDFloat:
         c = self.c
         t0 = self.t0
 
         m = np.where(t < t0, self.m0, self.m)
 
         t_t0 = t / t0
-        np.putmask(t_t0, mask=t_t0 <= 0, values=MIN_EPSILON)
+        np.putmask(t_t0, mask=t_t0 <= 0, values=MIN_EPSILON)  # type: ignore
         t_m = m * np.log(t_t0)
-        np.putmask(t_m, mask=t_m > LOG_EPSILON, values=np.inf)
-        np.putmask(t_m, mask=t_m < -LOG_EPSILON, values=-np.inf)
+        np.putmask(t_m, mask=t_m > LOG_EPSILON, values=np.inf)  # type: ignore
+        np.putmask(t_m, mask=t_m < -LOG_EPSILON, values=-np.inf)  # type: ignore
 
         if self.min is not None or self.max is not None:
             return np.where(t == 0.0, 0.0,
                             np.clip(c * np.exp(t_m), self.min, self.max))  # type: ignore
         return np.where(t == 0.0, 0.0, c * np.exp(t_m))
 
-    def _qfn(self, t: ndarray) -> ndarray:
-        return self._yieldfn(t) / 1000.0 * self.primary._qfn(t)
+    def _qfn(self, t: NDFloat) -> NDFloat:
+        return self._yieldfn(t) * self.primary._qfn(t)
 
-    def _Nfn(self, t: ndarray, **kwargs: Dict[Any, Any]) -> ndarray:
+    def _Nfn(self, t: NDFloat, **kwargs: Dict[Any, Any]) -> NDFloat:
         return self._integrate_with(self._qfn, t, **kwargs)
 
-    def _Dfn(self, t: ndarray) -> ndarray:
+    def _Dfn(self, t: NDFloat) -> NDFloat:
         c = self.c
         t0 = self.t0
         m = np.where(t < t0, self.m0, self.m)
@@ -159,7 +164,7 @@ class PLYield(BothAssociatedPhase):
             m[y >= self.max] = 0.0
         return -m / t + self.primary._Dfn(t)
 
-    def _Dfn2(self, t: ndarray) -> ndarray:
+    def _Dfn2(self, t: NDFloat) -> NDFloat:
         c = self.c
         t0 = self.t0
         m = np.where(t < t0, self.m0, self.m)
@@ -171,10 +176,10 @@ class PLYield(BothAssociatedPhase):
             m[y >= self.max] = 0.0
         return -m / (t * t)
 
-    def _betafn(self, t: ndarray) -> ndarray:
+    def _betafn(self, t: NDFloat) -> NDFloat:
         return self._Dfn(t) * t
 
-    def _bfn(self, t: ndarray) -> ndarray:
+    def _bfn(self, t: NDFloat) -> NDFloat:
         D = self._Dfn(t)
         return np.where(D == 0.0, 0.0, (self._Dfn2(t) - self.primary._Dfn2(t)) / (D * D))
 

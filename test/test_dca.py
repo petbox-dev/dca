@@ -161,6 +161,10 @@ def check_yield_model(model: Union[dca.SecondaryPhase, dca.WaterPhase],
                 assert is_float_array_like(wor, t)
                 assert np.all(np.isfinite(wor))
 
+                wgr = model.wgr(t)  # type: ignore
+                assert is_float_array_like(wgr, t)
+                assert np.all(np.isfinite(wgr))
+
         elif phase == 'water' and isinstance(model, dca.WaterPhase):
             with pytest.raises(ValueError) as e:
                 gor = model.gor(t)  # type: ignore
@@ -174,6 +178,10 @@ def check_yield_model(model: Union[dca.SecondaryPhase, dca.WaterPhase],
             wor = model.wor(t)
             assert is_float_array_like(wor, t)
             assert np.all(np.isfinite(wor))
+
+            wgr = model.wgr(t)
+            assert is_float_array_like(wgr, t)
+            assert np.all(np.isfinite(wgr))
 
         rate = model.rate(t)
         assert is_float_array_like(rate, t)
@@ -298,6 +306,7 @@ def test_nulls() -> None:
     assert np.allclose(secondary.gor(t), 0.0)
     assert np.allclose(secondary.cgr(t), 0.0)
     assert np.allclose(secondary.wor(t), 0.0)
+    assert np.allclose(secondary.wgr(t), 0.0)
     assert np.allclose(secondary.rate(t), 0.0)
     assert np.allclose(secondary.cum(t), 0.0)
     assert np.allclose(secondary.D(t), 0.0)
@@ -427,7 +436,7 @@ def test_THM_transient_extra() -> None:
     check_transient_model(thm)
     check_transient_model_rate_cum(thm)
 
-    thm = dca.THM(1000.0, 1e-10, 2.0, 0.8, 1e-5, 0.5, 0.06)
+    thm = dca.THM(1000.0, 1e-10, 2.0, 0.8, 0.0, 0.5, 0.06)
     check_transient_model(thm)
     check_transient_model_rate_cum(thm)
 

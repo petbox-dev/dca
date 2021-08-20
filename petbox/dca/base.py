@@ -21,7 +21,6 @@ import warnings
 import dataclasses as dc
 from dataclasses import dataclass
 
-from numpy import ndarray
 import numpy as np
 from numpy.random import RandomState
 
@@ -31,7 +30,10 @@ from scipy.integrate import fixed_quad  # type: ignore
 from abc import ABC, abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any, NoReturn,
                     Sequence, Iterable, Iterator, Optional, Callable, ClassVar, Union)
+from numpy.typing import NDArray
 from typing import cast
+
+NDFloat = NDArray[np.float64]
 
 
 DAYS_PER_MONTH = 365.25 / 12.0
@@ -49,12 +51,12 @@ class ParamDesc():
     description: str
     lower_bound: Optional[float]
     upper_bound: Optional[float]
-    naive_gen: Callable[[RandomState, int], ndarray]
+    naive_gen: Callable[[RandomState, int], NDFloat]
     exclude_lower_bound: bool = False
     exclude_upper_bound: bool = False
 
 
-def get_time(start: float = 1.0, end: float = 1e5, n: int = 101) -> ndarray:
+def get_time(start: float = 1.0, end: float = 1e5, n: int = 101) -> NDFloat:
     """
     Get a time array to evaluate with.
 
@@ -71,13 +73,13 @@ def get_time(start: float = 1.0, end: float = 1e5, n: int = 101) -> ndarray:
 
     Returns
     -------
-        time: numpy.ndarray[float]
+        time: numpy.NDFloat
             An evenly-logspaced time series.
     """
     return 10.0 ** np.linspace(log10(start), log10(end), n)
 
 
-def get_time_monthly_vol(start: float = 1, end: int = 10_000) -> ndarray:
+def get_time_monthly_vol(start: float = 1, end: int = 10_000) -> NDFloat:
     """
     Get a time array to evaluate with.
 
@@ -91,7 +93,7 @@ def get_time_monthly_vol(start: float = 1, end: int = 10_000) -> ndarray:
 
     Returns
     -------
-        time: numpy.ndarray[float]
+        time: numpy.NDFloat
             An evenly-monthly-spaced time series
     """
     return (np.arange(start, end // DAYS_PER_MONTH) + 1) * DAYS_PER_MONTH
@@ -104,7 +106,7 @@ class DeclineCurve(ABC):
     """
     validate_params: Iterable[bool] = [True]
 
-    def rate(self, t: Union[float, ndarray]) -> ndarray:
+    def rate(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Defines the model rate function:
 
@@ -116,17 +118,17 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
         Returns
         -------
-            rate: numpy.ndarray[float]
+            rate: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._qfn(t)
 
-    def cum(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
+    def cum(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
         """
         Defines the model cumulative volume function:
 
@@ -136,7 +138,7 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
             **kwargs
@@ -144,13 +146,13 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-            cumulative volume: numpy.ndarray[float]
+            cumulative volume: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._Nfn(t, **kwargs)
 
-    def interval_vol(self, t: Union[float, ndarray], t0: Optional[Union[float, ndarray]] = None,
-                     **kwargs: Any) -> ndarray:
+    def interval_vol(self, t: Union[float, NDFloat], t0: Optional[Union[float, NDFloat]] = None,
+                     **kwargs: Any) -> NDFloat:
         """
         Defines the model interval volume function:
 
@@ -162,10 +164,10 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of interval end times at which to evaluate the function.
 
-            t0: Optional[Union[float, numpy.ndarray[float]]]
+            t0: Optional[Union[float, numpy.NDFloat]]
                 A start time of the first interval. If not given, the first element
                 of ``t`` is used.
 
@@ -174,15 +176,15 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-          interval volume: numpy.ndarray[float]
+          interval volume: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         if t0 is None:
             t0 = t[0]
         t0 = np.atleast_1d(t0).astype(np.float64)
-        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
+        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))  # type: ignore
 
-    def monthly_vol(self, t: Union[float, ndarray], **kwargs: Any) -> ndarray:
+    def monthly_vol(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
         """
         Defines the model fixed monthly interval volume function. If t < 1 month, the interval
         begin at zero:
@@ -193,7 +195,7 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of interval end times at which to evaluate the function.
 
             **kwargs
@@ -201,14 +203,14 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-            monthly equivalent volume: numpy.ndarray[float]
+            monthly equivalent volume: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._Nfn(t, **kwargs) \
             - np.where(t < DAYS_PER_MONTH, 0, self._Nfn(t - DAYS_PER_MONTH, **kwargs))
 
-    def monthly_vol_equiv(self, t: Union[float, ndarray],
-                          t0: Optional[Union[float, ndarray]] = None, **kwargs: Any) -> ndarray:
+    def monthly_vol_equiv(self, t: Union[float, NDFloat],
+                          t0: Optional[Union[float, NDFloat]] = None, **kwargs: Any) -> NDFloat:
         """
         Defines the model equivalent monthly interval volume function:
 
@@ -219,10 +221,10 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of interval end times at which to evaluate the function.
 
-            t0: Optional[Union[float, numpy.ndarray[float]]]
+            t0: Optional[Union[float, numpy.NDFloat]]
                 A start time of the first interval. If not given, assumed to be zero.
 
             **kwargs
@@ -230,55 +232,55 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-            monthly equivalent volume: numpy.ndarray[float]
+            monthly equivalent volume: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         t0 = np.atleast_1d(0.0).astype(np.float64)
-        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0)) \
-            / np.diff(t, prepend=t0) * DAYS_PER_MONTH
+        return (np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0))  # type: ignore
+                / np.diff(t, prepend=t0) * DAYS_PER_MONTH)  # type: ignore
 
-    def D(self, t: Union[float, ndarray]) -> ndarray:
+    def D(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Defines the model D-parameter function:
 
         .. math::
 
-            D(t) \\equiv \\frac{d}{dt}\\textrm{ln} \\, q \equiv \\frac{1}{q}\\frac{dq}{dt}
+            D(t) \\equiv \\frac{d}{dt}\\textrm{ln} \\, q \\equiv \\frac{1}{q}\\frac{dq}{dt}
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
         Returns
         -------
-            D-parameter: numpy.ndarray[float]
+            D-parameter: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._Dfn(t)
 
-    def beta(self, t: Union[float, ndarray]) -> ndarray:
+    def beta(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Defines the model beta-parameter function.
 
         .. math::
 
-            \\beta(t) \\equiv \\frac{d \, \\textrm{ln} \\, q}{d \\, \\textrm{ln} \\, t}
+            \\beta(t) \\equiv \\frac{d \\, \\textrm{ln} \\, q}{d \\, \\textrm{ln} \\, t}
             \\equiv \\frac{t}{q}\\frac{dq}{dt} \\equiv t \\, D(t)
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
         Returns
         -------
-          beta-parameter: numpy.ndarray[float]
+          beta-parameter: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._betafn(t)
 
-    def b(self, t: Union[float, ndarray]) -> ndarray:
+    def b(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Defines the model b-parameter function:
 
@@ -288,38 +290,38 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
         Returns
         -------
-            b-parameter: numpy.ndarray[float]
+            b-parameter: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
         return self._bfn(t)
 
     @abstractmethod
-    def _qfn(self, t: ndarray) -> ndarray:
+    def _qfn(self, t: NDFloat) -> NDFloat:
         raise NotImplementedError
 
     @abstractmethod
-    def _Nfn(self, t: ndarray, **kwargs: Any) -> ndarray:
+    def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         raise NotImplementedError
 
     @abstractmethod
-    def _Dfn(self, t: ndarray) -> ndarray:
+    def _Dfn(self, t: NDFloat) -> NDFloat:
         raise NotImplementedError
 
     @abstractmethod
-    def _Dfn2(self, t: ndarray) -> ndarray:
+    def _Dfn2(self, t: NDFloat) -> NDFloat:
         raise NotImplementedError
 
     @abstractmethod
-    def _betafn(self, t: ndarray) -> ndarray:
+    def _betafn(self, t: NDFloat) -> NDFloat:
         raise NotImplementedError
 
     @abstractmethod
-    def _bfn(self, t: ndarray) -> ndarray:
+    def _bfn(self, t: NDFloat) -> NDFloat:
         raise NotImplementedError
 
     def _validate(self) -> None:
@@ -413,14 +415,14 @@ class DeclineCurve(ABC):
         return cls(*params)
 
     @staticmethod
-    def _validate_ndarray(x: Union[float, ndarray]) -> ndarray:
+    def _validate_ndarray(x: Union[float, NDFloat]) -> NDFloat:
         """
         Ensure the time array is a 1d arary of floats.
         """
         return np.atleast_1d(x).astype(np.float64)
 
     @staticmethod
-    def _iter_t(t: ndarray) -> Iterator[Tuple[float, float]]:
+    def _iter_t(t: NDFloat) -> Iterator[Tuple[float, float]]:
         """
         Yield a tuple of time intervals.
         """
@@ -430,8 +432,8 @@ class DeclineCurve(ABC):
             t0 = t1
         return
 
-    def _integrate_with(self, fn: Callable[[ndarray], ndarray], t: ndarray,
-                        **kwargs: Any) -> ndarray:
+    def _integrate_with(self, fn: Callable[[NDFloat], NDFloat],
+                        t: NDFloat, **kwargs: Any) -> NDFloat:
         kwargs.setdefault('n', 100)
         integral = np.array(list(starmap(
             lambda t0, t1: fixed_quad(fn, t0, t1, **kwargs)[0],
@@ -450,7 +452,7 @@ class PrimaryPhase(DeclineCurve):
     water: 'WaterPhase'
 
     @staticmethod
-    def removed_method(t: Union[float, ndarray], phase: str, method: str) -> NoReturn:
+    def removed_method(t: Union[float, NDFloat], phase: str, method: str) -> NoReturn:
         raise ValueError(f'This instance is a {phase} phase and has no `{method}` method.')
 
     def _set_defaults(self) -> None:
@@ -478,6 +480,11 @@ class PrimaryPhase(DeclineCurve):
         if hasattr(secondary, 'wor'):
             object.__setattr__(secondary, 'wor', partial(
                 self.removed_method, phase='secondary', method='wor'))
+
+        # remove WGR if it exists
+        if hasattr(secondary, 'wgr'):
+            object.__setattr__(secondary, 'wgr', partial(
+                self.removed_method, phase='secondary', method='wgr'))
 
         # bypass the "frozen" protection to link to the secondary phase
         object.__setattr__(secondary, 'primary', self)
@@ -528,7 +535,7 @@ class AssociatedPhase(DeclineCurve):
         object.__setattr__(model, 'primary', primary)
 
     @abstractmethod
-    def _yieldfn(self, t: ndarray) -> ndarray:
+    def _yieldfn(self, t: NDFloat) -> NDFloat:
         raise NotImplementedError
 
 
@@ -543,38 +550,38 @@ class SecondaryPhase(AssociatedPhase):
     def _set_defaults(self) -> None:
         super()._set_default(self, 'secondary')  # pragma: no cover
 
-    def gor(self, t: Union[float, ndarray]) -> ndarray:
+    def gor(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Defines the model GOR function.
         Implementation is idential to CGR function.
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
         Returns
         -------
-            GOR: numpy.ndarray[float]
-                The gas-oil ratio function in units of ``Bbl / scf``.
+            GOR: numpy.NDFloat
+                The gas-oil ratio function in units of ``Mscf / Bbl``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)
 
-    def cgr(self, t: Union[float, ndarray]) -> ndarray:
+    def cgr(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Defines the model CGR function.
         Implementation is identical to GOR function.
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
         Returns
         -------
-            CGR: numpy.ndarray[float]
-                The condensate-gas ratio in units of ``MMscf / Bbl``.
+            CGR: numpy.NDFloat
+                The condensate-gas ratio in units of ``Bbl / Mscf``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)
@@ -591,19 +598,36 @@ class WaterPhase(AssociatedPhase):
     def _set_defaults(self) -> None:
         super()._set_default(self, 'water')  # pragma: no cover
 
-    def wor(self, t: Union[float, ndarray]) -> ndarray:
+    def wor(self, t: Union[float, NDFloat]) -> NDFloat:
         """
         Defines the model WOR function.
 
         Parameters
         ----------
-            t: Union[float, numpy.ndarray[float]]
+            t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
         Returns
         -------
-            WOR: numpy.ndarray[float]
+            WOR: numpy.NDFloat
                 The water-oil ratio function in units of ``Bbl / Bbl``.
+        """
+        t = self._validate_ndarray(t)
+        return self._yieldfn(t)
+
+    def wgr(self, t: Union[float, NDFloat]) -> NDFloat:
+        """
+        Defines the model WGR function.
+
+        Parameters
+        ----------
+            t: Union[float, numpy.NDFloat]
+                An array of times at which to evaluate the function.
+
+        Returns
+        -------
+            WOR: numpy.NDFloat
+                The water-gas ratio function in units of ``Bbl / Mscf``.
         """
         t = self._validate_ndarray(t)
         return self._yieldfn(t)
