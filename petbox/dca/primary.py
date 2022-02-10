@@ -141,7 +141,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         dt = DeclineCurve._validate_ndarray(t - t0)
 
         if q <= 0.0:
-            return np.atleast_1d(N) + np.zeros_like(t, dtype=np.float64)
+            return cast(NDFloat, np.atleast_1d(N) + np.zeros_like(t, dtype=np.float64))
 
         if D <= 0.0:
             return np.atleast_1d(N + q * dt)
