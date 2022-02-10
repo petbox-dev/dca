@@ -76,7 +76,7 @@ setup(
     author='David S. Fulford',
     author_email='petbox-dev@gmail.com',
     license='MIT',
-    install_requires=['numpy>=1.17', 'scipy'],
+    install_requires=['numpy>=1.20.1', 'scipy'],
     zip_safe=False,
     packages=['petbox.dca'],
     package_data={

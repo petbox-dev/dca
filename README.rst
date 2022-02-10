@@ -72,7 +72,8 @@ The following functions are exposed for use
 | Secondary Phase            | `gor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.gor>`_,                                 |
 |                            | `cgr(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SecondaryPhase.cgr>`_                                  |
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Water Phase                | `wor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.WaterPhase.wor>`_                                      |
+| Water Phase                | `wor(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.WaterPhase.wor>`_,                                     |
+|                            | `wgr(t) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.WaterPhase.wgr>`_                                      |
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Utility                    | `bourdet(y, x, ...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.bourdet>`_,                                |
 |                            | `get_time(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time>`_,                                    |

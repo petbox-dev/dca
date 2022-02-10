@@ -14,16 +14,18 @@ Created on August 5, 2019
 
 from math import exp, log, log1p, ceil as ceiling, floor
 
-from numpy import ndarray
 import numpy as np
 
 from typing import Tuple
+from numpy.typing import NDArray
 from typing import cast
+
+NDFloat = NDArray[np.float64]
 
 
 LOG10 = log(10)
 
-def _get_L_bourdet(x: ndarray, L: float, i: int = 0) -> int:
+def _get_L_bourdet(x: NDFloat, L: float, i: int = 0) -> int:
     """
     First left-end point for Bourdet derivative.
     """
@@ -39,7 +41,7 @@ def _get_L_bourdet(x: ndarray, L: float, i: int = 0) -> int:
     return k
 
 
-def _get_R_bourdet(x: ndarray, L: float, i: int = -1) -> int:
+def _get_R_bourdet(x: NDFloat, L: float, i: int = -1) -> int:
     """
     First right-end points for Bourdet derivative.
     """
@@ -55,7 +57,8 @@ def _get_R_bourdet(x: ndarray, L: float, i: int = -1) -> int:
     return k
 
 
-def _get_L(y: ndarray, x: ndarray, L: float, i: int) -> Tuple[ndarray, ndarray]:
+def _get_L(y: NDFloat, x: NDFloat, L: float, i: int
+           ) -> Tuple[NDFloat, NDFloat]:
     """
     Bourdet indices for left-end points that lay inside of distance L.
     """
@@ -69,7 +72,8 @@ def _get_L(y: ndarray, x: ndarray, L: float, i: int) -> Tuple[ndarray, ndarray]:
         return dx[-1], dy[-1]
 
 
-def _get_R(y: ndarray, x: ndarray, L: float, i: int) -> Tuple[ndarray, ndarray]:
+def _get_R(y: NDFloat, x: NDFloat, L: float, i: int
+           ) -> Tuple[NDFloat, NDFloat]:
     """
     Bourdet indices for right-end points that lay inside of distance L.
     """
@@ -84,7 +88,7 @@ def _get_R(y: ndarray, x: ndarray, L: float, i: int) -> Tuple[ndarray, ndarray]:
         return dx[0], dy[0]
 
 
-def _get_L_der(x: ndarray, L: float, i: int = 0) -> int:
+def _get_L_der(x: NDFloat, L: float, i: int = 0) -> int:
     """
     Forward derivative indices for left-end points that lay outside of distance L.
     """
@@ -99,7 +103,7 @@ def _get_L_der(x: ndarray, L: float, i: int = 0) -> int:
     return len(dx) - 1
 
 
-def _get_R_der(x: ndarray, L: float, i: int = -1) -> int:
+def _get_R_der(x: NDFloat, L: float, i: int = -1) -> int:
     """
     Backward derivative indices for right-end points that lay outside of distance L.
     """
@@ -114,8 +118,9 @@ def _get_R_der(x: ndarray, L: float, i: int = -1) -> int:
     return 0  # pragma: no cover
 
 
-def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
-            xlog: bool = True, ylog: bool = False) -> Tuple[ndarray, ndarray]:
+def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
+            xlog: bool = True, ylog: bool = False
+            ) -> Tuple[NDFloat, NDFloat]:
     """
     Bourdet Derivative Smoothing
 
@@ -125,10 +130,10 @@ def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
 
     Parameters
     ----------
-      y: numpy.ndarray[float]
+      y: numpy.NDFloat
         An array of y values to compute the derivative for.
 
-      x: numpy.ndarray[float]
+      x: numpy.NDFloat
         An array of x values.
 
       L: float = 0.0
@@ -143,16 +148,16 @@ def bourdet(y: ndarray, x: ndarray, L: float = 0.0,
 
     Returns
     -------
-      der: numpy.ndarray[float]
+      der: numpy.NDFloat
         The calculated derivative.
     """
     x = np.atleast_1d(x).astype(np.float64)
     y = np.atleast_1d(y).astype(np.float64)
 
-    log_x = cast(ndarray, np.log10(x))
+    log_x = cast(NDFloat, np.log10(x))
 
     if ylog:
-        y = cast(ndarray, np.log(y))
+        y = cast(NDFloat, np.log(y))
 
     x_L = np.zeros_like(log_x, dtype=np.dtype(float))
     x_R = np.zeros_like(log_x, dtype=np.dtype(float))
