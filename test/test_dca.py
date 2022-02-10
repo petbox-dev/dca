@@ -440,6 +440,10 @@ def test_THM_transient_extra() -> None:
     check_transient_model(thm)
     check_transient_model_rate_cum(thm)
 
+    thm = dca.THM(1000.0, 1e-10, 2.0, 0.8, 30.0, 0.5, 0.03)
+    check_transient_model(thm)
+    check_transient_model_rate_cum(thm)
+
     with pytest.raises(ValueError) as e:
             thm = dca.THM(1000.0, 1e-10, 2.0, 0.3, 30.0, .5, 10.0)
 
