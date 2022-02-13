@@ -16,7 +16,9 @@ import os
 import sys
 import re
 
-from petbox.dca.version import __version__
+version = {}
+with open('petbox/dca/version.py') as f:
+    exec(f.read(), version)
 
 try:
     from setuptools import setup  # type: ignore
@@ -68,7 +70,7 @@ if sys.argv[-1] == 'build':
 
 setup(
     name='petbox-dca',
-    version=__version__,
+    version=version['__version__'],
     description='Decline Curve Library',
     long_description=get_long_description(),
     long_description_content_type="text/x-rst",
