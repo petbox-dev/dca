@@ -16,7 +16,7 @@ import os
 import sys
 import re
 
-from petbox.dca import __version__
+from petbox.dca.version import __version__
 
 try:
     from setuptools import setup  # type: ignore
