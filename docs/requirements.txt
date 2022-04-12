@@ -1,3 +1,4 @@
+pillow>=6.2.0
 numpy>=1.21.1
 scipy>=1.7.1
 Sphinx>=4.1.0
