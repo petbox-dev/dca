@@ -428,7 +428,7 @@ class DeclineCurve(ABC):
         """
         t0 = 0.0
         for t1 in t:
-            yield(t0, t1)
+            yield (t0, t1)
             t0 = t1
         return
 
