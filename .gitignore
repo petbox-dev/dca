@@ -1,4 +1,4 @@
-/test/*.png
+/test/**/*.png
 
 
 # Other things
