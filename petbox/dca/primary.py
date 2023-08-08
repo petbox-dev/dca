@@ -254,7 +254,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if D_b <= 0.0:
             return -np.inf # pragma: no cover
 
-        D_dt = -1.0 / b * np.log(D_b)
+        D_dt = 1.0 / b * np.log(D_b)
         if D_dt > LOG_EPSILON:
             # >= 100% decline is not possible
             return 1.0 # pragma: no cover

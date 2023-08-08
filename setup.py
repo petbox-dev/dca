@@ -16,14 +16,25 @@ import os
 import sys
 import re
 
-version = {}
-with open('petbox/dca/version.py') as f:
-    exec(f.read(), version)
+from setuptools import setup  # type: ignore
 
-try:
-    from setuptools import setup  # type: ignore
-except ImportError:
-    from distutils.core import setup
+
+def get_version() -> str:
+    """
+    Extracts the __version__ from mcmc.__init__.py
+    """
+    with open('petbox/dca/__init__.py', 'r') as f:
+        for line in f.readlines():
+            if '__version__' in line.strip():
+                # parse: __version__ == x.x.x and extract
+                # only the version number after the = sign
+                parts = line.strip().split('=')
+                version = parts[1].strip()
+
+                # we don't want a quoted string literally
+                return version.replace("'", "").replace('"', '')
+
+    raise ValueError('No version number found')
 
 
 def get_long_description() -> str:
@@ -61,16 +72,16 @@ def get_long_description() -> str:
 
     return readme + '\n\n' + version_history
 
+
 if sys.argv[-1] == 'build':
-    print(f'\nBuilding version {__version__}...\n')
+    print(f'\nBuilding...\n')
     os.system('rm -r dist\\')  # clean out dist/
     os.system('python setup.py sdist bdist_wheel')
     sys.exit()
 
-
 setup(
     name='petbox-dca',
-    version=version['__version__'],
+    version=get_version(),
     description='Decline Curve Library',
     long_description=get_long_description(),
     long_description_content_type="text/x-rst",
@@ -78,7 +89,10 @@ setup(
     author='David S. Fulford',
     author_email='petbox-dev@gmail.com',
     license='MIT',
-    install_requires=['numpy>=1.21.1', 'scipy>=1.7.1'],
+    install_requires=[
+        'numpy>=1.21.1',
+        'scipy>=1.7.1'
+    ],
     zip_safe=False,
     packages=['petbox.dca'],
     package_data={
