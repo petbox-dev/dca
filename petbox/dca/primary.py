@@ -552,9 +552,9 @@ class THM(MultisegmentHyperbolic):
         #   previous segment's values
         for i in range(segments.shape[0] - 1):
             p = [*segments[i], segments[i + 1, self.T_IDX]]
-            segments[i + 1, self.D_IDX] = self._Dcheck(*p)
-            segments[i + 1, self.Q_IDX] = self._qcheck(*p)
-            segments[i + 1, self.N_IDX] = self._Ncheck(*p)
+            segments[i + 1, self.D_IDX] = self._Dcheck(*p).item()
+            segments[i + 1, self.Q_IDX] = self._qcheck(*p).item()
+            segments[i + 1, self.N_IDX] = self._Ncheck(*p).item()
 
         return segments
 
