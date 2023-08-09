@@ -7,7 +7,7 @@ mypy>=0.910
 numpy>=1.21.1
 pytest>=6.2.4
 pytest-cov>=2.12.1
-scipy>=1.7.1
+scipy>=1.7.3
 Sphinx<7.0.0
 sphinx-rtd-theme==1.2.2
 wheel>=0.34.2
