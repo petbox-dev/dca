@@ -148,7 +148,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if D < MIN_EPSILON:
             return np.atleast_1d(N + q * dt)
 
-        if abs(1.0 - b)  < MIN_EPSILON:
+        if abs(1.0 - b) < MIN_EPSILON:
             return N + q / D * np.log1p(D * dt)
 
         # Handle overflow for this function
@@ -174,7 +174,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if D  < MIN_EPSILON:
+        if D < MIN_EPSILON:
             return np.full_like(t, D, dtype=np.float64)
 
         if b < MIN_EPSILON:
@@ -191,7 +191,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if D  < MIN_EPSILON:
+        if D < MIN_EPSILON:
             return np.full_like(t, D, dtype=np.float64)
 
         Denom = 1.0 + D * b * dt
@@ -238,7 +238,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if b <= MultisegmentHyperbolic.B_EPSILON:
             return cls.nominal_from_tangent(D)
 
-        if D  < MIN_EPSILON:
+        if D < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D >= 1.0:
@@ -255,7 +255,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # Handle overflow for this function
         # Deff = 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
 
-        if D  < MIN_EPSILON:
+        if D < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         D_b = 1.0 + D * b
@@ -271,7 +271,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
-        if D  < MIN_EPSILON:
+        if D < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D >= 1.0:
@@ -281,7 +281,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def tangent_from_nominal(cls, D: float) -> float:
-        if D  < MIN_EPSILON:
+        if D < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D > LOG_EPSILON:
@@ -696,7 +696,8 @@ class THM(MultisegmentHyperbolic):
         try:
             import mpmath as mp
         except ImportError:
-            print('`mpmath` not installed, please install it compute the transient THM functions', file=sys.err)
+            print('`mpmath` not installed, please install it compute the transient THM functions',
+                  file=sys.err)
             return np.full_like(t, np.nan, dtype=np.float64)
 
         t = np.atleast_1d(t)
@@ -744,7 +745,8 @@ class THM(MultisegmentHyperbolic):
                 for i, _t in enumerate(t):
                     if where_term[i]:
                         break
-                    D_denom[i] += float((bi - bf) / c * mp.ei(-mp.exp(-c * (_t - telf) + self.EXP_GAMMA)))
+                    D_denom[i] += float(
+                        (bi - bf) / c * mp.ei(-mp.exp(-c * (_t - telf) + self.EXP_GAMMA)))
 
             D = 1.0 / D_denom
 
@@ -755,7 +757,8 @@ class THM(MultisegmentHyperbolic):
                     - ei(-np.exp(c * telf + self.EXP_GAMMA))
                 )
                 if abs(bi - bf) >= MIN_EPSILON:
-                    D_denom += float((bi - bf) / c * mp.ei(-mp.exp(-c * (tterm - telf) + self.EXP_GAMMA)))
+                    D_denom += float(
+                        (bi - bf) / c * mp.ei(-mp.exp(-c * (tterm - telf) + self.EXP_GAMMA)))
 
                 Dterm = 1.0 / D_denom
 
@@ -773,7 +776,6 @@ class THM(MultisegmentHyperbolic):
                 D[where_term] = self._Dcheck(tterm, 1.0, Dterm, 0.0, 0.0, t[where_term])
 
         return D
-
 
     def _transbfn(self, t: NDFloat) -> NDFloat:
 

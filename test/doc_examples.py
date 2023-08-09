@@ -18,7 +18,7 @@ plt.style.use('seaborn-v0_8-white')
 plt.rcParams['font.size'] = 16
 
 
-img_path = Path(__file__).parent.parent/ 'docs/img'
+img_path = Path(__file__).parent.parent / 'docs/img'
 
 
 # Setup time series for Forecasts and calculate cumulative production of data
@@ -106,7 +106,7 @@ N_ple = ple.cum(t)
 D_ple = ple.D(t)
 b_ple = ple.b(t)
 beta_ple = ple.beta(t)
-N_ple *= data_N[-1] /  ple.cum(data_t[-1])
+N_ple *= data_N[-1] / ple.cum(data_t[-1])
 
 
 # Stretched Exponential
@@ -250,7 +250,6 @@ for ax in [ax1, ax2, ax3, ax4]:
 plt.savefig(img_path / 'diagnostics.png')
 
 
-
 # Secondary Phase Decline Curve Models
 # ====================================
 print('Secondary Phase Decline Curve Models...')
@@ -265,7 +264,6 @@ print('Secondary Phase Decline Curve Models...')
 
 thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
 thm.add_secondary(dca.PLYield(c=1000, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10_000))
-
 
 
 # Secondary Phase Diagnostic Plots
@@ -344,7 +342,6 @@ for ax in [ax1, ax2, ax3, ax4]:
 plt.savefig(img_path / 'secondary_model.png')
 
 
-
 # Diagnostic Function Plots
 # ------------------------
 print('Secondary Model Diagnostic Function Plots...')
@@ -406,7 +403,6 @@ for ax in [ax1, ax2, ax3, ax4]:
     ax.legend()
 
 plt.savefig(img_path / 'sec_diagnostic_funs.png')
-
 
 
 # Additional Diagnostic Plots

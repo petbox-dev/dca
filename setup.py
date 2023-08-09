@@ -74,7 +74,7 @@ def get_long_description() -> str:
 
 
 if sys.argv[-1] == 'build':
-    print(f'\nBuilding...\n')
+    print('\nBuilding...\n')
     os.system('rm -r dist\\')  # clean out dist/
     os.system('python setup.py sdist bdist_wheel')
     sys.exit()

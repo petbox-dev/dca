@@ -390,7 +390,8 @@ def test_THM(qi: float, Di: float, bf: float, telf: float) -> None:
     bterm=st.floats(0.0, 1.0),
     tterm=st.floats(1e-3, 30.0),
 )
-def test_THM_terminal(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm: float) -> None:
+def test_THM_terminal(qi: float, Di: float, bf: float, telf: float,
+                      bterm: float, tterm: float) -> None:
     assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
