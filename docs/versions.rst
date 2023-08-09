@@ -6,6 +6,21 @@ Version History
    :noindex:
 
 
+1.0.9
+-----
+
+* Bug Fix
+    * Fix bug in sign in ``MultisegmentHyperbolic.secant_from_nominal``
+
+* Other changes
+    * Add `mpmath` to handle precision requires of THM transient functions (only required to use the functions)
+    * Adjust default degree of THM transient function quadrature integration from 50 to 10 (`scipy` default is 5)
+    * Update package versions for docs and builds
+    * Address various floating point errors, suppress `numpy` warnings for those which are mostly unavoidable
+    * Add test/doc_exapmles.py and update figures (not sure what happened to the old file)
+    * Adjust range of values in tests to avoid numerical errors in `numpy` and `scipy` functions... these were near-epsilon impractical values anyway
+
+
 1.0.8
 -----
 
