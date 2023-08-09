@@ -331,7 +331,7 @@ def test_associated() -> None:
 
 # TODO: use bounds, after we use testing to set them
 @given(
-    qi=st.floats(1e-10, 1e6),
+    qi=st.floats(0.0, 1e6),
     Di=st.floats(1e-10, 1e10),
     Dinf=st.floats(1e-10, 1e10),
     n=st.floats(1e-10, 1.0, exclude_max=True)
@@ -344,7 +344,7 @@ def test_PLE(qi: float, Di: float, Dinf: float, n: float) -> None:
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
+    qi=st.floats(0.0, 1e6),
     tau=st.floats(1e-10, 1e4),
     n=st.floats(1e-10, 1.0, exclude_max=True)
 )
@@ -355,7 +355,7 @@ def test_SE(qi: float, tau: float, n: float) -> None:
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
+    qi=st.floats(0.0, 1e6),
     a=st.floats(1.0, 10.0),
     m=st.floats(1.0, 10.0, exclude_min=True)
 )
@@ -366,7 +366,7 @@ def test_Duong(qi: float, a: float, m: float) -> None:
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
+    qi=st.floats(0.0, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6)
@@ -383,10 +383,10 @@ def test_THM(qi: float, Di: float, bf: float, telf: float) -> None:
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
+    qi=st.floats(0.0, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
-    telf=st.floats(0.0, 1e4),
+    telf=st.floats(0, 1e4),
     bterm=st.floats(0.0, 1.0),
     tterm=st.floats(1e-3, 30.0),
 )
@@ -399,9 +399,9 @@ def test_THM_terminal(qi: float, Di: float, bf: float, telf: float, bterm: float
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
+    qi=st.floats(0.0, 1e6),
     bf=st.floats(0.0, 2.0),
-    telf=st.floats(0.0, 1e4),
+    telf=st.floats(1e-10, 1e4),
     bterm=st.floats(0.0, 1.0),
     tterm=st.floats(5.0, 30.0),
 )
@@ -414,9 +414,9 @@ def test_THM_zero_Di(qi: float, bf: float, telf: float, bterm: float, tterm: flo
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
+    qi=st.floats(0.0, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
-    telf=st.floats(0.0, 1e4),
+    telf=st.floats(1e-10, 1e4),
     bterm=st.floats(0.0, 0.5),
     tterm=st.floats(5, 30),
 )
@@ -449,7 +449,7 @@ def test_THM_transient_extra() -> None:
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
+    qi=st.floats(0.0, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6),
@@ -556,8 +556,8 @@ def test_terminal_exceeds() -> None:
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    qi=st.floats(0.0, 1e6),
+    Di=st.floats(1e-3, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(1e-10, 1e4),
     bterm=st.floats(1e-3, 0.3, exclude_max=True),
@@ -584,8 +584,8 @@ def test_yield(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm
 
 
 @given(
-    qi=st.floats(1e-10, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    qi=st.floats(0.0, 1e6),
+    Di=st.floats(1e-3, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(1e-10, 1e4),
     bterm=st.floats(1e-3, 0.3, exclude_max=True),
