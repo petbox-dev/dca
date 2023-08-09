@@ -14,11 +14,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-plt.style.use('seaborn-white')
+plt.style.use('seaborn-v0_8-white')
 plt.rcParams['font.size'] = 16
 
 
-img_path = Path(__file__).parent
+img_path = Path(__file__).parent.parent/ 'docs/img'
 
 
 # Setup time series for Forecasts and calculate cumulative production of data
@@ -37,6 +37,7 @@ data_b = dca.bourdet(1 / data_D, data_t, L=0.25, xlog=False, ylog=False)
 
 # Primary Phase Decline Curve Models
 # ==================================
+print('Primary Phase Decline Curve Models...')
 
 # Modified Hyperbolic Model
 # -------------------------
@@ -142,6 +143,7 @@ N_dg *= data_N[-1] / dg.cum(data_t[-1])
 
 # Primary Phase Diagnostic Plots
 # ==============================
+print('Primary Phase Model Plots...')
 
 # Rate and Cumulative Production Plots
 # ------------------------------------
@@ -184,6 +186,7 @@ plt.savefig(img_path / 'model.png')
 
 # Diagnostic Function Plots
 # -------------------------
+print('Primary Phase Diagnostic Function Plots...')
 
 fig = plt.figure(figsize=(15, 15))
 ax1 = fig.add_subplot(221)
@@ -250,6 +253,7 @@ plt.savefig(img_path / 'diagnostics.png')
 
 # Secondary Phase Decline Curve Models
 # ====================================
+print('Secondary Phase Decline Curve Models...')
 
 # Power-Law GOR/CGR Model
 # -----------------------
@@ -266,6 +270,7 @@ thm.add_secondary(dca.PLYield(c=1000, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10
 
 # Secondary Phase Diagnostic Plots
 # ================================
+print('Secondary Phase Model Plots...')
 
 # Rate and Cumluative Production Plots
 # ------------------------------------
@@ -340,8 +345,9 @@ plt.savefig(img_path / 'secondary_model.png')
 
 
 
-# Diagnotic Function Plots
+# Diagnostic Function Plots
 # ------------------------
+print('Secondary Model Diagnostic Function Plots...')
 
 fig = plt.figure(figsize=(15, 15))
 ax1 = fig.add_subplot(221)
@@ -352,7 +358,7 @@ ax4 = fig.add_subplot(224)
 # D-parameter vs Time
 q_D = thm.D(t)
 g_D = thm.secondary.D(t)
-_g_D = -np.gradient(np.log(thm.secondary.rate(t)), t)
+_g_D = -np.gradient(np.log(thm.secondary.rate(t) / 1000.0), t)
 
 ax1.plot(t, q_D, c='C2', label='Oil')
 ax1.plot(t, g_D, c='C3', label='Gas')
@@ -385,7 +391,7 @@ ax3.set(ylabel='$b$-parameter, Dimensionless', xlabel='Time, Days')
 # q/N vs Time
 q_Ng = thm.rate(t) / thm.cum(t)
 g_Ng = thm.secondary.rate(t) / thm.secondary.cum(t)
-_g_Ng = thm.secondary.rate(t) / np.cumsum(g * np.diff(t, prepend=0))
+_g_Ng = thm.secondary.rate(t) / np.cumsum(thm.secondary.rate(t) * np.diff(t, prepend=0))
 
 ax4.plot(t, q_Ng, c='C2', label='Oil')
 ax4.plot(t, g_Ng, c='C3', ls='--', label='Gas')
@@ -405,6 +411,7 @@ plt.savefig(img_path / 'sec_diagnostic_funs.png')
 
 # Additional Diagnostic Plots
 # ---------------------------
+print('Additional Diagnostic Plots...')
 
 # Numeric calculation provided to verify analytic relationships
 

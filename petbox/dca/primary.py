@@ -670,9 +670,11 @@ class THM(MultisegmentHyperbolic):
         return self._transbfn(t)
 
     def _transNfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
-        return self._integrate_with(self._transqfn, t, **kwargs)
+        kwargs.setdefault('n', 10)
+        return self._integrate_with(lambda t: self._transqfn(t, **kwargs), t, **kwargs)
 
     def _transqfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
+        kwargs.setdefault('n', 10)
         qi = self.qi
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
         D_dt = Dnom_i - self._integrate_with(self._transDfn, t, **kwargs)

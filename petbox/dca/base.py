@@ -76,7 +76,7 @@ def get_time(start: float = 1.0, end: float = 1e5, n: int = 101) -> NDFloat:
         time: numpy.NDFloat
             An evenly-logspaced time series.
     """
-    return 10.0 ** np.linspace(log10(start), log10(end), n)
+    return np.logspace(start=log10(start), stop=log10(end), num=n, base=10, dtype=np.float64)
 
 
 def get_time_monthly_vol(start: float = 1, end: int = 10_000) -> NDFloat:
@@ -434,7 +434,7 @@ class DeclineCurve(ABC):
 
     def _integrate_with(self, fn: Callable[[NDFloat], NDFloat],
                         t: NDFloat, **kwargs: Any) -> NDFloat:
-        kwargs.setdefault('n', 100)
+        kwargs.setdefault('n', 50)
         integral = np.array(list(starmap(
             lambda t0, t1: fixed_quad(fn, t0, t1, **kwargs)[0],
             self._iter_t(t)
