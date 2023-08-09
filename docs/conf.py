@@ -20,7 +20,7 @@ from petbox import dca
 # -- Project information -----------------------------------------------------
 
 project = 'petbox-dca'
-copyright = '2020, David S. Fulford'
+copyright = '2023, David S. Fulford'
 author = 'David S. Fulford'
 
 # The full version, including alpha/beta/rc tags
@@ -61,12 +61,16 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 #
 html_theme = 'sphinx_rtd_theme'
 
-# Add any paths that contain custom static files (such as style sheets) here,
-# relative to this directory. They are copied after the builtin static files,
-# so a file named "default.css" will overwrite the builtin "default.css".
+# A list of paths that contain custom static files (such as style sheets or
+# script files). Relative paths are taken as relative to the configuration
+# directory. They are copied to the output’s _static directory after the
+# theme’s static files, so a file named default.css will overwrite the theme’s
+# default.css.
 html_static_path = ['_static']
 
-html_context = {
-    # https://rackerlabs.github.io/docs-rackspace/tools/rtd-tables.html
-    'css_files': ['_static/theme_overrides.css'],
-}
+# A list of CSS files. The entry must be a filename string or a tuple
+# containing the filename string and the attributes dictionary. The filename
+# must be relative to the html_static_path, or a full URI with scheme like
+# https://example.org/style.css. The attributes is used for attributes of
+# <link> tag. It defaults to an empty list.
+html_css_files = ['theme_override.css']
