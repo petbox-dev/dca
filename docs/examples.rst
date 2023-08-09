@@ -116,7 +116,7 @@ Power-Law Exponential Model
     D_ple = ple.D(t)
     b_ple = ple.b(t)
     beta_ple = ple.beta(t)
-    N_ple *= data_N[-1] /  ple.cum(data_t[-1])
+    N_ple *= data_N[-1] / ple.cum(data_t[-1])
 
 
 Stretched Exponential
@@ -300,19 +300,19 @@ Numeric calculation provided to verify analytic relationships
 
     # Rate vs Time
     q = thm.rate(t)
-    g = thm.secondary.rate(t)
+    g = thm.secondary.rate(t) / 1000.0
     y = thm.secondary.gor(t)
 
     ax1.plot(t, q, c='C2', label='Oil')
     ax1.plot(t, g, c='C3', label='Gas')
     ax1.plot(t, y, c='C1', label='GOR')
     ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-    ax1.set(ylabel='Rate, BPD or MCFD', xlabel='Time, Days')
+    ax1.set(ylabel='Rate or GOR, BPD, MCFD, or scf/Bbl', xlabel='Time, Days')
 
 
     # Cumulative Volume vs Time
     q_N = thm.cum(t)
-    g_N = thm.secondary.cum(t)
+    g_N = thm.secondary.cum(t) / 1000.0
     _g_N = np.cumsum(g * np.diff(t, prepend=0))
 
     ax2.plot(t, q_N, c='C2', label='Oil')
@@ -321,12 +321,12 @@ Numeric calculation provided to verify analytic relationships
     ax2.plot(t, y, c='C1', label='GOR')
     ax2.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e2, 1e7))
     ax2.set(ylabel='Rate, Dimensionless', xlabel='Time, Days')
-    ax2.set(ylabel='Cumulative Volume or GOR, MBbl, MMcf, or Bbl/scf', xlabel='Time, Days')
+    ax2.set(ylabel='Cumulative Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
 
 
     # Time vs Monthly Volume
     q_MN = thm.monthly_vol_equiv(t)
-    g_MN = thm.secondary.monthly_vol_equiv(t)
+    g_MN = thm.secondary.monthly_vol_equiv(t) / 1000.0
     _g_MN = np.diff(np.cumsum(g * np.diff(t, prepend=0)), prepend=0) \
         / np.diff(t, prepend=0) * dca.DAYS_PER_MONTH
 
@@ -335,12 +335,12 @@ Numeric calculation provided to verify analytic relationships
     ax3.plot(t, _g_MN, c='k', ls=':', label='Gas (numeric)')
     ax3.plot(t, y, c='C1', label='GOR')
     ax3.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-    ax3.set(ylabel='Monthly Volume or GOR, MBbl, MMcf, or Bbl/scf', xlabel='Time, Days')
+    ax3.set(ylabel='Monthly Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
 
 
     # Time vs Interval Volume
     q_IN = thm.interval_vol(t, t0=0.0)
-    g_IN = thm.secondary.interval_vol(t, t0=0.0)
+    g_IN = thm.secondary.interval_vol(t, t0=0.0) / 1000.0
     _g_IN = np.diff(np.cumsum(g * np.diff(t, prepend=0)), prepend=0)
 
     ax4.plot(t, q_IN, c='C2', label='Oil')
@@ -348,7 +348,7 @@ Numeric calculation provided to verify analytic relationships
     ax4.plot(t, _g_IN, c='k', ls=':', label='Gas (numeric)')
     ax4.plot(t, y, c='C1', label='GOR')
     ax4.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-    ax4.set(ylabel='$\Delta$Volume or GOR, MBbl, MMcf, or Bbl/scf', xlabel='Time, Days')
+    ax4.set(ylabel='$\Delta$Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
 
     for ax in [ax1, ax2, ax3, ax4]:
         ax.set_aspect(1)
@@ -375,7 +375,7 @@ Diagnostic Function Plots
     # D-parameter vs Time
     q_D = thm.D(t)
     g_D = thm.secondary.D(t)
-    _g_D = -np.gradient(np.log(thm.secondary.rate(t)), t)
+    _g_D = -np.gradient(np.log(thm.secondary.rate(t) / 1000.0), t)
 
     ax1.plot(t, q_D, c='C2', label='Oil')
     ax1.plot(t, g_D, c='C3', label='Gas')
@@ -408,7 +408,7 @@ Diagnostic Function Plots
     # q/N vs Time
     q_Ng = thm.rate(t) / thm.cum(t)
     g_Ng = thm.secondary.rate(t) / thm.secondary.cum(t)
-    _g_Ng = thm.secondary.rate(t) / np.cumsum(g * np.diff(t, prepend=0))
+    _g_Ng = thm.secondary.rate(t) / np.cumsum(thm.secondary.rate(t) * np.diff(t, prepend=0))
 
     ax4.plot(t, q_Ng, c='C2', label='Oil')
     ax4.plot(t, g_Ng, c='C3', ls='--', label='Gas')

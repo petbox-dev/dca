@@ -694,10 +694,10 @@ class THM(MultisegmentHyperbolic):
 
     def _transDfn(self, t: NDFloat) -> NDFloat:
         try:
-            import mpmath as mp
+            import mpmath as mp  # type: ignore
         except ImportError:
             print('`mpmath` not installed, please install it compute the transient THM functions',
-                  file=sys.err)
+                  file=sys.stderr)
             return np.full_like(t, np.nan, dtype=np.float64)
 
         t = np.atleast_1d(t)
@@ -707,7 +707,6 @@ class THM(MultisegmentHyperbolic):
         telf = self.telf
         bterm = self.bterm
         tterm = self.tterm * DAYS_PER_YEAR
-        Dterm = None
 
         if self.Di == 0.0:
             return np.full_like(t, 0.0, dtype=np.float64)
@@ -745,8 +744,7 @@ class THM(MultisegmentHyperbolic):
                 for i, _t in enumerate(t):
                     if where_term[i]:
                         break
-                    D_denom[i] += float(
-                        (bi - bf) / c * mp.ei(-mp.exp(-c * (_t - telf) + self.EXP_GAMMA)))
+                    D_denom[i] += (bi - bf) / c * mp.ei(-mp.exp(-c * (_t - telf) + self.EXP_GAMMA))
 
             D = 1.0 / D_denom
 
@@ -757,10 +755,12 @@ class THM(MultisegmentHyperbolic):
                     - ei(-np.exp(c * telf + self.EXP_GAMMA))
                 )
                 if abs(bi - bf) >= MIN_EPSILON:
-                    D_denom += float(
-                        (bi - bf) / c * mp.ei(-mp.exp(-c * (tterm - telf) + self.EXP_GAMMA)))
+                    D_denom += (bi - bf) / c * mp.ei(-mp.exp(-c * (tterm - telf) + self.EXP_GAMMA))
 
-                Dterm = 1.0 / D_denom
+                Dterm = float(1.0 / D_denom)
+
+            else:
+                Dterm = 0.0
 
         # terminal regime
         if tterm != 0.0 or bterm != 0.0:

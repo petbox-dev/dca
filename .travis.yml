@@ -8,7 +8,7 @@ python:
     - "3.10"
 
 install:
-    - "pip install -U \"flake8>=3.9.2\" \"mypy==0.910\" \"numpy>=1.21.1\" \"scipy>=1.7.1\" \"pytest>=6.2.4\" \"pytest-cov>=2.12.1\" \"attrs>=19.2.0\" \"hypothesis>=6.14.8\" \"coveralls>=3.2.0\" \"sphinx>=4.1.2\" \"sphinx_rtd_theme>=1.0.0\""
+    - "pip install -U \"flake8==5.0.4\" \"mypy==0.982\" \"numpy==1.21.1\" \"scipy==1.7.1\" \"pytest==7.2.0\" \"pytest-cov==4.0.0\" \"attrs==22.1.0\" \"hypothesis==6.58.0\" \"coveralls==3.3.1\" \"sphinx<7.0.0\" \"sphinx_rtd_theme==1.2.2\""
     - "pip install ."
 
 script:
