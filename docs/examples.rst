@@ -14,7 +14,7 @@ Each model, including the secondary phase models, implements all diagnostic func
     import matplotlib.pyplot as plt
     import matplotlib as mpl
 
-    plt.style.use('seaborn-white')
+    plt.style.use('seaborn-v0_8-white')
     plt.rcParams['font.size'] = 16
 
 
@@ -361,8 +361,8 @@ Numeric calculation provided to verify analytic relationships
 .. image:: img/secondary_model.png
 
 
-Diagnotic Function Plots
-------------------------
+Diagnostic Function Plots
+-------------------------
 
 .. code-block:: python
 
