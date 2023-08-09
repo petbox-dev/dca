@@ -127,7 +127,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if b <= MultisegmentHyperbolic.B_EPSILON:
             D_dt = D * dt
         else:
-            D_dt = 1.0 / b * np.log(1.0 + D * b * dt)
+            D_dt = np.log(1.0 + D * b * dt) / b
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
@@ -245,7 +245,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return np.inf # pragma: no cover
 
         # D < 1 per validation, so this should never overflow
-        return ((1.0 - D) ** -b - 1.0) / b
+        return expm1(b * -log1p(-D)) / b
 
     @classmethod
     def secant_from_nominal(cls, D: float, b: float) -> float:
@@ -262,7 +262,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if D_b < MIN_EPSILON:
             return -np.inf # pragma: no cover
 
-        D_dt = 1.0 / b * np.log(D_b)
+        D_dt = np.log(D_b) / b
         if D_dt > LOG_EPSILON:
             # >= 100% decline is not possible
             return 1.0 # pragma: no cover
