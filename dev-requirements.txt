@@ -1,7 +1,7 @@
 attrs>=19.2.0
 coverage>=5.1
 coveralls>=3.2.0
-flake8>=3.9.2
+flake8>=5.0.4
 hypothesis>=6.14.8
 mypy>=0.910
 numpy>=1.21.1
