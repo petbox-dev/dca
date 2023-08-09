@@ -131,7 +131,8 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
-        return q * np.exp(-D_dt)
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            return q * np.exp(-D_dt)
 
     @staticmethod
     def _Ncheck(t0: float, q: float, D: float, b: float, N: float,
@@ -161,7 +162,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
-        return N - q_b_D * np.expm1(D_dt)
+
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            return N - q_b_D * np.expm1(D_dt)
 
     @staticmethod
     def _Dcheck(t0: float, q: float, D: float, b: float, N: float,
@@ -177,7 +180,8 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if b < MIN_EPSILON:
             b = 0.0
 
-        return D / (1.0 + D * b * dt)
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            return D / (1.0 + D * b * dt)
 
     @staticmethod
     def _Dcheck2(t0: float, q: float, D: float, b: float, N: float,
