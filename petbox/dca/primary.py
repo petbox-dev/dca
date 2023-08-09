@@ -12,6 +12,7 @@ Notes
 Created on August 5, 2019
 """
 
+import sys
 from math import exp, expm1, log, log1p, ceil as ceiling, floor
 import warnings
 
@@ -30,7 +31,7 @@ from numpy.typing import NDArray
 from typing import cast
 
 from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
-                   DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON)
+                   DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON)
 
 NDFloat = NDArray[np.float64]
 
@@ -117,7 +118,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if D == 0.0:
+        if D < MIN_EPSILON:
             return np.full_like(t, q, dtype=np.float64)
 
         # Handle overflow for these function
@@ -140,13 +141,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if q <= 0.0:
+        if q < MIN_EPSILON:
             return cast(NDFloat, np.atleast_1d(N) + np.zeros_like(t, dtype=np.float64))
 
-        if D <= 0.0:
+        if D < MIN_EPSILON:
             return np.atleast_1d(N + q * dt)
 
-        if abs(1.0 - b) == 0.0:
+        if abs(1.0 - b)  < MIN_EPSILON:
             return N + q / D * np.log1p(D * dt)
 
         # Handle overflow for this function
@@ -170,8 +171,11 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if D == 0.0:
+        if D  < MIN_EPSILON:
             return np.full_like(t, D, dtype=np.float64)
+
+        if b < MIN_EPSILON:
+            b = 0.0
 
         return D / (1.0 + D * b * dt)
 
@@ -183,7 +187,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if D == 0.0:
+        if D  < MIN_EPSILON:
             return np.full_like(t, D, dtype=np.float64)
 
         Denom = 1.0 + D * b * dt
@@ -230,7 +234,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if b <= MultisegmentHyperbolic.B_EPSILON:
             return cls.nominal_from_tangent(D)
 
-        if D == 0.0:
+        if D  < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D >= 1.0:
@@ -247,11 +251,11 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # Handle overflow for this function
         # Deff = 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
 
-        if D == 0:
+        if D  < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         D_b = 1.0 + D * b
-        if D_b <= 0.0:
+        if D_b < MIN_EPSILON:
             return -np.inf # pragma: no cover
 
         D_dt = 1.0 / b * np.log(D_b)
@@ -263,7 +267,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
-        if D == 0.0:
+        if D  < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D >= 1.0:
@@ -273,7 +277,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def tangent_from_nominal(cls, D: float) -> float:
-        if D == 0:
+        if D  < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D > LOG_EPSILON:
@@ -337,7 +341,7 @@ class MH(MultisegmentHyperbolic):
         Di_nom = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
         Dterm_nom = self.nominal_from_tangent(self.Dterm) / DAYS_PER_YEAR
 
-        if Di_nom <= 0.0 or Dterm_nom <= 0.0 or self.bi == 0.0:
+        if Di_nom < MIN_EPSILON or Dterm_nom < MIN_EPSILON or self.bi < MIN_EPSILON:
             return np.array([
                 [0.0, self.qi, Di_nom, self.bi, 0.0]
             ], dtype=np.float64)
@@ -685,6 +689,11 @@ class THM(MultisegmentHyperbolic):
         return result
 
     def _transDfn(self, t: NDFloat) -> NDFloat:
+        try:
+            import mpmath as mp
+        except ImportError:
+            print('`mpmath` not installed, please install it compute the transient THM functions', file=sys.err)
+            return np.full_like(t, np.nan, dtype=np.float64)
 
         t = np.atleast_1d(t)
         qi = self.qi
@@ -693,54 +702,74 @@ class THM(MultisegmentHyperbolic):
         telf = self.telf
         bterm = self.bterm
         tterm = self.tterm * DAYS_PER_YEAR
+        Dterm = None
 
         if self.Di == 0.0:
             return np.full_like(t, 0.0, dtype=np.float64)
 
         Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
 
-        if Dnom_i <= 0.0:
-            assert 'unreachable: negative Dnom in _transDfn'  # pragma: no cover
+        if Dnom_i < MIN_EPSILON:
+            # no need to compute transient function
+            return self._Dcheck(0.0, qi, Dnom_i, bi, 0.0, t)
 
-        if telf > 0.001:
-            # transient function
-            c = self.EXP_GAMMA / (1.5 * telf)
-            D = 1.0 / (
-                1.0 / Dnom_i
-                + bi * t
-                + (bi - bf) / c * ei(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
-                - ei(-np.exp(c * telf + self.EXP_GAMMA))
-            )
+        elif Dnom_i < MIN_EPSILON:
+            raise ValueError(f'invalid Dnom in _transDfn {Dnom_i}')  # pragma: no cover
 
-        else:
+        if telf < MIN_EPSILON:
             # telf is too small to compute transient function
             D = self._Dcheck(0.0, qi, Dnom_i, bf, 0.0, t)
             Dterm = self._Dcheck(0.0, qi, Dnom_i, bf, 0.0, tterm).item()
 
+        else:
+            # transient function
+            if tterm > 0.0:
+                where_term = t >= tterm
+            else:
+                # no known terminal times in this array, might be some later if exponential terminal
+                where_term = np.full_like(t, False, dtype=np.bool_)
+
+            c = self.EXP_GAMMA / (1.5 * telf)
+            D_denom = np.full_like(t, np.nan, dtype=np.float64)
+            D_denom[~where_term] = (
+                1.0 / Dnom_i
+                + bi * t[~where_term]
+                - ei(-np.exp(c * telf + self.EXP_GAMMA))
+            )
+            if abs(bi - bf) >= MIN_EPSILON:
+                for i, _t in enumerate(t):
+                    if where_term[i]:
+                        break
+                    D_denom[i] += float((bi - bf) / c * mp.ei(-mp.exp(-c * (_t - telf) + self.EXP_GAMMA)))
+
+            D = 1.0 / D_denom
+
+            if tterm > 0.0:
+                D_denom = (
+                    1.0 / Dnom_i
+                    + bi * tterm
+                    - ei(-np.exp(c * telf + self.EXP_GAMMA))
+                )
+                if abs(bi - bf) >= MIN_EPSILON:
+                    D_denom += float((bi - bf) / c * mp.ei(-mp.exp(-c * (tterm - telf) + self.EXP_GAMMA)))
+
+                Dterm = 1.0 / D_denom
+
         # terminal regime
-        if tterm != 0.0 or bterm != 0:
+        if tterm != 0.0 or bterm != 0.0:
             if tterm > 0.0:
                 # hyperbolic
                 where_term = t > tterm
-                if np.count_nonzero(where_term) > 0:
-                    Dterm = D[where_term][-1].item()
-                else:
-                    Dterm = 0.0
+                D[where_term] = self._Dcheck(tterm, 1.0, Dterm, bterm, 0.0, t[where_term])
+
             elif tterm == 0.0:
                 # exponential
                 Dterm = self.nominal_from_tangent(bterm) / DAYS_PER_YEAR
-                where_term = Dterm > D
-
-            if np.count_nonzero(where_term) > 0:
-                D[where_term] = self._Dcheck(
-                    tterm, 1.0, Dterm, bterm, 0.0, t[where_term])
-
-        # TODO: is this needed?
-        # where_nan = np.isnan(D) & np.isfinite(D)
-        # if np.count_nonzero(where_nan):
-        #     D[where_nan] = 0.0  # pragma: no cover
+                where_term = Dterm >= D
+                D[where_term] = self._Dcheck(tterm, 1.0, Dterm, 0.0, 0.0, t[where_term])
 
         return D
+
 
     def _transbfn(self, t: NDFloat) -> NDFloat:
 
@@ -749,9 +778,9 @@ class THM(MultisegmentHyperbolic):
         bf = self.bf
         telf = self.telf
         bterm = self.bterm
-        tterm = self.tterm
+        tterm = self.tterm * DAYS_PER_YEAR
 
-        if telf > 0.0:
+        if telf >= MIN_EPSILON:
             c = self.EXP_GAMMA / (1.5 * telf)
             b = bi - (bi - bf) * np.exp(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
         else:
@@ -762,15 +791,14 @@ class THM(MultisegmentHyperbolic):
             if tterm > 0.0:
                 # hyperbolic
                 where_term = t > tterm
-                _bterm = bterm
+                b[where_term] = bterm
+
             elif tterm == 0.0:
                 # exponential
                 Dterm = self.nominal_from_tangent(bterm) / DAYS_PER_YEAR
                 D = self._transDfn(t)
-                where_term = Dterm > D
-                _bterm = 0.0
-
-            b[where_term] = _bterm
+                where_term = Dterm >= D
+                b[where_term] = 0.0
 
         return b
 
