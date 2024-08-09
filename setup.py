@@ -21,7 +21,7 @@ from setuptools import setup  # type: ignore
 
 def get_version() -> str:
     """
-    Extracts the __version__ from mcmc.__init__.py
+    Extracts the __version__ from __init__.py
     """
     with open('petbox/dca/__init__.py', 'r') as f:
         for line in f.readlines():
