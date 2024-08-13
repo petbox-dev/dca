@@ -446,8 +446,9 @@ class THM(MultisegmentHyperbolic):
             ``Dterm = bterm`` and the parameter is given as secant effective decline.
 
         tterm: Optional[float] = None
-            The time to start of the terminal regime. Setting ``tterm = 0.0`` creates an exponential
-            terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic terminal regime.
+            The time to start of the terminal regime in years. Setting ``tterm = 0.0`` creates an
+            exponential terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic
+            terminal regime.
     """
     qi: float
     Di: float

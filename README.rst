@@ -165,6 +165,116 @@ Applying the above, we can easily evaluate each model against a data set.
 See the `API documentation <https://petbox-dca.readthedocs.io/en/latest/api.html>`_ for a complete listing, detailed use examples, and model comparison.
 
 
+Regression
+==========
+No methods for regression are included in this library, as the models are simple enough to be implemented in any regression package. I recommend using `scipy.optimize.least_squares <https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html>`_.
+
+For detailed derivation and argument for regression techniques, please see SPE-201404-MS `Optimization Methods for Time–Rate–Pressure Production Data Analysis using Automatic Outlier Filtering and Bayesian Derivative Calculations  <https://www.onepetro.org/conference-paper/SPE-201404-MS>`_.
+Additionally, you may view my `blog post <https://dsfulf.github.io/blog/nonlin_reg/nonlin_reg.html>_` on the topic. The Jupyter Notebook is available `here <https://github.com/dsfulf/blog/blob/master/nonlin_reg/nonlin_reg.ipynb>_`.
+
+The following is an example of how to use the `THM` model with `scipy.optimize.least_squares`.
+
+
+.. code-block:: python
+
+    from petbox import dca
+    import numpy as np
+    import scipy as sc
+
+    from scipy.optimize import least_squares
+
+    from typing import NamedTuple
+    from numpy.typing import NDArray
+
+
+    class Bounds(NamedTuple):
+        qi: tuple[float, float]
+        Di: tuple[float, float]
+        bf: tuple[float, float]
+        telf: tuple[float, float]
+
+
+    def load_data() -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        ... # load your data here
+        return rate, time
+
+
+    def filter_buildup(rate: NDArray[np.float64], time: NDArray[np.float64]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Filter out buildup data"""
+        idx = np.argmax(rate)
+        return rate[idx:], time[idx:]
+
+
+    def jitter_rates(rate: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Add small jitter to rates to improve gradient descent"""
+        # double-precion has at least 15 digits, so for rates in the 10_000s, this leaves a lot of room
+        sd = 1e-6
+        return rate * np.random.normal(1.0, sd, rate.shape)
+
+
+    def forecast_thm(parms: NDArray[np.float64], time: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Forecast rates using the Transient Hyperbolic Model"""
+        thm = dca.THM(
+            qi=parms[0],
+            Di=parms[1],
+            bi=2.0,
+            bf=parms[2],
+            telf=parms[3],
+            bterm=0.0,
+            tterm=0.0
+        )
+        return thm.rate(time)
+
+
+    def log1sp(x: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Add small epsilon to avoid log(0) error"""
+        return np.log(x + 1e-6)
+
+
+    def residuals(parms: NDArray[np.float64], time: NDArray[np.float64], rate: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Residuals for scipy.optimize.least_squares"""
+        forecast = forecast_thm(parms, time)
+        return log1sp(rate) - log1sp(forecast)
+
+
+    rate, time = load_data()
+    data_q = rate
+    data_t = time
+    rate, time = filter_buildup(rate, time)  # filter out buildup data
+    rate = jitter_rates(rate)  # add small jitter to rates to improve gradient descent
+    bounds = Bounds(  # these ***are not general***, they must be calibrated to your data
+        qi=   (10.0,  10000.0),
+        Di=   (1e-6,      0.8),
+        bf=   ( 0.5,      1.5),
+        telf= ( 5.0,     50.0)
+    )
+    opt = least_squares(
+        fun=lambda parms, time, rate: residuals(parms, time, rate),  # residuals function
+        bounds=list(zip(*bounds)),  # unpack bounds into list of tuples
+        x0=[np.mean(p) for p in bounds],  # initial guess, mean works well enough
+        args=(time, rate),  # additoinal arguments to `fun`
+        loss='soft_l1',  # robust loss function
+        f_scale=.35  # affects outlier senstivity of the regression, larger values are more sensitive
+    )
+
+    # no terminal segment
+    # bterm = 0.0
+    # tterm = 0.0
+
+    # hyperbolic terminal segment
+    bterm = 0.3
+    tterm = 15.0  # years
+
+    # exponential terminal segment
+    # bterm = 0.06  # 6.0% secant effective decline / year
+    # tterm = 0.0
+
+    parms = np.r_[np.insert(opt.x, 2, 2.0), bterm, tterm]  # insert bi=2.0 and terminal parameters
+    print(parms)
+
+`[1177.57885e3, 0.793357559, 2.0, 0.666515071, 7.17744813, 0.0, 0.0]``
+
+
 Development
 ===========
 ``petbox-dca`` is maintained by David S. Fulford (`@dsfulf <https://github.com/dsfulf>`_). Please post an issue or pull request in this repo for any problems or suggestions!

@@ -120,7 +120,7 @@ def _get_R_der(x: NDFloat, L: float, i: int = -1) -> int:
 
 def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
             xlog: bool = True, ylog: bool = False
-            ) -> Tuple[NDFloat, NDFloat]:
+            ) -> NDFloat:
     """
     Bourdet Derivative Smoothing
 
