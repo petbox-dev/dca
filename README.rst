@@ -274,7 +274,7 @@ The following is an example of how to use the `THM` model with `scipy.optimize.l
 
 Which would print something like the following:
 
-``[1177.57885, 0.793357559, 2.0, 0.666515071, 7.17744813, 0.0, 0.0]```
+``[1177.57885, 0.793357559, 2.0, 0.666515071, 7.17744813, 0.0, 0.0]``
 
 And passed into the ``THM`` constructor as follows:
 
