@@ -212,14 +212,14 @@ The following is an example of how to use the `THM` model with `scipy.optimize.l
         return rate * np.random.normal(1.0, sd, rate.shape)
 
 
-    def forecast_thm(parms: NDArray[np.float64], time: NDArray[np.float64]) -> NDArray[np.float64]:
+    def forecast_thm(params: NDArray[np.float64], time: NDArray[np.float64]) -> NDArray[np.float64]:
         """Forecast rates using the Transient Hyperbolic Model"""
         thm = dca.THM(
-            qi=parms[0],
-            Di=parms[1],
+            qi=params[0],
+            Di=params[1],
             bi=2.0,
-            bf=parms[2],
-            telf=parms[3],
+            bf=params[2],
+            telf=params[3],
             bterm=0.0,
             tterm=0.0
         )
@@ -231,9 +231,9 @@ The following is an example of how to use the `THM` model with `scipy.optimize.l
         return np.log(x + 1e-6)
 
 
-    def residuals(parms: NDArray[np.float64], time: NDArray[np.float64], rate: NDArray[np.float64]) -> NDArray[np.float64]:
+    def residuals(params: NDArray[np.float64], time: NDArray[np.float64], rate: NDArray[np.float64]) -> NDArray[np.float64]:
         """Residuals for scipy.optimize.least_squares"""
-        forecast = forecast_thm(parms, time)
+        forecast = forecast_thm(params, time)
         return log1sp(rate) - log1sp(forecast)
 
 
@@ -249,7 +249,7 @@ The following is an example of how to use the `THM` model with `scipy.optimize.l
         telf= ( 5.0,     50.0)
     )
     opt = least_squares(
-        fun=lambda parms, time, rate: residuals(parms, time, rate),  # residuals function
+        fun=lambda params, time, rate: residuals(params, time, rate),  # residuals function
         bounds=list(zip(*bounds)),  # unpack bounds into list of tuples
         x0=[np.mean(p) for p in bounds],  # initial guess, mean works well enough
         args=(time, rate),  # additoinal arguments to `fun`
@@ -269,10 +269,19 @@ The following is an example of how to use the `THM` model with `scipy.optimize.l
     # bterm = 0.06  # 6.0% secant effective decline / year
     # tterm = 0.0
 
-    parms = np.r_[np.insert(opt.x, 2, 2.0), bterm, tterm]  # insert bi=2.0 and terminal parameters
-    print(parms)
+    params = np.r_[np.insert(opt.x, 2, 2.0), bterm, tterm]  # insert bi=2.0 and terminal parameters
+    print(params)
 
-`[1177.57885e3, 0.793357559, 2.0, 0.666515071, 7.17744813, 0.0, 0.0]``
+Which would print something like the following:
+
+``[1177.57885, 0.793357559, 2.0, 0.666515071, 7.17744813, 0.0, 0.0]```
+
+And passed into the ``THM`` constructor as follows:
+
+.. code-block:: python
+
+    thm = dca.THM.from_params(params)
+
 
 
 Development
