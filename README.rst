@@ -169,8 +169,8 @@ Regression
 ==========
 No methods for regression are included in this library, as the models are simple enough to be implemented in any regression package. I recommend using `scipy.optimize.least_squares <https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html>`_.
 
-For detailed derivation and argument for regression techniques, please see SPE-201404-MS `Optimization Methods for Time–Rate–Pressure Production Data Analysis using Automatic Outlier Filtering and Bayesian Derivative Calculations  <https://www.onepetro.org/conference-paper/SPE-201404-MS>`_.
-Additionally, you may view my `blog post <https://dsfulf.github.io/blog/nonlin_reg/nonlin_reg.html>_` on the topic. The Jupyter Notebook is available `here <https://github.com/dsfulf/blog/blob/master/nonlin_reg/nonlin_reg.ipynb>_`.
+For detailed derivation and argument for regression techniques, please see `SPE-201404-MS -- Optimization Methods for Time–Rate–Pressure Production Data Analysis using Automatic Outlier Filtering and Bayesian Derivative Calculations <https://www.onepetro.org/conference-paper/SPE-201404-MS>`_.
+Additionally, you may view my `blog post <https://dsfulf.github.io/blog/nonlin_reg/nonlin_reg.html>`_ on the topic. The Jupyter Notebook is available `here <https://github.com/dsfulf/blog/blob/master/nonlin_reg/nonlin_reg.ipynb>`_.
 
 The following is an example of how to use the `THM` model with `scipy.optimize.least_squares`.
 
@@ -238,8 +238,6 @@ The following is an example of how to use the `THM` model with `scipy.optimize.l
 
 
     rate, time = load_data()
-    data_q = rate
-    data_t = time
     rate, time = filter_buildup(rate, time)  # filter out buildup data
     rate = jitter_rates(rate)  # add small jitter to rates to improve gradient descent
     bounds = Bounds(  # these ***are not general***, they must be calibrated to your data
@@ -252,7 +250,7 @@ The following is an example of how to use the `THM` model with `scipy.optimize.l
         fun=lambda params, time, rate: residuals(params, time, rate),  # residuals function
         bounds=list(zip(*bounds)),  # unpack bounds into list of tuples
         x0=[np.mean(p) for p in bounds],  # initial guess, mean works well enough
-        args=(time, rate),  # additoinal arguments to `fun`
+        args=(time, rate),  # additional arguments to `fun`
         loss='soft_l1',  # robust loss function
         f_scale=.35  # affects outlier senstivity of the regression, larger values are more sensitive
     )
@@ -274,7 +272,7 @@ The following is an example of how to use the `THM` model with `scipy.optimize.l
 
 Which would print something like the following:
 
-``[1177.57885, 0.793357559, 2.0, 0.666515071, 7.17744813, 0.0, 0.0]``
+``[1177.57885, 0.793357559, 2.0, 0.666515071, 7.17744813, 0.3, 15.0]``
 
 And passed into the ``THM`` constructor as follows:
 
