@@ -6,6 +6,22 @@ Version History
    :noindex:
 
 
+1.2.0
+-----
+
+* Build system
+    * Migrate from ``setup.py`` / ``setup.cfg`` to ``pyproject.toml``
+    * Replace ``flake8`` with ``ruff``
+    * Version now single-sourced in ``pyproject.toml``, resolved at runtime via ``importlib.metadata``
+
+* Bug Fix
+    * Fix overflow in ``MultisegmentHyperbolic._Ncheck`` when decline rate is near-zero (subnormal), causing ``cum(0)`` to return ``NaN``
+
+* Other changes
+    * Fix ``mypy`` strict-mode type errors in ``bourdet.py`` and ``base.py``
+    * Update CI and test scripts to use ``ruff``
+
+
 1.1.0
 -----
 

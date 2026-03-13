@@ -145,7 +145,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if q < MIN_EPSILON:
             return cast(NDFloat, np.atleast_1d(N) + np.zeros_like(t, dtype=np.float64))
 
-        if D < MIN_EPSILON:
+        if D < MIN_EPSILON or (q / D) == np.inf:
             return np.atleast_1d(N + q * dt)
 
         if abs(1.0 - b) < MIN_EPSILON:

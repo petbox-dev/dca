@@ -3,8 +3,8 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 
-echo flake8 ../petbox/dca
-flake8 $DIR/../petbox/dca
+echo ruff check ../petbox/dca
+ruff check $DIR/../petbox/dca
 echo
 
 echo mypy ../petbox/dca

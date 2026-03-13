@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath('..'))
-from petbox import dca
+from importlib.metadata import version as _get_version
 
 
 # -- Project information -----------------------------------------------------
@@ -24,7 +24,7 @@ copyright = '2023, David S. Fulford'
 author = 'David S. Fulford'
 
 # The full version, including alpha/beta/rc tags
-release = dca.__version__
+release = _get_version('petbox-dca')
 
 
 # -- General configuration ---------------------------------------------------

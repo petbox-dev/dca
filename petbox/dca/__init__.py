@@ -1,4 +1,6 @@
-__version__ = '1.1.2'
+from importlib.metadata import version as _get_version
+
+__version__ = _get_version('petbox-dca')
 
 from .base import (get_time, get_time_monthly_vol,
                    DeclineCurve, PrimaryPhase,

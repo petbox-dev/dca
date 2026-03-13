@@ -96,7 +96,7 @@ def get_time_monthly_vol(start: float = 1, end: int = 10_000) -> NDFloat:
         time: numpy.NDFloat
             An evenly-monthly-spaced time series
     """
-    return (np.arange(start, end // DAYS_PER_MONTH) + 1) * DAYS_PER_MONTH
+    return ((np.arange(start, end // DAYS_PER_MONTH) + 1) * DAYS_PER_MONTH).astype(np.float64)
 
 
 class DeclineCurve(ABC):
