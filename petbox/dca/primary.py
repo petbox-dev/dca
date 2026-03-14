@@ -731,7 +731,7 @@ class THM(MultisegmentHyperbolic):
                 where_term = t >= tterm
             else:
                 # no known terminal times in this array, might be some later if exponential terminal
-                where_term = np.full_like(t, False, dtype=np.bool_)
+                where_term = np.full_like(t, False, dtype=bool)
 
             c = self.EXP_GAMMA / (1.5 * telf)
             D_denom = np.full_like(t, np.nan, dtype=np.float64)

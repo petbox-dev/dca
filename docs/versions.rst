@@ -6,6 +6,20 @@ Version History
    :noindex:
 
 
+2.0.0
+-----
+
+* **Breaking:** Minimum dependency versions raised
+    * Require ``numpy >= 2.1`` (was ``>= 1.21.1``)
+    * Require ``scipy >= 1.13`` (was ``>= 1.7.1``)
+    * Require ``Python >= 3.10`` (was ``>= 3.7``)
+    * ``ParamDesc.naive_gen`` type changed from ``RandomState`` to ``Generator``
+
+* Deprecation fixes
+    * Replace ``np.bool_`` with ``bool`` in dtype specification
+    * Migrate ``numpy.random.RandomState`` to ``numpy.random.Generator``
+
+
 1.3.0
 -----
 

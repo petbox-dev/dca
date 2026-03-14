@@ -21,7 +21,7 @@ import dataclasses as dc
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.random import RandomState
+from numpy.random import Generator
 
 from scipy.special import expi as ei, gammainc  # type: ignore
 from scipy.integrate import cumulative_trapezoid  # type: ignore
@@ -50,7 +50,7 @@ class ParamDesc():
     description: str
     lower_bound: Optional[float]
     upper_bound: Optional[float]
-    naive_gen: Callable[[RandomState, int], NDFloat]
+    naive_gen: Callable[[Generator, int], NDFloat]
     exclude_lower_bound: bool = False
     exclude_upper_bound: bool = False
 

@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "petbox-dca"
-version = "1.3.0"
+version = "2.0.0"
 description = "Decline Curve Library"
 readme = {file = "README.rst", content-type = "text/x-rst"}
 license = "MIT"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 authors = [
     {name = "David S. Fulford", email = "petbox-dev@gmail.com"},
 ]
@@ -22,9 +22,10 @@ classifiers = [
     "Intended Audience :: Education",
     "Intended Audience :: Developers",
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
@@ -32,8 +33,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "numpy>=1.21.1",
-    "scipy>=1.7.1",
+    "numpy>=2.1",
+    "scipy>=1.13",
 ]
 
 [project.urls]
@@ -46,7 +47,7 @@ dev = [
     "coveralls>=3.2.0",
     "hypothesis>=6.14.8",
     "mpmath>=1.3.0",
-    "mypy>=0.910",
+    "mypy>=1.0",
     "pytest>=6.2.4",
     "pytest-cov>=2.12.1",
     "ruff>=0.4.0",
@@ -65,7 +66,7 @@ include = ["petbox.dca"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py37"
+target-version = "py310"
 exclude = [
     ".git",
     "__pycache__",
