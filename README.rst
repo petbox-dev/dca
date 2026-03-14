@@ -10,7 +10,7 @@ Petroleum Engineering Toolbox
     :target: https://pypi.org/project/petbox-dca/
     :alt: PyPi Version
 
-.. image:: https://github.com/petbox-dev/dca/actions/workflows/ci.yml/badge.svg?branch=master
+.. image:: https://github.com/petbox-dev/dca/actions/workflows/ci.yml/badge.svg?branch=main
     :target: https://github.com/petbox-dev/dca/actions/workflows/ci.yml
     :alt: CI Status
 
@@ -154,7 +154,7 @@ Applying the above, we can easily evaluate each model against a data set.
 
     >>> plt.show()
 
-.. image:: https://github.com/petbox-dev/dca/raw/master/docs/img/model.png
+.. image:: https://github.com/petbox-dev/dca/raw/main/docs/img/model.png
     :alt: model comparison
 
 
