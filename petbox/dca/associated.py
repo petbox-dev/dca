@@ -19,8 +19,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from scipy.integrate import fixed_quad  # type: ignore
-
 from typing import (TypeVar, Type, List, Dict, Tuple, Any,
                     Sequence, Optional, Callable, ClassVar, Union)
 from numpy.typing import NDArray

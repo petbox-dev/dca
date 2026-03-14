@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from scipy.special import expi as ei, gammainc  # type: ignore
-from scipy.integrate import fixed_quad  # type: ignore
 
 from abc import ABC, abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any,
@@ -127,7 +126,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if b <= MultisegmentHyperbolic.B_EPSILON:
             D_dt = D * dt
         else:
-            D_dt = np.log(1.0 + D * b * dt) / b
+            D_dt = np.log1p(D * b * dt) / b
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
@@ -157,7 +156,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
             D_dt = -D * dt
             q_b_D = q / D
         else:
-            D_dt = (1.0 - 1.0 / b) * np.log(1.0 + b * D * dt)
+            D_dt = (1.0 - 1.0 / b) * np.log1p(b * D * dt)
             q_b_D = q / ((1.0 - b) * D)
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
@@ -258,11 +257,11 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if D < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
-        D_b = 1.0 + D * b
-        if D_b < MIN_EPSILON:
+        D_b = D * b
+        if 1.0 + D_b < MIN_EPSILON:
             return -np.inf # pragma: no cover
 
-        D_dt = np.log(D_b) / b
+        D_dt = log1p(D_b) / b
         if D_dt > LOG_EPSILON:
             # >= 100% decline is not possible
             return 1.0 # pragma: no cover
@@ -562,7 +561,7 @@ class THM(MultisegmentHyperbolic):
     def transient_rate(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
         """
         Compute the rate function using full definition.
-        Uses :func:`scipy.integrate.fixed_quad` to integrate :func:`transient_D`.
+        Numerically integrates :func:`transient_D`.
 
         .. math::
 
@@ -574,7 +573,7 @@ class THM(MultisegmentHyperbolic):
                 An array of time values to evaluate.
 
             **kwargs
-                Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
+                Additional keyword arguments (currently unused, reserved for future use).
 
         Returns
         -------
@@ -586,7 +585,7 @@ class THM(MultisegmentHyperbolic):
     def transient_cum(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
         """
         Compute the cumulative volume function using full definition.
-        Uses :func:`scipy.integrate.fixed_quad` to integrate :func:`transient_q`.
+        Numerically integrates :func:`transient_rate`.
 
         .. math::
 
@@ -598,7 +597,7 @@ class THM(MultisegmentHyperbolic):
                 An array of time values to evaluate.
 
             **kwargs
-                Additional keyword arguments passed to :func:`scipy.integrate.fixed_quad`.
+                Additional keyword arguments (currently unused, reserved for future use).
 
         Returns
         -------
@@ -1055,18 +1054,21 @@ class Duong(PrimaryPhase):
 
     validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
 
-    def _qfn(self, t: NDFloat) -> NDFloat:
-        qi = self.qi
+    def _duong_exp_arg(self, t: NDFloat) -> NDFloat:
+        """Compute ``a / (1-m) * (t^(1-m) - 1)`` using expm1 for precision near t=1."""
         a = self.a
         m = self.m
-        return np.where(t == 0.0, 0.0,
-                        qi * t ** -m * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
+        return a / (1.0 - m) * np.expm1((1.0 - m) * np.log(np.where(t == 0.0, 1.0, t)))
+
+    def _qfn(self, t: NDFloat) -> NDFloat:
+        qi = self.qi
+        exp_arg = self._duong_exp_arg(t)
+        return np.where(t == 0.0, 0.0, qi * t ** -self.m * np.exp(exp_arg))
 
     def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         qi = self.qi
-        a = self.a
-        m = self.m
-        return np.where(t == 0.0, 0.0, qi / a * np.exp(a / (1.0 - m) * (t ** (1.0 - m) - 1.0)))
+        exp_arg = self._duong_exp_arg(t)
+        return np.where(t == 0.0, 0.0, qi / self.a * np.exp(exp_arg))
 
     def _Dfn(self, t: NDFloat) -> NDFloat:
         a = self.a

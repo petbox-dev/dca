@@ -33,7 +33,7 @@ This library defines a single interface to each of the implemented decline curve
 
 Additionally, we also define an interface to attach a GOR/CGR yield function to any primary phase model. We can then obtain the outputs for the secondary phase as easily as the primary phase.
 
-Analytic functions are implemented wherever possible. When not possible, numerical evaluations are performed using ``scipy.integrate.fixed_quad``. Given that most of the functions of interest that must be numerically evaluated are monotonic, this generally works well.
+Analytic functions are implemented wherever possible. When not possible, numerical evaluations are performed using ``scipy.integrate.cumulative_trapezoid`` on a dense log-spaced grid, achieving accuracy comparable to Gaussian quadrature at higher throughput.
 
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Primary Phase              | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |

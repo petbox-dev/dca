@@ -67,7 +67,7 @@ DeclineCurve (ABC)
 - **Frozen dataclasses** — All models are immutable (`@dataclass(frozen=True)`)
 - **Composition for phases** — Primary models link secondary/water via `add_secondary(model)` returning a new instance
 - **Vectorized NumPy** — All calculations accept and return `NDArray[np.float64]`
-- **`scipy.integrate.fixed_quad`** — 50-point Gaussian quadrature for numerical integration where analytical solutions aren't available
+- **`scipy.integrate.cumulative_trapezoid`** — Numerical integration on a dense log-spaced grid where analytical solutions aren't available
 - **Parameter validation** — `ParamDesc` descriptors with bounds checking on construction via `get_param_descs()`
 
 ## Code standards

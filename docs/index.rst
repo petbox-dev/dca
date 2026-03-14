@@ -13,6 +13,8 @@ Contents
 .. toctree::
     :maxdepth: 1
 
+    numerical_integration
+    bourdet_algorithm
     testing
     versions
     genindex

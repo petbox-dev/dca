@@ -6,6 +6,23 @@ Version History
    :noindex:
 
 
+1.3.0
+-----
+
+* Performance
+    * Vectorize ``_integrate_with`` using ``cumulative_trapezoid`` on a log-spaced grid — eliminates per-interval Python loop (~3x faster, comparable accuracy)
+    * Vectorize ``bourdet()`` using ``searchsorted`` — eliminates per-point Python helper calls
+
+* Bug Fix
+    * Fix ``bourdet()`` producing ``NaN`` at right-edge points when smoothing window exceeds array boundary
+    * Fix ``bourdet()`` incorrect backward-difference at right edge (``_get_R_der`` selected point ``i`` itself, causing division by zero)
+
+* Numerical stability
+    * Replace ``np.log(1 + x)`` with ``np.log1p(x)`` in ``_qcheck`` and ``_Ncheck`` for small decline rates
+    * Replace ``np.log(1 + D*b)`` with ``log1p(D*b)`` in ``secant_from_nominal``
+    * Use ``np.expm1`` for ``t^(1-m) - 1`` in Duong model for precision near ``t=1``
+
+
 1.2.0
 -----
 

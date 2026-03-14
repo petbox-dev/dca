@@ -12,11 +12,10 @@ Notes
 Created on August 5, 2019
 """
 
-from math import exp, log, log1p, ceil as ceiling, floor
+from math import log
 
 import numpy as np
 
-from typing import Tuple
 from numpy.typing import NDArray
 from typing import cast
 
@@ -25,98 +24,6 @@ NDFloat = NDArray[np.float64]
 
 LOG10 = log(10)
 
-def _get_L_bourdet(x: NDFloat, L: float, i: int = 0) -> int:
-    """
-    First left-end point for Bourdet derivative.
-    """
-    if L == 0:
-        return i + 1
-
-    dx = x - x[i]
-    k = len(dx) - 1
-    idx = np.where((dx <= L) & (dx >= 0.))[0]
-    if idx.size > 0:
-        k = min(k, idx[-1] + 1)
-
-    return k
-
-
-def _get_R_bourdet(x: NDFloat, L: float, i: int = -1) -> int:
-    """
-    First right-end points for Bourdet derivative.
-    """
-    if L == 0:
-        return i - 1
-
-    dx = x[i] - x
-    k = 0
-    idx = np.where((dx < L) & (dx >= 0.))[-1]
-    if idx.size > 0:
-        k = max(k, idx[0] - 1)
-
-    return k
-
-
-def _get_L(y: NDFloat, x: NDFloat, L: float, i: int
-           ) -> Tuple[NDFloat, NDFloat]:
-    """
-    Bourdet indices for left-end points that lay inside of distance L.
-    """
-    dx = x[i] - x[:i]
-    dy = y[i] - y[:i]
-    idx = np.where((dx <= L) & (dx >= 0.))[0]
-    if idx.size > 0:
-        k = max(0, int(idx[0]) - 1)
-        return dx[k], dy[k]
-    else:
-        return dx[-1], dy[-1]
-
-
-def _get_R(y: NDFloat, x: NDFloat, L: float, i: int
-           ) -> Tuple[NDFloat, NDFloat]:
-    """
-    Bourdet indices for right-end points that lay inside of distance L.
-    """
-    dx = x[i + 1:] - x[i]
-    dy = y[i + 1:] - y[i]
-    idx = np.where((dx <= L) & (dx >= 0.))[0]
-
-    if idx.size > 0:
-        k = min(len(x) - 1, int(idx[-1]) + 1)
-        return dx[k], dy[k]
-    else:
-        return dx[0], dy[0]
-
-
-def _get_L_der(x: NDFloat, L: float, i: int = 0) -> int:
-    """
-    Forward derivative indices for left-end points that lay outside of distance L.
-    """
-    if L == 0:
-        return i + 1
-
-    dx = x - x[i]
-    idx = np.where((dx >= L) & (dx >= 0.))[0]
-    if idx.size > 0:
-        return idx[0]
-
-    return len(dx) - 1
-
-
-def _get_R_der(x: NDFloat, L: float, i: int = -1) -> int:
-    """
-    Backward derivative indices for right-end points that lay outside of distance L.
-    """
-    if L == 0:
-        return i - 1
-
-    dx = x[i] - x
-    idx = np.where((dx < L) & (dx >= 0.))[0]
-    if idx.size > 0:
-        return idx[-1]
-
-    return 0  # pragma: no cover
-
 
 def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
             xlog: bool = True, ylog: bool = False
@@ -124,9 +31,29 @@ def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
     """
     Bourdet Derivative Smoothing
 
-    Bourdet, D., Ayoub, J. A., and Pirard, Y. M. 1989. Use of Pressure Derivative in
-    Well-Test Interpretation. SPE Form Eval 4 (2): 293–302. SPE-12777-PA.
-    https://doi.org/10.2118/12777-PA.
+    Compute the smoothed derivative using the Bourdet three-point algorithm
+    (Eq. 8 of SPE-12777):
+
+    .. math::
+
+        \\left(\\frac{dp}{dX}\\right)_i =
+        \\frac{\\frac{\\Delta p_1}{\\Delta X_1} \\Delta X_2
+        + \\frac{\\Delta p_2}{\\Delta X_2} \\Delta X_1}
+        {\\Delta X_1 + \\Delta X_2}
+
+    where points 1 and 2 are the first neighbors outside the smoothing
+    window of distance L from point i on the log10(x) axis.
+
+    At interior points, the left neighbor is the last point j < i such that
+    ``log10(x[i]) - log10(x[j]) > L``, and the right neighbor is the first
+    point j > i such that ``log10(x[j]) - log10(x[i]) > L``. At left-edge
+    points (where no left neighbor beyond L exists), a forward difference to
+    the right neighbor is used. At right-edge points, a backward difference
+    to the left neighbor is used.
+
+    Bourdet, D., Ayoub, J. A., and Pirard, Y. M. 1989. Use of Pressure
+    Derivative in Well-Test Interpretation. SPE Form Eval 4 (2): 293-302.
+    SPE-12777-PA. https://doi.org/10.2118/12777-PA.
 
     Parameters
     ----------
@@ -137,14 +64,23 @@ def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
         An array of x values.
 
       L: float = 0.0
-        Smoothing factor in units of log-cycle fractions. A value of zero returns the
-        point-by-point first-order difference derivative.
+        Smoothing factor in units of log10 cycles (i.e., decades).
+        A value of zero returns the point-by-point first-order difference
+        derivative.
+
+        .. note::
+            The original paper (SPE-12777) defines L in natural-log units.
+            To convert: ``L_log10 = L_paper / ln(10)``.
+            For example, the paper's ``L=0.1`` corresponds to
+            ``L=0.0434`` in this function.
 
       xlog: bool = True
-        Calculate the derivative with respect to the log of x, i.e. ``dy / d[ln x]``.
+        Calculate the derivative with respect to the log of x,
+        i.e. ``dy / d[ln x]``.
 
       ylog: bool = False
-        Calculate the derivative with respect to the log of y, i.e. ``d[ln y] / dx``.
+        Calculate the derivative with respect to the log of y,
+        i.e. ``d[ln y] / dx``.
 
     Returns
     -------
@@ -153,52 +89,67 @@ def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
     """
     x = np.atleast_1d(x).astype(np.float64)
     y = np.atleast_1d(y).astype(np.float64)
+    n = len(x)
 
     log_x = cast(NDFloat, np.log10(x))
 
     if ylog:
         y = cast(NDFloat, np.log(y))
 
-    x_L = np.zeros_like(log_x, dtype=np.dtype(float))
-    x_R = np.zeros_like(log_x, dtype=np.dtype(float))
-    y_L = np.zeros_like(log_x, dtype=np.dtype(float))
-    y_R = np.zeros_like(log_x, dtype=np.dtype(float))
+    der = np.zeros(n, dtype=np.float64)
 
-    # get points for forward and backward derivatives
-    k1 = _get_L_bourdet(log_x, L)
-    k2 = _get_R_bourdet(log_x, L)
+    if n < 2:
+        return der
 
-    # compute first & last points
-    x_L[0] = log_x[k1] - log_x[0]
-    y_L[0] = y[k1] - y[0]
+    pts = np.arange(n)
 
-    x_R[-1] = log_x[-1] - log_x[k2]
-    y_R[-1] = y[-1] - y[k2]
+    if L == 0.0:
+        # No smoothing: immediate neighbors
+        idx_L = np.clip(pts - 1, 0, n - 1)
+        idx_R = np.clip(pts + 1, 0, n - 1)
+    else:
+        # Left neighbor: last point j < i where log_x[i] - log_x[j] > L
+        # searchsorted(log_x, log_x[i] - L, side='right') - 1 gives the last
+        # index where log_x[j] <= log_x[i] - L, i.e. first point outside L.
+        target_L = log_x - L
+        raw_L = np.searchsorted(log_x, target_L, side='right').astype(np.intp) - 1
+        idx_L = np.clip(raw_L, 0, n - 1)
 
-    # compute bourdet derivative
-    for i in range(k1, k2):
-        x_L[i], y_L[i] = _get_L(y, log_x, L, i)
-        x_R[i], y_R[i] = _get_R(y, log_x, L, i)
+        # Right neighbor: first point j > i where log_x[j] - log_x[i] > L
+        # searchsorted(log_x, log_x[i] + L, side='right') gives the first
+        # index where log_x[j] > log_x[i] + L.
+        target_R = log_x + L
+        raw_R = np.searchsorted(log_x, target_R, side='right').astype(np.intp)
+        idx_R = np.clip(raw_R, 0, n - 1)
 
-    x_L = cast(NDFloat, x_L * LOG10)
-    x_R = cast(NDFloat, x_R * LOG10)
-    der = cast(NDFloat, (y_L / x_L * x_R + y_R / x_R * x_L) / (x_L + x_R))
+    # Ensure left neighbor is strictly before i, right is strictly after
+    idx_L = np.minimum(idx_L, np.maximum(pts - 1, 0))
+    idx_R = np.maximum(idx_R, np.minimum(pts + 1, n - 1))
 
-    # compute forward difference at left edge
-    for i in range(0, k1):
-        idx = _get_L_der(log_x, L, i)
-        dy = y[idx] - y[i]
-        dx = log_x[idx] - log_x[i]
-        dx *= LOG10
-        der[i] = dy / dx
+    # Compute deltas on the ln(x) axis (log10 * LOG10 = ln)
+    x_L = (log_x[pts] - log_x[idx_L]) * LOG10
+    y_L = y[pts] - y[idx_L]
+    x_R = (log_x[idx_R] - log_x[pts]) * LOG10
+    y_R = y[idx_R] - y[pts]
 
-    # compute backward difference at right edge
-    for i in range(k2, len(log_x))[::-1]:
-        idx = _get_R_der(log_x, L, i)
-        dy = y[i] - y[idx]
-        dx = log_x[i] - log_x[idx]
-        dx *= LOG10
-        der[i] = dy / dx
+    # Three-point weighted formula (Eq. 8, SPE-12777)
+    # At edges where one side has zero span, degrade to one-sided difference:
+    #   - if x_L == 0: forward difference y_R / x_R
+    #   - if x_R == 0: backward difference y_L / x_L
+    denom = x_L + x_R
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        slope_L = np.where(x_L > 0.0, y_L / x_L, 0.0)
+        slope_R = np.where(x_R > 0.0, y_R / x_R, 0.0)
+
+        both = (x_L > 0.0) & (x_R > 0.0)
+        left_only = (x_L > 0.0) & ~(x_R > 0.0)
+        right_only = ~(x_L > 0.0) & (x_R > 0.0)
+
+        der[both] = ((slope_L[both] * x_R[both] + slope_R[both] * x_L[both])
+                     / denom[both])
+        der[left_only] = slope_L[left_only]
+        der[right_only] = slope_R[right_only]
 
     if not xlog:
         der /= x
