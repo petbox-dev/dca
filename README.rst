@@ -10,17 +10,13 @@ Petroleum Engineering Toolbox
     :target: https://pypi.org/project/petbox-dca/
     :alt: PyPi Version
 
-.. image:: https://travis-ci.org/petbox-dev/dca.svg?branch=master
-    :target: https://travis-ci.org/github/petbox-dev/dca
-    :alt: Build Status
+.. image:: https://github.com/petbox-dev/dca/actions/workflows/ci.yml/badge.svg?branch=master
+    :target: https://github.com/petbox-dev/dca/actions/workflows/ci.yml
+    :alt: CI Status
 
 .. image:: https://readthedocs.org/projects/petbox-dca/badge/?version=latest
     :target: https://petbox-dca.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
-
-.. image:: https://coveralls.io/repos/github/petbox-dev/dca/badge.svg
-    :target: https://coveralls.io/github/petbox-dev/dca
-    :alt: Coverage Status
 
 .. image:: https://open.vscode.dev/badges/open-in-vscode.svg
     :target: https://open.vscode.dev/petbox-dev/dca
