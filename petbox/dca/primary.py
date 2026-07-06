@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from scipy.special import expi as ei, gammainc  # type: ignore
+from scipy.special import expi as ei, gammainc, gamma  # type: ignore
 
 from abc import ABC, abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any,
@@ -983,7 +983,15 @@ class SE(PrimaryPhase):
         qi = self.qi
         tau = self.tau
         n = self.n
-        return qi * tau / n * gammainc(1.0 / n, (t / tau) ** n)
+        # N(t) = qi tau / n * gamma(1/n) * P(1/n, (t/tau)^n), where P is the regularised
+        # lower incomplete gamma (scipy gammainc). The gamma(1/n) factor is required: without
+        # it the cumulative and EUR are wrong by a factor of gamma(1/n) (e.g. +33% at n=0.4).
+        coef = qi * tau / n * gamma(1.0 / n)
+        if np.isfinite(coef):
+            return coef * gammainc(1.0 / n, (t / tau) ** n)
+        # gamma(1/n) overflows for very small n (where the closed-form EUR diverges);
+        # fall back to the bounded numerical integral.
+        return self._integrate_with(self._qfn, t, **kwargs)
 
     def _Dfn(self, t: NDFloat) -> NDFloat:
         tau = self.tau

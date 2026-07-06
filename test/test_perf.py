@@ -12,6 +12,17 @@ def _quad_cum(rate_fn, t: np.ndarray) -> np.ndarray:
     return np.array([quad(rate_fn, 0.0, float(ti))[0] for ti in t])
 
 
+@pytest.mark.parametrize('n', [0.3, 0.4, 0.5, 0.6, 0.8])
+def test_SE_cum_matches_integral(n: float) -> None:
+    """SE.cum must equal the integral of SE.rate. Regression for the missing
+    gamma(1/n) factor, which made cum/EUR wrong by a factor of gamma(1/n)."""
+    qi, tau = 1000.0, 30.0
+    se = dca.SE(qi, tau, n)
+    t = dca.get_time(1.0, 5000.0, 60)
+    ref = _quad_cum(lambda s: qi * np.exp(-(s / tau) ** n), t)
+    assert np.allclose(se.cum(t), ref, rtol=1e-4)
+
+
 def test_integrate_with_PLE_accuracy() -> None:
     """Verify _integrate_with produces correct cumulative volumes for PLE."""
     ple = dca.PLE(qi=1000.0, Di=0.01, Dinf=0.0001, n=0.5)
