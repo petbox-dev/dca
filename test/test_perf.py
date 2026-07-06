@@ -3,7 +3,13 @@ Performance regression tests for numerical integration and bourdet derivative.
 """
 import numpy as np
 import pytest
+from scipy.integrate import quad
 from petbox import dca
+
+
+def _quad_cum(rate_fn, t: np.ndarray) -> np.ndarray:
+    """Trusted reference: cumulative volume by adaptive quadrature of the rate."""
+    return np.array([quad(rate_fn, 0.0, float(ti))[0] for ti in t])
 
 
 def test_integrate_with_PLE_accuracy() -> None:
@@ -80,3 +86,21 @@ def test_integrate_with_vs_analytical() -> None:
     mvol = ple.monthly_vol(t)
     assert np.all(np.isfinite(mvol))
     assert np.all(mvol >= -1e-10)
+
+
+def test_PLE_cum_matches_integral() -> None:
+    """PLE.cum (numerical _integrate_with) must match the integral of PLE.rate."""
+    qi, Di, Dinf, n = 1000.0, 0.5, 0.1, 0.6
+    ple = dca.PLE(qi, Di, Dinf, n)
+    t = dca.get_time(1.0, 5000.0, 60)
+    ref = _quad_cum(lambda s: qi * np.exp(-Di * s ** n - Dinf * s), t)
+    assert np.allclose(ple.cum(t), ref, rtol=1e-3)
+
+
+def test_integrate_with_n_grid_parameter() -> None:
+    """A smaller n_grid trades accuracy for speed but stays within tolerance."""
+    ple = dca.PLE(qi=1000.0, Di=0.5, Dinf=0.1, n=0.6)
+    t = dca.get_time(1.0, 5000.0, 60)
+    coarse = ple.cum(t, n_grid=2000)
+    fine = ple.cum(t, n_grid=10_000)
+    assert np.allclose(coarse, fine, rtol=1e-3)
