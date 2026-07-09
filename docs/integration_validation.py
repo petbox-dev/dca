@@ -88,6 +88,23 @@ def print_table(models, t):
         print(f'{label:<55} {rel_err.max():>15.4e} {rel_err.mean():>16.4e}')
 
 
+def print_ngrid_convergence(ple_cases, t):
+    """Print worst-case (over the PLE cases) relative error vs n_grid, showing
+    the second-order convergence of the log-spaced trapezoid rule."""
+    grids = [250, 500, 1000, 2000, 5000, 10_000, 20_000]
+    refs = [reference_cum(m._qfn, t) for _, m in ple_cases]
+    print(f'\n{"n_grid":>8} {"Worst Max Rel Err (%)":>22} {"Worst Mean Rel Err (%)":>24}')
+    print('-' * 56)
+    for ng in grids:
+        max_e = mean_e = 0.0
+        for (_, m), ref in zip(ple_cases, refs):
+            mask = ref > 0
+            rel = np.abs((m.cum(t, n_grid=ng)[mask] - ref[mask]) / ref[mask]) * 100
+            max_e = max(max_e, rel.max())
+            mean_e = max(mean_e, rel.mean())
+        print(f'{ng:>8d} {max_e:>22.2e} {mean_e:>24.2e}')
+
+
 def main() -> None:
     t = dca.get_time(start=1.0, end=10_000.0, n=101)
 
@@ -115,6 +132,7 @@ def main() -> None:
                 'docs/img/integration_accuracy.png',
                 'Primary Phase: PLE Cumulative Volume Accuracy')
     print_table(ple_models, t)
+    print_ngrid_convergence(ple_cases, t)
 
     # ----------------------------------------------------------------
     # Associated phase: PLYield on MH primary

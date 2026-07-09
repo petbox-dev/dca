@@ -140,8 +140,12 @@ class DeclineCurve(ABC):
             t: Union[float, numpy.NDFloat]
                 An array of times at which to evaluate the function.
 
-            **kwargs
-                Additional keyword arguments (currently unused, reserved for future use).
+            n_grid: int
+                For models evaluated by numerical integration (PLE, associated-phase
+                yields, and SE at very small ``n``), the number of log-spaced grid
+                points used. Defaults to 10,000 (~1e-6 relative accuracy); must be
+                ``>= 2``. A smaller value (e.g. 2,000, ~5e-5) trades accuracy for
+                speed. Ignored by models with a closed-form cumulative.
 
         Returns
         -------
@@ -170,8 +174,9 @@ class DeclineCurve(ABC):
                 A start time of the first interval. If not given, the first element
                 of ``t`` is used.
 
-            **kwargs
-                Additional keyword arguments (currently unused, reserved for future use).
+            n_grid: int
+                Number of log-spaced integration points, for models evaluated by
+                numerical integration; see :meth:`cum`. Must be ``>= 2``.
 
         Returns
         -------
@@ -197,8 +202,9 @@ class DeclineCurve(ABC):
             t: Union[float, numpy.NDFloat]
                 An array of interval end times at which to evaluate the function.
 
-            **kwargs
-                Additional keyword arguments (currently unused, reserved for future use).
+            n_grid: int
+                Number of log-spaced integration points, for models evaluated by
+                numerical integration; see :meth:`cum`. Must be ``>= 2``.
 
         Returns
         -------
@@ -226,8 +232,9 @@ class DeclineCurve(ABC):
             t0: Optional[Union[float, numpy.NDFloat]]
                 A start time of the first interval. If not given, assumed to be zero.
 
-            **kwargs
-                Additional keyword arguments (currently unused, reserved for future use).
+            n_grid: int
+                Number of log-spaced integration points, for models evaluated by
+                numerical integration; see :meth:`cum`. Must be ``>= 2``.
 
         Returns
         -------
@@ -235,7 +242,7 @@ class DeclineCurve(ABC):
         """
         t = self._validate_ndarray(t)
         t0 = np.atleast_1d(0.0).astype(np.float64)
-        return (np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0))  # type: ignore
+        return (np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))  # type: ignore
                 / np.diff(t, prepend=t0) * DAYS_PER_MONTH)  # type: ignore
 
     def D(self, t: Union[float, NDFloat]) -> NDFloat:
@@ -445,17 +452,21 @@ class DeclineCurve(ABC):
                 ~1e-6 relative accuracy; the whole grid is rebuilt on every call, so
                 callers integrating repeatedly at moderate accuracy (e.g. fitting on
                 the same ``t``) can pass a smaller value: ~2,000 holds ~5e-5, well
-                below production-data noise, for a proportional speed-up. Flows through
+                below production-data noise, for a proportional speed-up. Must be
+                ``>= 2``; a smaller value raises ``ValueError``. Flows through
                 ``cum(t, n_grid=...)``.
 
         Returns
         -------
             cumulative integral: NDFloat
         """
+        n_grid = int(kwargs.get('n_grid', 10_000))
+        if n_grid < 2:
+            raise ValueError(f'n_grid must be >= 2, got {n_grid}')
+
         if len(t) == 0:
             return np.array([], dtype=np.float64)
 
-        n_grid = int(kwargs.get('n_grid', 10_000))
         eps = 1e-12
         t_max = float(t[-1]) if t[-1] > 0 else 1.0
         log_grid = np.logspace(np.log10(eps), np.log10(t_max), n_grid)

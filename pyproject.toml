@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "petbox-dca"
-version = "2.0.0"
+version = "2.1.0"
 description = "Decline Curve Library"
 readme = {file = "README.rst", content-type = "text/x-rst"}
 license = "MIT"
@@ -113,7 +113,7 @@ warn_unused_configs = true
 plugins = ["numpy.typing.mypy_plugin"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=petbox.dca --cov-report=term-missing --cov-config=pyproject.toml --hypothesis-show-statistics -v test"
+addopts = "--cov=petbox.dca --cov-report=term-missing --cov-report=lcov:coverage.lcov --cov-config=pyproject.toml --hypothesis-show-statistics -v test"
 
 [tool.coverage.run]
 # branch = true

@@ -11,8 +11,12 @@ function :math:`q(t)`:
     N(t) = \int_0^t q(\tau) \, d\tau
 
 Models with closed-form cumulative solutions (MH, THM, SE, Duong) do
-not use numerical integration. The Power-Law Exponential (PLE) model
-and associated phase models (PLYield) use the method described here.
+not use numerical integration, with one exception: the Stretched
+Exponential (SE) closed form carries a :math:`\Gamma(1/n)` coefficient
+that overflows for very small :math:`n` (:math:`n \lesssim 0.006`), where
+SE falls back to the numerical method described here. The Power-Law
+Exponential (PLE) model and associated phase models (PLYield) always use
+this method.
 
 
 Method
@@ -71,6 +75,35 @@ from 1 to 10,000 days. Reference computed with adaptive quadrature
 The worst-case maximum relative error is **0.00022%** (2.2 parts per
 million), which is well below the uncertainty inherent in empirical
 decline curve parameters. Mean errors are an order of magnitude smaller.
+
+The grid size is configurable via the ``n_grid`` keyword, which flows
+through ``cum(t, n_grid=...)`` (and the other volume methods). The
+log-spaced trapezoid rule converges at second order --- each doubling of
+``n_grid`` cuts the relative error roughly four-fold --- so the knob
+trades accuracy for a proportional reduction in grid work. Worst-case
+error over the four PLE cases above:
+
+.. csv-table::
+   :header: "n_grid", "Max Rel Err (%)", "Mean Rel Err (%)"
+   :widths: 12, 20, 20
+
+   "250",     "0.11",     "0.087"
+   "500",     "0.056",    "0.044"
+   "1,000",   "0.019",    "0.014"
+   "2,000",   "0.0054",   "0.0041"
+   "5,000",   "0.00087",  "0.00068"
+   "10,000",  "0.00022",  "0.00017"
+   "20,000",  "0.000056", "0.000044"
+
+The default of 10,000 (:math:`\sim 2 \times 10^{-6}` relative error) is
+unchanged. A smaller value such as 2,000 (:math:`\sim 5 \times 10^{-5}`)
+remains far below the noise in empirical production data, and is a
+reasonable choice when integrating repeatedly at moderate accuracy (e.g.
+fitting on a fixed ``t``). ``n_grid`` must be :math:`\ge 2`; smaller
+values raise ``ValueError``. For typical evaluation arrays the accuracy
+is governed by ``n_grid`` rather than by the density of the requested
+``t`` values --- the log-spaced grid dominates the merged integration
+grid, so refining ``t`` alone does not improve accuracy.
 
 .. figure:: img/integration_accuracy.png
    :width: 100%
