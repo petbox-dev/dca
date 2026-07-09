@@ -6,6 +6,37 @@ Version History
    :noindex:
 
 
+2.1.0
+-----
+
+* Bug Fix
+    * **Breaking numerical change:** Fix missing ``gamma(1/n)`` factor in the Stretched
+      Exponential (``SE``) closed-form cumulative and EUR. ``SE._Nfn`` returned
+      ``qi*tau/n * P(1/n, (t/tau)^n)`` using the *regularised* lower incomplete gamma
+      (scipy ``gammainc`` = P), but the integral of ``qi*exp(-(t/tau)^n)`` is
+      ``qi*tau/n * gamma(1/n) * P(1/n, (t/tau)^n)``. Cumulative volume and EUR were
+      wrong by a factor of ``gamma(1/n)`` for any ``n != 0.5`` --- understated up to
+      ~64% at ``n=0.3``, exact at ``n=0.5``, overstated ~10% for ``n > 0.5``. Any SE
+      forecast with ``n != 0.5`` will now report different cumulative/EUR values.
+      For very small ``n``, ``gamma(1/n)`` overflows (the closed-form EUR genuinely
+      diverges there); SE now falls back to the bounded numerical integrator.
+
+* Performance
+    * Expose ``n_grid`` in the numerical integrator via ``cum(t, n_grid=...)`` (and the
+      other volume methods). Default 10,000 is unchanged; a smaller value (e.g. 2,000,
+      ~5e-5 relative error) trades accuracy for a proportional speed-up on the
+      numerically-integrated path (PLE, associated yields). ``n_grid < 2`` raises
+      ``ValueError``.
+
+* Other changes
+    * Remove unreachable ``pass`` (and commented-out lines) after a ``raise`` in
+      ``THM._validate``; flagged as unreachable by ``mypy``. No behaviour change.
+    * Add ``test_SE_cum_matches_integral`` and ``test_PLE_cum_matches_integral``,
+      which compare ``cum`` against adaptive quadrature of the rate --- the previous
+      ``check_model`` assertions only verified finiteness, so a constant-factor error
+      in a closed-form cumulative passed silently.
+
+
 2.0.0
 -----
 

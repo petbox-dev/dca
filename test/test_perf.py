@@ -23,6 +23,19 @@ def test_SE_cum_matches_integral(n: float) -> None:
     assert np.allclose(se.cum(t), ref, rtol=1e-4)
 
 
+@pytest.mark.parametrize('n', [0.005, 0.003])
+def test_SE_cum_small_n_fallback(n: float) -> None:
+    """For very small n, gamma(1/n) overflows and SE.cum falls back to the
+    numerical integrator; the result must still match the integral of the rate."""
+    qi, tau = 1000.0, 30.0
+    se = dca.SE(qi, tau, n)
+    t = dca.get_time(1.0, 5000.0, 40)
+    cum = se.cum(t)
+    assert np.all(np.isfinite(cum))
+    ref = _quad_cum(lambda s: qi * np.exp(-(s / tau) ** n), t)
+    assert np.allclose(cum, ref, rtol=1e-4)
+
+
 def test_integrate_with_PLE_accuracy() -> None:
     """Verify _integrate_with produces correct cumulative volumes for PLE."""
     ple = dca.PLE(qi=1000.0, Di=0.01, Dinf=0.0001, n=0.5)
@@ -115,3 +128,13 @@ def test_integrate_with_n_grid_parameter() -> None:
     coarse = ple.cum(t, n_grid=2000)
     fine = ple.cum(t, n_grid=10_000)
     assert np.allclose(coarse, fine, rtol=1e-3)
+
+
+@pytest.mark.parametrize('n_grid', [1, 0, -5])
+def test_integrate_with_n_grid_too_small_raises(n_grid: int) -> None:
+    """n_grid < 2 is a degenerate integration grid and must raise, not silently
+    produce garbage."""
+    ple = dca.PLE(qi=1000.0, Di=0.5, Dinf=0.1, n=0.6)
+    t = dca.get_time(1.0, 5000.0, 60)
+    with pytest.raises(ValueError):
+        ple.cum(t, n_grid=n_grid)
