@@ -508,6 +508,53 @@ either is zero (exponential and constant-rate cases have no pole).
 - **A future `IncliningHyperbolic` declares its own negative descriptor ranges** and requires
   `D < 0`, `b < 0`. It is the only model that widens the bounds.
 
+### `shift(dt)` — re-anchoring a yield fit whose start date was wrong
+
+A common failure: a yield model is fit against a time axis normalized to the wrong first
+production date. If true first production is `dt` days earlier, the fitted model would have to
+be evaluated at negative `t` to cover that first period — which the power law cannot do.
+
+The remedy is not to evaluate out of domain but to **move the model's origin**, which is
+expressible entirely within the existing parameterization: shift every breakpoint time by
+`+dt` and keep `c`, `m0` and every slope. For `PLYield` it is `t0 + dt`; for
+`GeneralizedPLYield` it is each `PLYieldSegment.t + dt`. No new parameter is needed.
+
+```python
+def shift(self, dt: float) -> 'GeneralizedPLYield':
+    """Return a copy with every breakpoint moved later by ``dt`` days.
+
+    Use when a fit was anchored to the wrong first-production date: shifting by the
+    correction places the power law's origin at true first production, so the model is
+    defined over the period the original fit could only reach at negative ``t``.
+
+    This is a re-anchoring, not a lossless transform -- see the note below.
+    """
+```
+
+Verified on `GeneralizedPLYield(c=1.2, m0=0.6, segments=((180, 0.6), (1095, -0.2)))` with
+`dt = 30.4`:
+
+| true `t` | 0 | 1 | 15 | 30.4 |
+|---|---|---|---|---|
+| original at `t - dt` | `3.07e-185` | `3.07e-185` | `3.07e-185` | `0` |
+| shifted | `0` | `0.04846` | `0.24604` | `0.37590` |
+
+The shifted model is real-valued and monotonic where the original was not defined, and the
+anchor observation is preserved: the original gives `gor(180) = 1.2` and the shifted gives
+`gor(210.4) = 1.2`.
+
+**It is not lossless, and that is the point.** Late-time yield falls 7-9% — measured ratios
+`0.959`, `0.928`, `0.929` at 365, 1000 and 3650 days, converging on
+`(t_1/(t_1 + dt)) ** m0 = 0.911`. The power law's origin has moved to true first production,
+which is what "time since first production" means, so the shifted model is the more correct
+one; the original parameters were biased by the wrong axis. A rigorous correction is a re-fit,
+and the docstring must say so rather than implying the shift recovers the true parameters.
+
+**Yield only.** The yield anchor is an interior point `(t_1, c)`, so shifting is pure
+reparameterization. A hyperbolic model pins `qi` at `t = 0`, so shifting it later requires
+back-extrapolating to the earlier rate — that is the negative-time and pole machinery, a
+different operation, and deliberately not covered by this method.
+
 ### `time_at_rate(q)` — inverting the rate function
 
 Rather than exposing the pole as a bare constant, invert the rate function. Solving
