@@ -16,8 +16,11 @@ Version History
       anchored at the value the preceding segment reaches there. A single breakpoint is
       bit-for-bit identical to ``PLYield``, i.e.
       ``PLYield(c, m0, m, t0) == GeneralizedPLYield(c, m0, ((t0, m),))``.
-      Breakpoint times must be positive and strictly increasing, and each slope must
-      lie within ``[-10, 10]``.
+      Breakpoint times must be finite, positive, and strictly increasing, and each slope
+      must be finite and within ``[-10, 10]``. ``NaN`` is rejected explicitly: the
+      validation is written as ``not np.all(valid)`` rather than ``np.any(invalid)``,
+      because every comparison against ``NaN`` is false and the latter form would accept
+      a ``NaN`` breakpoint and silently return an all-``NaN`` yield function.
 
 * Refactor
     * All power-law yield math moved to a new ``MultisegmentPLYield`` base class, which

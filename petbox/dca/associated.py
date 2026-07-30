@@ -346,8 +346,8 @@ class GeneralizedPLYield(MultisegmentPLYield):
         segments: Sequence[Tuple[float, float]]
             A sequence of ``(t, m)`` pairs, where the slope becomes ``m`` at time ``t``
             in days. At least one pair is required; the first pair's time is the anchor
-            time of ``c``. Times must be positive and strictly increasing, and each
-            slope must lie within ``[-10, 10]``.
+            time of ``c``. Times must be finite, positive, and strictly increasing, and
+            each slope must be finite and within ``[-10, 10]``.
 
         min: Optional[float] = None
             The minimum allowed value. Would be used e.g. to limit minimum CGR.
@@ -386,15 +386,23 @@ class GeneralizedPLYield(MultisegmentPLYield):
 
         breakpoint_times, slopes = self._segment_arrays()
 
-        if np.any(breakpoint_times <= 0.0):
-            raise ValueError('segments t <= 0')
+        # These are written as `not np.all(<valid>)` rather than `np.any(<invalid>)` on
+        # purpose: every comparison against NaN is False, so `np.any(t <= 0.0)` would
+        # accept a NaN time and `np.any(abs(m) > bound)` a NaN slope -- either of which
+        # silently produces an all-NaN yield function. The positive form rejects NaN,
+        # and the explicit isfinite rejects an infinite breakpoint, which would place a
+        # segment that never starts.
+        if not np.all(np.isfinite(breakpoint_times) & (breakpoint_times > 0.0)):
+            raise ValueError('segments t must be finite and > 0')
 
         # np.diff of a single element is empty, and np.all of empty is True
         if not np.all(np.diff(breakpoint_times) > 0.0):
             raise ValueError('segments t not strictly increasing')
 
-        if np.any(np.abs(slopes) > self.SLOPE_BOUND):
-            raise ValueError(f'segments m outside [{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]')
+        if not np.all(np.abs(slopes) <= self.SLOPE_BOUND):
+            raise ValueError(
+                f'segments m must be finite and within '
+                f'[{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]')
 
         super()._validate()
 
@@ -413,7 +421,16 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # overflowing part-way through a running product.
         anchor_values = np.empty_like(breakpoint_times)
         anchor_values[0] = self.c
-        log_anchor = float(np.log(self.c)) if self.c > 0.0 else -np.inf
+        # Seed from log(c) directly rather than special-casing `c > 0`, so that c == 0
+        # gives -inf here and every anchor comes back as 0 -- agreeing with
+        # anchor_values[0]. The old `if c > 0 else -inf` seed made segment 0 report c
+        # while every later segment reported 0. A negative or NaN c still disagrees
+        # (the first anchor keeps c, later ones are NaN) because anchor_values[0] must
+        # stay exactly `self.c` to keep the single-breakpoint case bit-for-bit equal to
+        # PLYield -- exp(log(c)) does not round-trip. Both are only reachable with
+        # validation disabled, since the `c` ParamDesc excludes its lower bound of 0.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            log_anchor = float(np.log(self.c))
 
         for i in range(1, breakpoint_times.size):
             log_anchor += float(

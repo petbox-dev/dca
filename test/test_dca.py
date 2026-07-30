@@ -813,40 +813,88 @@ def test_generalized_param_descs() -> None:
 
 
 def test_generalized_errors() -> None:
-    with pytest.raises(ValueError):
+    """`match=` is deliberate: a bare `raises(ValueError)` would pass even if a
+    different check fired than the one each case is meant to exercise."""
+    with pytest.raises(ValueError, match='at least one'):
         # at least one breakpoint is required
         dca.GeneralizedPLYield(1200.0, 0.0, ())
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r'\(t, m\) pairs'):
         # entries must be (t, m) pairs
         dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.8, 0.1),))  # type: ignore
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='finite and > 0'):
         # t must be positive
         dca.GeneralizedPLYield(1200.0, 0.0, ((0.0, 0.8),))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='finite and > 0'):
+        # t must be positive, and a negative time must not be read as "before the
+        # first segment" -- searchsorted assumes segment_params is sorted
+        dca.GeneralizedPLYield(1200.0, 0.0, ((-90.0, 0.8),))
+
+    with pytest.raises(ValueError, match='strictly increasing'):
         # t must be strictly increasing
         dca.GeneralizedPLYield(1200.0, 0.0, ((365.0, 0.8), (90.0, 0.2)))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='strictly increasing'):
         # equal times are not strictly increasing
         dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.8), (90.0, 0.2)))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r'within \[-10.0, 10.0\]'):
         # slope outside [-10, 10]
         dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.8), (365.0, 25.0)))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='max < min'):
         # max < min, raised by the shared base
         dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.8),), 10.0, 1.0)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='c <= 0.0'):
         # c at its excluded lower bound
         dca.GeneralizedPLYield(0.0, 0.0, ((90.0, 0.8),))
 
     # the inclusive bound endpoints are accepted
     dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, -10.0), (365.0, 10.0)))
+
+
+def test_generalized_rejects_nonfinite_segments() -> None:
+    """Every comparison against NaN is False, so a validation written as
+    `np.any(t <= 0)` / `np.any(abs(m) > bound)` would ACCEPT a NaN time or slope and
+    silently produce an all-NaN yield function. Infinite times place a segment that
+    never starts. Both must be rejected."""
+    nan = float('nan')
+
+    # a single NaN time is the worst case: np.diff of one element is empty, so the
+    # strictly-increasing check cannot catch it either
+    with pytest.raises(ValueError, match='finite and > 0'):
+        dca.GeneralizedPLYield(1200.0, 0.0, ((nan, 0.5),))
+
+    with pytest.raises(ValueError, match='finite and > 0'):
+        dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.5), (nan, 0.2)))
+
+    with pytest.raises(ValueError, match='finite and > 0'):
+        dca.GeneralizedPLYield(1200.0, 0.0, ((np.inf, 0.5),))
+
+    with pytest.raises(ValueError, match=r'finite and within'):
+        dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, nan),))
+
+    with pytest.raises(ValueError, match=r'finite and within'):
+        dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.5), (365.0, nan)))
+
+    with pytest.raises(ValueError, match=r'finite and within'):
+        dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, np.inf),))
+
+
+def test_generalized_anchor_chain_seed_is_consistent() -> None:
+    """With validation disabled, c == 0 must give a yield of zero on EVERY segment, not
+    just the first. Seeding the log-space chain with a `c > 0` special case made
+    segment 0 report c while every later segment reported 0."""
+    y = dca.GeneralizedPLYield(0.0, 0.0, ((90.0, 0.5), (365.0, 0.5)),
+                               validate_params=[False])
+    assert np.all(y.segment_params[:, y.Y_IDX] == 0.0)
+
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(y)
+    assert np.all(mh.secondary.gor([45.0, 180.0, 900.0]) == 0.0)
 
 
 # a 4-segment model: pre-anchor slope m0, then three breakpoints
