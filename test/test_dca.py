@@ -847,3 +847,147 @@ def test_generalized_errors() -> None:
 
     # the inclusive bound endpoints are accepted
     dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, -10.0), (365.0, 10.0)))
+
+
+# a 4-segment model: pre-anchor slope m0, then three breakpoints
+GEN_C, GEN_M0 = 1200.0, -0.1
+GEN_SEGMENTS = ((90.0, 0.8), (365.0, 0.2), (1825.0, -0.3))
+
+
+def _gen_primary() -> dca.MH:
+    return dca.MH(1000.0, 0.7, 1.5, 0.08)
+
+
+def test_generalized_segment_count() -> None:
+    """One row per segment: the pre-anchor segment plus one per breakpoint."""
+    y = dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS)
+    assert y.segment_params.shape == (len(GEN_SEGMENTS) + 1, 4)
+    # the pre-anchor segment starts at zero and anchors at the first breakpoint
+    assert y.segment_params[0, y.T_IDX] == 0.0
+    assert y.segment_params[0, y.TA_IDX] == GEN_SEGMENTS[0][0]
+    assert y.segment_params[0, y.Y_IDX] == GEN_C
+    # the first breakpoint's segment anchors at (t0, c), exactly as PLYield does
+    assert y.segment_params[1, y.Y_IDX] == GEN_C
+
+
+def test_generalized_continuity() -> None:
+    """The yield function must be continuous at every breakpoint. This is the property
+    the anchor chain exists to guarantee -- a coefficient-form implementation that
+    mis-chained the anchors would show a step here."""
+    mh = _gen_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    y = mh.secondary
+
+    for T, _ in GEN_SEGMENTS:
+        before = y.gor(np.array([T * (1.0 - 1e-12)]))
+        at = y.gor(np.array([T]))
+        assert np.isclose(before, at, rtol=1e-9), T
+
+
+def test_generalized_segment_slopes() -> None:
+    """beta(t) is -m + t * primary.D(t), so beta - t * primary.D recovers -m exactly.
+    Confirms the gather picks the right segment and the chain leaves slopes alone.
+    Runs unclamped, since `_mfn` deliberately zeroes m wherever the yield is clamped."""
+    mh = _gen_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    y = mh.secondary
+
+    # one interior time per segment, with the slope that must apply there
+    cases = [(45.0, GEN_M0), (180.0, 0.8), (900.0, 0.2), (3650.0, -0.3)]
+    for t_i, m_i in cases:
+        t = np.array([t_i])
+        assert np.isclose(y.beta(t) - t * mh.D(t), -m_i, rtol=1e-12), t_i
+
+
+def test_generalized_yield_values() -> None:
+    """Spot-check the anchor chain against the products computed by hand."""
+    mh = _gen_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    y = mh.secondary
+
+    t1, m1 = GEN_SEGMENTS[0]
+    t2, m2 = GEN_SEGMENTS[1]
+    t3, m3 = GEN_SEGMENTS[2]
+
+    y1 = GEN_C
+    y2 = y1 * (t2 / t1) ** m1
+    y3 = y2 * (t3 / t2) ** m2
+
+    assert np.isclose(y.gor(np.array([t1])), y1, rtol=1e-12)
+    assert np.isclose(y.gor(np.array([t2])), y2, rtol=1e-12)
+    assert np.isclose(y.gor(np.array([t3])), y3, rtol=1e-12)
+
+    # pre-anchor segment, and a point inside each later segment
+    assert np.isclose(y.gor(np.array([45.0])), GEN_C * (45.0 / t1) ** GEN_M0, rtol=1e-12)
+    assert np.isclose(y.gor(np.array([180.0])), y1 * (180.0 / t1) ** m1, rtol=1e-12)
+    assert np.isclose(y.gor(np.array([900.0])), y2 * (900.0 / t2) ** m2, rtol=1e-12)
+    assert np.isclose(y.gor(np.array([3650.0])), y3 * (3650.0 / t3) ** m3, rtol=1e-12)
+
+
+def test_generalized_anchor_chain_saturates() -> None:
+    """The anchor chain accumulates in log space and saturates at +/-LOG_EPSILON, the
+    same convention `_yieldfn` uses, rather than overflowing part-way through a running
+    product. log(1e300) = 690.8 and 10 * log(10) = 23.0, so the sum clears the 709.8
+    limit on the first chain step."""
+    y = dca.GeneralizedPLYield(1e300, 0.0, ((1.0, 10.0), (10.0, 0.5)))
+    assert np.isinf(y.segment_params[2, y.Y_IDX])
+    assert y.segment_params[2, y.Y_IDX] > 0.0
+    assert np.isinf(y.gor(np.array([100.0])))
+
+    # and the same in the other direction: log(1e-300) - 10 * log(10) < -709.8
+    y = dca.GeneralizedPLYield(1e-300, 0.0, ((1.0, -10.0), (10.0, -0.5)))
+    assert y.segment_params[2, y.Y_IDX] == 0.0
+    assert y.gor(np.array([100.0])) == 0.0
+
+
+@given(
+    c=st.floats(1e-10, 1e10),
+    m0=st.floats(-1.0, 1.0),
+    m1=st.floats(-1.0, 1.0),
+    m2=st.floats(-1.0, 1.0),
+    m3=st.floats(-1.0, 1.0),
+    t1=st.floats(1.0, 100.0),
+    dt2=st.floats(1.0, 1000.0),
+    dt3=st.floats(1.0, 5000.0),
+    qi=st.floats(0.0, 1e6),
+)
+@settings(deadline=None)  # type: ignore
+def test_generalized_model(c: float, m0: float, m1: float, m2: float, m3: float,
+                           t1: float, dt2: float, dt3: float, qi: float) -> None:
+    """Run a 4-segment model through the shared associated-phase checks, for both
+    secondary and water attachment."""
+    segments = ((t1, m1), (t1 + dt2, m2), (t1 + dt2 + dt3, m3))
+
+    mh = dca.MH(qi, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.GeneralizedPLYield(c, m0, segments))
+    check_yield_model(mh.secondary, 'secondary', qi)
+
+    mh = dca.MH(qi, 0.7, 1.5, 0.08)
+    mh.add_water(dca.GeneralizedPLYield(c, m0, segments))
+    check_yield_model(mh.water, 'water', qi)
+
+
+@given(
+    c=st.floats(1e-10, 1e10),
+    m0=st.floats(-1.0, 1.0),
+    m1=st.floats(-1.0, 1.0),
+    m2=st.floats(-1.0, 1.0),
+    t1=st.floats(1.0, 100.0),
+    dt2=st.floats(1.0, 1000.0),
+    qi=st.floats(0.0, 1e6),
+    _min=st.floats(0.0, 100.0),
+    _max=st.floats(1e4, 5e5),
+)
+@settings(deadline=None)  # type: ignore
+def test_generalized_model_min_max(c: float, m0: float, m1: float, m2: float,
+                                   t1: float, dt2: float, qi: float,
+                                   _min: float, _max: float) -> None:
+    segments = ((t1, m1), (t1 + dt2, m2))
+
+    mh = dca.MH(qi, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.GeneralizedPLYield(c, m0, segments, _min, _max))
+    check_yield_model(mh.secondary, 'secondary', qi)
+
+    mh = dca.MH(qi, 0.7, 1.5, 0.08)
+    mh.add_water(dca.GeneralizedPLYield(c, m0, segments, _min, _max))
+    check_yield_model(mh.water, 'water', qi)

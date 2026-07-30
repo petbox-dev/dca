@@ -12,6 +12,17 @@ def _quad_cum(rate_fn, t: np.ndarray) -> np.ndarray:
     return np.array([quad(rate_fn, 0.0, float(ti))[0] for ti in t])
 
 
+def _quad_cum_piecewise(rate_fn, t: np.ndarray, breaks: tuple) -> np.ndarray:
+    """Trusted reference for a piecewise rate: integrate across each kink separately,
+    so adaptive quadrature never straddles a slope discontinuity."""
+    out = []
+    for ti in t:
+        nodes = [0.0] + [b for b in breaks if b < float(ti)] + [float(ti)]
+        out.append(sum(quad(rate_fn, nodes[i], nodes[i + 1])[0]
+                       for i in range(len(nodes) - 1)))
+    return np.array(out)
+
+
 @pytest.mark.parametrize('n', [0.3, 0.4, 0.5, 0.6, 0.8])
 def test_SE_cum_matches_integral(n: float) -> None:
     """SE.cum must equal the integral of SE.rate. Regression for the missing
@@ -63,6 +74,26 @@ def test_integrate_with_PLYield_accuracy() -> None:
     assert np.all(np.isfinite(cum))
     assert np.all(cum >= 0.0)
     assert np.all(np.diff(cum) >= -1e-10)
+
+
+def test_integrate_with_GeneralizedPLYield_accuracy() -> None:
+    """_integrate_with must reproduce the integral of a multi-segment yield rate."""
+    breaks = (90.0, 365.0, 1825.0)
+    mh = dca.MH(qi=1000.0, Di=0.8, bi=1.5, Dterm=0.05)
+    mh.add_secondary(dca.GeneralizedPLYield(c=1200.0, m0=-0.1,
+                                            segments=((90.0, 0.8), (365.0, 0.2),
+                                                      (1825.0, -0.3))))
+    sec = mh.secondary
+
+    t = dca.get_time(1.0, 3000.0, 40)
+    cum = sec.cum(t)
+
+    assert np.all(np.isfinite(cum))
+    assert np.all(cum >= 0.0)
+    assert np.all(np.diff(cum) >= -1e-10)
+
+    ref = _quad_cum_piecewise(lambda s: float(sec.rate(np.array([s]))[0]), t, breaks)
+    assert np.allclose(cum, ref, rtol=1e-3)
 
 
 def test_bourdet_accuracy() -> None:
