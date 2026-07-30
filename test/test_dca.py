@@ -653,3 +653,54 @@ def test_yield_errors() -> None:
 def test_bourdet(L: float, xlog: bool, ylog: bool) -> None:
     with warnings.catch_warnings(record=True) as w:
         der = dca.bourdet(q_data, t_data, L, xlog, ylog)
+
+
+def test_plyield_param_desc_names() -> None:
+    """The sixth PLYield descriptor described `max` but was named `min`."""
+    names = [d.name for d in dca.PLYield.get_param_descs()]
+    assert names == ['c', 'm0', 'm', 't0', 'min', 'max']
+    assert dca.PLYield.get_param_desc('max').name == 'max'
+
+
+def test_plyield_validates_all_params() -> None:
+    """PLYield validated only `c` because `validate_params` defaulted to a
+    one-element list and `__post_init__` truncated the check loop with `zip`."""
+    with pytest.raises(ValueError):
+        # m0 above its upper bound of 10.0
+        dca.PLYield(1000.0, 50.0, 0.6, 180.0)
+
+    with pytest.raises(ValueError):
+        # m above its upper bound of 1.0
+        dca.PLYield(1000.0, 0.0, 5.0, 180.0)
+
+    with pytest.raises(ValueError):
+        # m below its lower bound of -1.0
+        dca.PLYield(1000.0, 0.0, -5.0, 180.0)
+
+    with pytest.raises(ValueError):
+        # t0 at its excluded lower bound of 0.0
+        dca.PLYield(1000.0, 0.0, 0.6, 0.0)
+
+    with pytest.raises(ValueError):
+        # min below its lower bound of 0.0
+        dca.PLYield(1000.0, 0.0, 0.6, 180.0, -1.0, None)
+
+    with pytest.raises(ValueError):
+        # max below its lower bound of 0.0
+        dca.PLYield(1000.0, 0.0, 0.6, 180.0, None, -1.0)
+
+
+def test_validate_params_flags_are_padded() -> None:
+    """A short `validate_params` must disable only the flags it names, and an
+    over-long one must not be zipped against a padded descriptor list."""
+    # m0 is out of bounds but explicitly not validated; flags 3-6 pad to True
+    y = dca.PLYield(1000.0, 50.0, 0.6, 180.0, validate_params=[True, False])
+    assert y.m0 == 50.0
+
+    # the padded flags still validate the parameters they cover
+    with pytest.raises(ValueError):
+        dca.PLYield(1000.0, 50.0, 5.0, 180.0, validate_params=[True, False])
+
+    # an over-long flags list must not produce `desc=True` -> AttributeError
+    y = dca.PLYield(1000.0, 0.0, 0.6, 180.0, validate_params=[True] * 12)
+    assert y.c == 1000.0

@@ -15,6 +15,7 @@ Created on August 5, 2019
 import sys
 from math import exp, expm1, log, log10, log1p, ceil as ceiling, floor
 from functools import partial
+from itertools import chain, repeat
 import warnings
 
 import dataclasses as dc
@@ -338,7 +339,12 @@ class DeclineCurve(ABC):
     def __post_init__(self) -> None:
         self._set_defaults()
 
-        for desc, do_validate in zip(self.get_param_descs(), self.validate_params):
+        # pad the flags with True: a model that under-sizes `validate_params` must not
+        # silently skip its remaining bound checks. `zip` still truncates an over-long
+        # flags list -- `zip_longest` would instead yield `desc=True` and blow up on
+        # `desc.name`.
+        for desc, do_validate in zip(self.get_param_descs(),
+                                     chain(self.validate_params, repeat(True))):
             if not do_validate:
                 continue
             param = getattr(self, desc.name)

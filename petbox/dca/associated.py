@@ -15,12 +15,13 @@ Created on August 5, 2019
 import warnings
 
 import dataclasses as dc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
+from abc import abstractmethod
 from typing import (TypeVar, Type, List, Dict, Tuple, Any,
-                    Sequence, Optional, Callable, ClassVar, Union)
+                    Sequence, Iterable, Optional, Callable, ClassVar, Union)
 from numpy.typing import NDArray
 from typing import cast
 
@@ -119,8 +120,7 @@ class PLYield(BothAssociatedPhase):
     min: Optional[float] = None
     max: Optional[float] = None
 
-    # def _set_defaults(self) -> None:
-    #     object.__setattr__(self, 't0', 1.0)
+    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 6)
 
     def _validate(self) -> None:
         if self.min is not None and self.max is not None and self.max < self.min:
@@ -207,7 +207,7 @@ class PLYield(BothAssociatedPhase):
                 0, None,
                 lambda r, n: r.uniform(0.0, 1e3, n)),
             ParamDesc(
-                'min', 'Maximum value of yield function [vol/vol]',
+                'max', 'Maximum value of yield function [vol/vol]',
                 0, None,
                 lambda r, n: r.uniform(0.0, 1e5, n))
         ]
