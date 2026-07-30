@@ -1243,6 +1243,85 @@ def test_shift_preserves_c_overrides_and_validates() -> None:
         y.shift(-180.0)          # first breakpoint would land exactly on 0
 
 
+def test_shift_keeps_its_primary_phase() -> None:
+    """dc.replace re-runs __post_init__, and _set_default sees no `primary` on the fresh
+    instance and installs a NullPrimaryPhase -- so without _adopt_attachment the shifted
+    model returns 0.0 from rate and cum with no error, which is worse than the negative-t
+    problem shift() exists to solve."""
+    for model in (dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0),
+                  dca.GeneralizedPLYield(1.2, 0.0,
+                                         (dca.PLYieldSegment(180.0, m=0.6),
+                                          dca.PLYieldSegment(1095.0, m=-0.2)))):
+        mh = dca.MH(qi=1000.0, Di=0.8, bi=1.5, Dterm=0.05)
+        mh.add_secondary(model)
+        shifted = mh.secondary.shift(30.0)
+
+        assert isinstance(shifted.primary, dca.MH), type(model).__name__
+        t = np.array([30.0, 90.0, 365.0])
+        assert np.all(shifted.rate(t) > 0.0), type(model).__name__
+        assert np.all(shifted.cum(t) > 0.0), type(model).__name__
+
+        # the primary keeps pointing at the original: the link is one-way by design
+        assert mh.secondary is not shifted
+        assert mh.secondary.primary is mh
+
+
+def test_shift_preserves_the_wrong_phase_guard() -> None:
+    """add_secondary/add_water install the wrong-phase accessor guards as *instance*
+    attributes, which dc.replace does not carry, so a shifted water phase would answer
+    gor() instead of raising."""
+    mh = dca.MH(1000.0, 0.8, 1.5, 0.05)
+    mh.add_water(dca.PLYield(2.0, 0.0, 0.1, 90.0))
+    with pytest.raises(ValueError, match='water phase and has no `gor`'):
+        mh.water.shift(30.0).gor(np.array([100.0]))
+
+    mh2 = dca.MH(1000.0, 0.8, 1.5, 0.05)
+    mh2.add_secondary(dca.PLYield(1.2, 0.0, 0.6, 180.0))
+    with pytest.raises(ValueError, match='secondary phase and has no `wor`'):
+        mh2.secondary.shift(30.0).wor(np.array([100.0]))  # type: ignore
+
+
+def test_shift_of_a_superseded_model_has_no_guard_to_mirror() -> None:
+    """A model that has been displaced from its primary's slot still holds its primary
+    reference, but the primary no longer points back at it. There is then no phase to
+    infer and no guard to mirror, so _adopt_attachment leaves the copy's accessors alone
+    rather than guessing."""
+    mh = dca.MH(1000.0, 0.8, 1.5, 0.05)
+    displaced = dca.PLYield(1.2, 0.0, 0.6, 180.0)
+    mh.add_secondary(displaced)
+    mh.add_secondary(dca.PLYield(2.4, 0.0, 0.3, 90.0))   # displaces the first
+
+    assert mh.secondary is not displaced
+    assert displaced.primary is mh
+
+    shifted = displaced.shift(30.0)
+    assert shifted.primary is mh
+    # still evaluable against that primary, and no wrong-phase guard was invented
+    assert np.all(shifted.rate(np.array([100.0])) > 0.0)
+
+
+def test_yield_models_are_hashable() -> None:
+    """A list default for validate_params makes a frozen dataclass unhashable, because the
+    generated __hash__ hashes the field tuple. Both models must stay usable as dict keys
+    and set members."""
+    y = dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)
+    g = dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),))
+    assert len({y, g}) == 2
+    assert {y: 'a'}[dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)] == 'a'
+
+
+def test_segments_naive_gen_is_usable() -> None:
+    """naive_gen is the documented way a downstream fitter produces initial guesses, so
+    its output must actually construct a model. A generated `c` on row 0 is rejected
+    outright, so it emits (t, m) rows for from_segments rather than (t, c, m)."""
+    rng = np.random.default_rng(0)
+    generated = dca.GeneralizedPLYield.get_param_desc('segments').naive_gen(rng, 4)
+    assert generated.shape == (4, 2)
+    model = dca.GeneralizedPLYield.from_segments(1.2, 0.0, generated)
+    assert len(model.segments) == 4
+    assert all(np.isfinite(segment.t) and segment.t > 0.0 for segment in model.segments)
+
+
 def test_yield_is_nan_before_zero() -> None:
     """A power law is not real-valued at t < 0 -- (-30.4/180)**0.6 is complex. The old
     MIN_EPSILON floor returned a constant that flipped from 3.07e-185 to 4.69e+184 with the

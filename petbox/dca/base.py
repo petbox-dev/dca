@@ -584,6 +584,50 @@ class AssociatedPhase(DeclineCurve):
         object.__setattr__(primary, name, model)
         object.__setattr__(model, 'primary', primary)
 
+    def _adopt_attachment(self, other: 'AssociatedPhase') -> None:
+        """
+        Copy ``other``'s primary-phase attachment onto this instance.
+
+        A derived copy -- anything built with :func:`dataclasses.replace`, such as
+        :meth:`MultisegmentPLYield.shift` -- re-runs ``__post_init__``, and
+        `_set_default` sees no ``primary`` attribute on the new object and installs a
+        :class:`NullPrimaryPhase`. Without this, ``rate`` and ``cum`` on the copy return
+        ``0.0`` with no error, since a null primary produces zero rate.
+
+        The primary is **not** modified: it keeps pointing at ``other``, so the link is
+        one-way. The copy is immediately usable for evaluation; pass it to
+        :meth:`PrimaryPhase.add_secondary` or :meth:`PrimaryPhase.add_water` if it should
+        replace ``other`` on the primary as well.
+
+        The wrong-phase accessor guards that ``add_secondary``/``add_water`` install are
+        instance attributes, so they are re-applied here too -- otherwise a shifted water
+        phase would answer ``gor`` instead of raising.
+
+        Parameters
+        ----------
+            other: AssociatedPhase
+                The instance this one was derived from.
+
+        Returns
+        -------
+        """
+        primary = other.primary
+        # bypass the "frozen" protection, as the add_secondary/add_water path does
+        object.__setattr__(self, 'primary', primary)
+
+        if getattr(primary, 'secondary', None) is other:
+            removed, phase = ('wor', 'wgr'), 'secondary'
+        elif getattr(primary, 'water', None) is other:
+            removed, phase = ('gor', 'cgr'), 'water'
+        else:
+            # `other` was never attached, so there is no guard to mirror
+            return
+
+        for method in removed:
+            if hasattr(self, method):
+                object.__setattr__(self, method, partial(
+                    PrimaryPhase.removed_method, phase=phase, method=method))
+
     @abstractmethod
     def _yieldfn(self, t: NDFloat) -> NDFloat:
         raise NotImplementedError

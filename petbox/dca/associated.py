@@ -234,11 +234,11 @@ class MultisegmentPLYield(BothAssociatedPhase):
         """
         Cumulative volume. No closed form exists, so integrate `_qfn` numerically.
 
-        ``nan`` for ``t < 0`` must be applied here rather than inherited: `_integrate_with`
-        builds a strictly positive grid, so it never evaluates `_qfn` at a negative ``t`` and
-        the ``nan`` from `_yieldfn` cannot propagate -- `searchsorted` would instead map a
-        negative ``t`` to grid index 0 and return ``0.0``. Volume is the quantity callers
-        sum, so a silent zero there would under-count a forecast whose start date is wrong,
+        ``nan`` for ``t < 0`` must be applied here rather than inherited. `_integrate_with`
+        merges the requested ``t`` into its grid, so it *does* evaluate `_qfn` at a negative
+        ``t`` -- but it then does ``y[np.isnan(y)] = 0.0``, which converts the ``nan`` from
+        `_yieldfn` into a definite zero before integrating. Volume is the quantity callers
+        sum, so that silent zero would under-count a forecast whose start date is wrong,
         which is exactly what the ``nan`` exists to surface.
         """
         return np.where(t < 0.0, np.nan,
@@ -333,7 +333,9 @@ class PLYield(MultisegmentPLYield):
     min: Optional[float] = None
     max: Optional[float] = None
 
-    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 6)
+    # a tuple, not a list: a list default makes this frozen dataclass unhashable, since
+    # the generated __hash__ hashes the field tuple
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 6)
 
     def shift(self, dt: float) -> 'PLYield':
         """
@@ -358,7 +360,9 @@ class PLYield(MultisegmentPLYield):
         -------
             yield model: :class:`PLYield`
         """
-        return dc.replace(self, t0=self.t0 + dt)
+        shifted = dc.replace(self, t0=self.t0 + dt)
+        shifted._adopt_attachment(self)
+        return shifted
 
     def _segments(self) -> NDFloat:
         """
@@ -504,7 +508,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
     ----------
         c: float
             The value of GOR/CGR/WOR/WGR that acts as the anchor or pivot at the first
-            breakpoint time, ``segments[0][0]``.
+            breakpoint time, ``segments[0].t``.
             Units should be correctly specified for the respective yield function.
             Assumed volumes units per phase must be ``Bbl`` for oil and water and
             ``Mscf`` for gas in order to resolve any inconsistencies in unit magnitude.
@@ -530,7 +534,8 @@ class GeneralizedPLYield(MultisegmentPLYield):
     min: Optional[float] = None
     max: Optional[float] = None
 
-    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 5)
+    # a tuple, not a list -- see PLYield.validate_params
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 5)
 
     @classmethod
     def from_segments(cls, c: float, m0: float,
@@ -584,8 +589,10 @@ class GeneralizedPLYield(MultisegmentPLYield):
         -------
             yield model: :class:`GeneralizedPLYield`
         """
-        return dc.replace(self, segments=tuple(
+        shifted = dc.replace(self, segments=tuple(
             dc.replace(segment, t=segment.t + dt) for segment in self.segments))
+        shifted._adopt_attachment(self)
+        return shifted
 
     def _segment_arrays(self) -> Tuple[NDFloat, NDFloat, NDFloat]:
         """
@@ -676,8 +683,9 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # while every later segment reported 0. A negative or NaN c still disagrees
         # (the first anchor keeps c, later ones are NaN) because anchor_values[0] must
         # stay exactly `self.c` to keep the single-breakpoint case bit-for-bit equal to
-        # PLYield -- exp(log(c)) does not round-trip. Both are only reachable with
-        # validation disabled, since the `c` ParamDesc excludes its lower bound of 0.
+        # PLYield -- exp(log(c)) does not round-trip. A non-positive c needs validation
+        # disabled, but a NaN c does NOT: `nan <= 0.0` is False, so it passes the `c`
+        # ParamDesc bound check. See the library-wide NaN gap noted in the design spec.
         with np.errstate(divide='ignore', invalid='ignore'):
             log_anchor = float(np.log(self.c))
 
@@ -721,15 +729,18 @@ class GeneralizedPLYield(MultisegmentPLYield):
             ParamDesc(
                 # No scalar bounds: this parameter is a sequence, so the generic bound
                 # loop in `DeclineCurve.__post_init__` must skip it. `_validate` checks
-                # the contents instead. `naive_gen` sorts the times so the (n, 3) result
-                # is directly usable as a valid `segments` value of length n, in the same
-                # (t, c, m) field order as `PLYieldSegment`.
-                'segments', 'Breakpoint times, value overrides, and post-breakpoint '
-                            'slopes [(days, vol/vol, dimensionless), ...]',
+                # the contents instead.
+                #
+                # `naive_gen` emits sorted (t, m) rows, NOT (t, c, m): a generated `c` on
+                # row 0 is rejected outright, since the model's own `c` already fixes the
+                # value there. Feed the result through `from_segments`, which reads each
+                # 2-row as (t, m); the raw array is not accepted by the constructor,
+                # whose isinstance check requires PLYieldSegment.
+                'segments', 'Breakpoint times and post-breakpoint slopes '
+                            '[(days, dimensionless), ...]',
                 None, None,
                 lambda r, n: np.column_stack([
                     np.sort(r.uniform(1.0, 1e5, n)),
-                    r.uniform(0.1, 1e3, n),
                     r.uniform(-MultisegmentPLYield.SLOPE_BOUND,
                               MultisegmentPLYield.SLOPE_BOUND, n)])),
             ParamDesc(
