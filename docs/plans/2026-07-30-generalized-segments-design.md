@@ -1,7 +1,7 @@
 # Generalized Segments — Design
 
 **Date:** 2026-07-30
-**Status:** Approved (design); implementation plan not yet written
+**Status:** Approved. Phase 1 plan written (`2026-07-30-plyield-segment-plan.md`); Phases 2-4 not yet planned
 **Target version:** 2.2.0 (unreleased — see "Why this is not a breaking change")
 
 ## Goal
@@ -19,6 +19,8 @@ taking an arbitrary user-specified segment sequence, mirroring `GeneralizedPLYie
 | `GeneralizedHyperbolic` | `@dataclass(frozen=True)`, extends `MultisegmentHyperbolic` | new arbitrary-segment Arps model |
 | `MultisegmentHyperbolic._fill_segment_chain` | method | chain fill extracted from `THM._segments`, shared |
 | `GeneralizedPLYield` | modified | `segments` becomes `Sequence[PLYieldSegment]`, gains per-segment `c` |
+| `MultisegmentHyperbolic.time_at_rate` | method | inverts the rate function; subsumes the pole as `time_at_rate(inf)` |
+| sign-agnostic guards | modified | magnitude tests in the shared Arps math, enabling a future `IncliningHyperbolic` |
 
 `HyperbolicSegment` and `GeneralizedHyperbolic` live in `petbox/dca/primary.py`;
 `PLYieldSegment` stays with its model in `petbox/dca/associated.py`.
