@@ -371,6 +371,10 @@ def test_Duong(qi: float, a: float, m: float) -> None:
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6)
 )
+# deadline=None to match every other THM test: the default 200ms deadline is tripped by
+# coverage instrumentation on the first call, and hypothesis then reports Flaky, so a plain
+# `pytest` (which enables coverage via addopts) failed intermittently.
+@settings(deadline=None)  # type: ignore
 def test_THM(qi: float, Di: float, bf: float, telf: float) -> None:
     thm = dca.THM.from_params((qi, Di, 2.0, bf, telf, 0.0, 0.0))
     thm = dca.THM(qi, Di, 2.0, bf, telf, 0.0, 0.0)
