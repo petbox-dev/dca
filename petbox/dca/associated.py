@@ -124,6 +124,28 @@ class MultisegmentPLYield(BothAssociatedPhase):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def shift(self, dt: float) -> 'MultisegmentPLYield':
+        """
+        Return a copy with every breakpoint moved later by ``dt`` days.
+
+        Every multisegment yield model can be re-anchored this way, because a power law's
+        independent variable is time since first production: if that date was wrong, the
+        remedy is to move the origin rather than evaluate at negative ``t``, where the model
+        is not real-valued. Each subclass shifts whatever times it stores and narrows the
+        return type to itself.
+
+        Parameters
+        ----------
+            dt: float
+                Days to move every breakpoint later. Negative moves them earlier.
+
+        Returns
+        -------
+            yield model: :class:`MultisegmentPLYield`
+        """
+        raise NotImplementedError
+
     def _validate(self) -> None:
         if self.min is not None and self.max is not None and self.max < self.min:
             raise ValueError('max < min')
@@ -407,6 +429,36 @@ class PLYieldSegment:
     c: Optional[float] = field(default=None, kw_only=True)
     m: Optional[float] = field(default=None, kw_only=True)
 
+    @classmethod
+    def from_tuple(cls, spec: Sequence[Optional[float]]) -> 'PLYieldSegment':
+        """
+        Build one segment from a loose tuple. Arity selects the meaning: ``(t, m)`` inherits
+        the yield value, ``(t, c, m)`` sets it. An explicit ``None`` inherits exactly as a
+        short form does, so ``(t, None, m)`` is ``(t, m)``.
+
+        ``t`` is the one field with no inherit semantics -- there is no previous segment to
+        continue a start time from -- so it is required.
+
+        Parameters
+        ----------
+            spec: Sequence[Optional[float]]
+                A ``(t, m)`` or ``(t, c, m)`` tuple.
+
+        Returns
+        -------
+            segment: :class:`PLYieldSegment`
+        """
+        if len(spec) not in (2, 3):
+            raise ValueError('segment tuples must be (t, m) or (t, c, m)')
+
+        t = spec[0]
+        if t is None:
+            raise ValueError('segment t must be given')
+
+        if len(spec) == 2:
+            return cls(t, m=spec[1])
+        return cls(t, c=spec[1], m=spec[2])
+
 
 @dataclass(frozen=True)
 class GeneralizedPLYield(MultisegmentPLYield):
@@ -465,24 +517,6 @@ class GeneralizedPLYield(MultisegmentPLYield):
 
     validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 5)
 
-    @staticmethod
-    def _segment_from_tuple(spec: Sequence[Optional[float]]) -> PLYieldSegment:
-        """
-        Normalize one loose tuple. Arity selects the meaning: ``(t, m)`` inherits the yield
-        value, ``(t, c, m)`` sets it. An explicit ``None`` inherits exactly as a short form
-        does.
-        """
-        if len(spec) not in (2, 3):
-            raise ValueError('segment tuples must be (t, m) or (t, c, m)')
-
-        t = spec[0]
-        if t is None:
-            raise ValueError('segment t must be given')
-
-        if len(spec) == 2:
-            return PLYieldSegment(t, m=spec[1])
-        return PLYieldSegment(t, c=spec[1], m=spec[2])
-
     @classmethod
     def from_segments(cls, c: float, m0: float,
                       segments: Iterable[Sequence[Optional[float]]],
@@ -516,7 +550,9 @@ class GeneralizedPLYield(MultisegmentPLYield):
         -------
             yield model: :class:`GeneralizedPLYield`
         """
-        return cls(c, m0, tuple(cls._segment_from_tuple(s) for s in segments), min, max)
+        return cls(c, m0,
+                   tuple(PLYieldSegment.from_tuple(spec) for spec in segments),
+                   min, max)
 
     def shift(self, dt: float) -> 'GeneralizedPLYield':
         """
@@ -542,9 +578,10 @@ class GeneralizedPLYield(MultisegmentPLYield):
         absent). A segment with ``m=None`` continues the previous slope; the first
         continues ``m0``. Only valid once `_validate` has normalized ``segments``.
         """
-        times = np.array([s.t for s in self.segments], dtype=np.float64)
-        overrides = np.array([np.nan if s.c is None else s.c for s in self.segments],
-                             dtype=np.float64)
+        times = np.array([segment.t for segment in self.segments], dtype=np.float64)
+        overrides = np.array(
+            [np.nan if segment.c is None else segment.c for segment in self.segments],
+            dtype=np.float64)
 
         slopes = np.empty_like(times)
         slope = self.m0
@@ -559,7 +596,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
         if len(self.segments) == 0:
             raise ValueError('segments must contain at least one segment')
 
-        if not all(isinstance(s, PLYieldSegment) for s in self.segments):
+        if not all(isinstance(segment, PLYieldSegment) for segment in self.segments):
             raise ValueError('segments entries must be PLYieldSegment')
 
         if self.segments[0].c is not None:
@@ -574,10 +611,10 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
         object.__setattr__(self, 'segments', tuple(
-            PLYieldSegment(float(s.t),
-                           c=None if s.c is None else float(s.c),
-                           m=None if s.m is None else float(s.m))
-            for s in self.segments))
+            PLYieldSegment(float(segment.t),
+                           c=None if segment.c is None else float(segment.c),
+                           m=None if segment.m is None else float(segment.m))
+            for segment in self.segments))
 
         breakpoint_times, slopes, _ = self._segment_arrays()
 

@@ -797,7 +797,7 @@ def test_generalized_segments_normalized() -> None:
     y = dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(90, 0.8), (365, 2, 0.2)])
     assert y.segments == (dca.PLYieldSegment(90.0, m=0.8),
                           dca.PLYieldSegment(365.0, c=2.0, m=0.2))
-    assert all(isinstance(s.t, float) for s in y.segments)
+    assert all(isinstance(segment.t, float) for segment in y.segments)
     assert isinstance(y.segments[1].c, float) and isinstance(y.segments[1].m, float)
     assert hash(y.segments) == hash(y.segments)
 
@@ -1196,17 +1196,17 @@ def test_plyield_shift_reanchors() -> None:
     """A fit anchored 30.4 days late is corrected by shifting the pivot later, which moves
     the power-law origin to true first production."""
     y = dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0)
-    s = y.shift(30.4)
-    assert isinstance(s, dca.PLYield)
-    assert s.t0 == 180.0 + 30.4
-    assert (s.c, s.m0, s.m) == (y.c, y.m0, y.m)
+    shifted = y.shift(30.4)
+    assert isinstance(shifted, dca.PLYield)
+    assert shifted.t0 == 180.0 + 30.4
+    assert (shifted.c, shifted.m0, shifted.m) == (y.c, y.m0, y.m)
     assert y.t0 == 180.0                      # original untouched
 
     # the anchor value is preserved, at the shifted time
     mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08)
     mh_a.add_secondary(y)
     mh_b = dca.MH(1000.0, 0.7, 1.5, 0.08)
-    mh_b.add_secondary(s)
+    mh_b.add_secondary(shifted)
     assert mh_a.secondary.gor(np.array([180.0]))[0] == 1.2
     assert mh_b.secondary.gor(np.array([210.4]))[0] == 1.2
 
@@ -1218,14 +1218,14 @@ def test_generalized_shift_reanchors() -> None:
     """Every breakpoint moves; c, m0 and the slopes are unchanged."""
     y = dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),
                                           dca.PLYieldSegment(1095.0, m=-0.2)))
-    s = y.shift(30.4)
-    assert [seg.t for seg in s.segments] == [210.4, 1125.4]
-    assert [seg.m for seg in s.segments] == [0.6, -0.2]
-    assert (s.c, s.m0) == (y.c, y.m0)
-    assert [seg.t for seg in y.segments] == [180.0, 1095.0]   # original untouched
+    shifted = y.shift(30.4)
+    assert [segment.t for segment in shifted.segments] == [210.4, 1125.4]
+    assert [segment.m for segment in shifted.segments] == [0.6, -0.2]
+    assert (shifted.c, shifted.m0) == (y.c, y.m0)
+    assert [segment.t for segment in y.segments] == [180.0, 1095.0]  # original untouched
 
     mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
-    mh.add_secondary(s)
+    mh.add_secondary(shifted)
     # real-valued and rising over the month the original fit could not reach
     got = mh.secondary.gor(np.array([1.0, 15.0, 30.4]))
     assert np.all(np.isfinite(got)) and np.all(np.diff(got) > 0.0)
@@ -1236,8 +1236,8 @@ def test_shift_preserves_c_overrides_and_validates() -> None:
     rejected by the usual validation, because dc.replace re-runs __post_init__."""
     y = dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
                                           dca.PLYieldSegment(1095.0, c=2.5, m=-0.2)))
-    s = y.shift(-90.0)
-    assert s.segments[1].c == 2.5 and s.segments[0].t == 90.0
+    shifted = y.shift(-90.0)
+    assert shifted.segments[1].c == 2.5 and shifted.segments[0].t == 90.0
 
     with pytest.raises(ValueError, match='finite and > 0'):
         y.shift(-180.0)          # first breakpoint would land exactly on 0
