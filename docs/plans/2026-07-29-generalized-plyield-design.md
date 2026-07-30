@@ -1,7 +1,7 @@
 # GeneralizedPLYield — Design
 
 **Date:** 2026-07-29
-**Status:** Approved (design); implementation plan not yet written
+**Status:** Implemented — see "As built" at the end of this document
 **Target version:** 2.2.0
 
 ## Goal
@@ -72,7 +72,7 @@ which can overflow or underflow for large `t_i` combined with a large `|m_i|`.
 
 | row | t_start | t_anchor | y_anchor | m |
 |---|---|---|---|---|
-| 0 | `0.0` | `T1` | `c` | `m0` |
+| 0 | `-inf` | `T1` | `c` | `m0` |
 | 1 | `T1` | `T1` | `c` | `M1` |
 | 2 | `T2` | `T2` | `y1 = c * (T2/T1)**M1` | `M2` |
 | 3 | `T3` | `T3` | `y2 = y1 * (T3/T2)**M2` | `M3` |
@@ -104,7 +104,7 @@ A hardcoded literal, no chain:
 ```python
 def _segments(self) -> NDFloat:
     return np.array([
-        [0.0,     self.t0, self.c, self.m0],
+        [-np.inf, self.t0, self.c, self.m0],
         [self.t0, self.t0, self.c, self.m],
     ], dtype=np.float64)
 ```
@@ -122,7 +122,7 @@ therefore both simpler and single-pass regardless of segment count, and is struc
 closer to the current implementation's `np.where(t < t0, m0, m)`.
 
 ```python
-def _lookup(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
+def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
     p = self.segment_params
     i = np.searchsorted(p[:, self.T_IDX], t, side='right') - 1
     i = np.maximum(i, 0)
@@ -130,10 +130,12 @@ def _lookup(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
 ```
 
 `side='right'` places `t == T_j` in segment `j` (the post-breakpoint slope), matching the
-current `t < t0` predicate, which is false at `t == t0`. `np.maximum(i, 0)` covers negative
-`t`, which searchsorted maps to index `-1`; clamping to segment 0 reproduces the current
-behaviour, where negative `t` takes the `m0` branch and is then caught by the
-`t_ta <= 0 -> MIN_EPSILON` putmask. `np.maximum` is used in preference to
+current `t < t0` predicate, which is false at `t == t0`. Because row 0 starts at `-inf`,
+the `t_start` column is sorted for any anchor time — a precondition of the binary search —
+and every finite `t`, including a negative one, lands at index >= 1 before the `- 1`. A
+negative `t` therefore takes the `m0` branch and is then caught by the
+`t_ratio <= 0 -> MIN_EPSILON` putmask. `np.maximum(i, 0)` remains as a defensive clamp for
+`t == -inf`. `np.maximum` is used in preference to
 `np.clip(i, 0, None, out=i)` to avoid `out=` typing friction under `mypy --strict`.
 
 ## Base class
@@ -158,24 +160,24 @@ class MultisegmentPLYield(BothAssociatedPhase):
         # bypass the "frozen" protection, as MultisegmentHyperbolic._validate does
         object.__setattr__(self, 'segment_params', self._segments())
 
-    def _lookup(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
+    def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
         ...  # as above
 
     def _yieldfn(self, t: NDFloat) -> NDFloat:
-        ta, y, m = self._lookup(t)
-        t_ta = t / ta
-        np.putmask(t_ta, mask=t_ta <= 0, values=MIN_EPSILON)
-        t_m = m * np.log(t_ta)
-        np.putmask(t_m, mask=t_m > LOG_EPSILON, values=np.inf)
-        np.putmask(t_m, mask=t_m < -LOG_EPSILON, values=-np.inf)
+        ta, y, m = self._lookup_segment(t)
+        t_ratio = t / ta
+        np.putmask(t_ratio, mask=t_ratio <= 0, values=MIN_EPSILON)
+        log_factor = m * np.log(t_ratio)
+        np.putmask(log_factor, mask=log_factor > LOG_EPSILON, values=np.inf)
+        np.putmask(log_factor, mask=log_factor < -LOG_EPSILON, values=-np.inf)
 
         if self.min is not None or self.max is not None:
-            return np.where(t == 0.0, 0.0, np.clip(y * np.exp(t_m), self.min, self.max))
-        return np.where(t == 0.0, 0.0, y * np.exp(t_m))
+            return np.where(t == 0.0, 0.0, np.clip(y * np.exp(log_factor), self.min, self.max))
+        return np.where(t == 0.0, 0.0, y * np.exp(log_factor))
 
     def _mfn(self, t: NDFloat) -> NDFloat:
         """Per-t segment slope, zeroed where the yield is clamped by min/max."""
-        m = self._lookup(t)[2]      # fancy-indexed -> fresh array, safe to mutate
+        m = self._lookup_segment(t)[2]      # fancy-indexed -> fresh array, safe to mutate
         y = self._yieldfn(t)
         if self.min is not None:
             m[y <= self.min] = 0.0
@@ -216,7 +218,7 @@ Notes on what moves and what changes:
 
 ### PLYield stays bit-for-bit identical
 
-For `PLYield`, `_lookup` returns `ta == t0` and `y == c` for every element of `t`, and the
+For `PLYield`, `_lookup_segment` returns `ta == t0` and `y == c` for every element of `t`, and the
 gathered `m` equals `np.where(t < t0, m0, m)` element for element. Each element therefore
 still evaluates `c * exp(m * log(t / t0))` through the same division, the same
 `MIN_EPSILON` putmask, the same two `LOG_EPSILON` putmasks, the same `np.exp`, the same
@@ -292,9 +294,9 @@ Checks, each raising `ValueError` with a distinct message:
 |---|---|
 | `len(segments) == 0` | `segments must contain at least one (t, m) pair` |
 | any entry not length 2 | `segments entries must be (t, m) pairs` |
-| any `t <= 0` | `segments t <= 0` |
+| any `t` not finite, or `<= 0` | `segments t must be finite and > 0` |
 | times not strictly increasing (`np.all(np.diff(T) > 0)`) | `segments t not strictly increasing` |
-| any slope `< -10.0` or `> 10.0` (endpoints allowed, matching the inclusive `ParamDesc` convention for `m0`) | `segments m outside [-10, 10]` |
+| any slope not finite, or `< -10.0` / `> 10.0` (endpoints allowed, matching the inclusive `ParamDesc` convention for `m0`) | `segments m must be finite and within [-10.0, 10.0]` |
 
 Normalization runs before `super()._validate()`, so `_segments()` always sees a validated,
 normalized tuple.
@@ -462,3 +464,76 @@ breaking change inside a minor bump.
 - Any change to `ParamDesc` itself.
 - Reworking `MultisegmentHyperbolic` to use the gather approach. Its scalar branching
   genuinely requires the per-segment loop.
+
+---
+
+## As built (2026-07-30)
+
+Implemented and merged onto `feat/generalized-plyield`. **`petbox/dca/associated.py` is the
+source of truth**; this document is the design record. The body above has been updated to
+match the delivered code, and the substantive differences from the design as first approved
+are listed here.
+
+Delivered: 59 tests pass, `ruff` and `mypy --strict` clean, `associated.py` at 100%
+statement coverage, and `PLYield` verified **bit-for-bit identical** to its pre-refactor
+implementation across 7 parameter cases x 50 output arrays x 403 time points (including
+`t=0`, negative `t`, both clamp bounds, and secondary + water attachment).
+
+### Differences from the approved design
+
+1. **`SLOPE_BOUND` lives on `MultisegmentPLYield`, not `GeneralizedPLYield`.** The design
+   put the bound on the concrete class. That left `10.0` in three hand-maintained copies —
+   the constant plus the `m0` `ParamDesc` bounds on both models — with nothing keeping them
+   in sync. It is now one `ClassVar` on the base that the descriptors and the segment-slope
+   check all read. `PLYield.m` keeps its own tighter `[-1, 1]`; it is the late-time slope,
+   a different quantity.
+
+2. **Segment row 0 starts at `-inf`, not `0.0`.** `_lookup_segment` binary searches the
+   `t_start` column, which requires it to be sorted. With a hardcoded `0.0` and a caller who
+   disabled validation to pass `t0 < 0`, `[0.0, t0]` was unsorted and the search result was
+   formally undefined. `-inf` makes the precondition hold unconditionally. Segment selection
+   for valid inputs is unchanged.
+
+3. **Non-finite segment values are rejected.** The design's validation was expressed as
+   `np.any(t <= 0)` / `np.any(abs(m) > bound)`. Every comparison against `NaN` is false, so
+   both forms *accepted* a `NaN` breakpoint or slope and silently produced an all-`NaN`
+   yield function; a lone `NaN` time also escaped the strictly-increasing check, since
+   `np.diff` of one element is empty. The checks are now positive assertions
+   (`not np.all(isfinite(t) & (t > 0))`), which reject `NaN` by construction, and reject an
+   infinite breakpoint as well.
+
+4. **The anchor chain is seeded from `log(c)` directly.** The design's
+   `log(c) if c > 0 else -inf` made `c == 0` report `c` on segment 0 and `0` on every later
+   segment. Seeding from `np.log(c)` under `errstate` keeps the chain consistent with
+   `anchor_values[0]`.
+
+5. **`_segment_arrays()` was extracted.** The `(t, m)` -> parallel-array split appeared in
+   both `_validate` and `_segments`.
+
+6. **`np.errstate` guards the degenerate `t = 0` divisions** in `_Dfn`, `_Dfn2`, `_betafn`,
+   and `_bfn`. The division by zero there is the correct power-law limit, and `_bfn` divides
+   by `D` inside an `np.where` that evaluates both branches. Values are unchanged; the
+   spurious `RuntimeWarning`s are gone.
+
+7. **`MultisegmentPLYield` is exported but deliberately absent from `docs/api.rst`.** The
+   design said to document both new classes. `MultisegmentHyperbolic` — the class this one
+   mirrors — is likewise exported without an `autoclass` entry, so following the existing
+   convention won out.
+
+8. **Local names were made descriptive** during the refactor pass: `params`,
+   `segment_index`, `t_ratio`, `log_factor`, `breakpoint_times`, `slopes`, `log_anchor`, and
+   `_lookup` -> `_lookup_segment`. The identifiers in the body above reflect the final
+   names.
+
+9. **The `mypy --warn-unreachable` contingency was not needed.** The design flagged that
+   the `except (TypeError, ValueError)` around the segment normalization might be reported
+   as unreachable, requiring a `# type: ignore`. `mypy` accepted it as written.
+
+### Not implemented (still open)
+
+- `ParamDesc` bound checking never rejects `NaN`, for **any** model — `param < lower_bound`
+  is false for `NaN`, so `PLYield(c=nan, ...)`, `MH(qi=nan, ...)` and `SE(tau=nan, ...)` all
+  construct and yield `NaN`. Fixing it changes validation semantics for all seven models and
+  was left out of scope.
+- `GeneralizedPLYield` has no worked example in `docs/examples.rst`; deferred so it can be
+  added alongside `GeneralizedHyperbolic`.

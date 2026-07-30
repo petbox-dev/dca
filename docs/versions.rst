@@ -54,11 +54,18 @@ Version History
       a power law, and ``b`` additionally divides by ``D`` inside an ``np.where`` that
       evaluates both branches; both are now wrapped in ``np.errstate``, matching how
       ``MultisegmentHyperbolic`` guards its own overflow. Values are unchanged.
-    * Corrected the ``README.rst`` example outputs, which no longer matched the library:
-      the primary rates were stale, and the secondary/water rates had been scaled by
-      ``1/1000`` as though ``c`` were in ``scf/Bbl``. Added a note that ``c`` for a GOR is
-      in ``Mscf/Bbl`` per the documented unit convention, so a 1200 ``scf/Bbl`` GOR is
-      ``c=1.2``.
+    * The GOR examples throughout ``README.rst``, ``docs/examples.rst`` and
+      ``docs/integration_validation.py`` now pass ``c`` in ``Mscf/Bbl`` as the yield models
+      document (``c=1.2`` for a 1200 ``scf/Bbl`` GOR, was ``c=1200.0``), with ``min``/``max``
+      rescaled to match. The examples previously supplied an ``scf/Bbl`` magnitude while
+      displaying outputs divided by 1000, so neither the inputs nor the printed results
+      matched the library. All example outputs were recomputed, and a note on the unit
+      convention was added to ``README.rst``. The water-phase ``c=2.0`` is a WOR in
+      ``Bbl/Bbl`` and is unchanged. The integration-accuracy figures were regenerated; the
+      relative errors are unchanged, since the trapezoid error is scale-invariant.
+    * Regenerated all nine figures in ``docs/img`` from their generating scripts
+      (``test/doc_examples.py``, ``docs/bourdet_validation.py``,
+      ``docs/integration_validation.py``).
     * Fixed two malformed grid tables in ``docs/numerical_integration.rst`` whose rows were
       2 and 1 characters narrower than their borders. One raised a docutils ``ERROR`` and
       failed to render as a table; the Sphinx build is now warning-free.

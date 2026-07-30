@@ -299,7 +299,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Produces:
   - `class MultisegmentPLYield(BothAssociatedPhase)` with `ClassVar[int]` column indices `T_IDX=0, TA_IDX=1, Y_IDX=2, M_IDX=3`; annotations `segment_params: NDFloat`, `min: Optional[float]`, `max: Optional[float]`.
   - `MultisegmentPLYield._segments(self) -> NDFloat` — abstract. Returns an `(n_segments, 4)` `float64` array of rows `[t_start, t_anchor, y_anchor, m]`. Within segment `i`, defined by `t_start_i <= t < t_start_{i+1}`, the yield is `y_anchor_i * (t / t_anchor_i) ** m_i`.
-  - `MultisegmentPLYield._lookup(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]` — returns `(t_anchor, y_anchor, m)` gathered per element of `t`.
+  - `MultisegmentPLYield._lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]` — returns `(t_anchor, y_anchor, m)` gathered per element of `t`.
   - `MultisegmentPLYield._mfn(self, t: NDFloat) -> NDFloat` — per-element slope, zeroed where the yield is clamped.
   - `MultisegmentPLYield._validate(self) -> None` — raises `ValueError('max < min')`, then caches `segment_params`. Subclasses that override must call `super()._validate()` last.
   - Task 4 subclasses this base and implements `_segments()`.
@@ -353,41 +353,41 @@ class MultisegmentPLYield(BothAssociatedPhase):
         # naturally, this should only be called during the __post_init__ process
         object.__setattr__(self, 'segment_params', self._segments())
 
-    def _lookup(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
+    def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
         """
         Gather the anchor time, anchor value, and slope of the segment containing each
         element of ``t``.
 
         ``side='right'`` puts ``t == t_start_i`` in segment ``i``, i.e. on the
         post-breakpoint slope. Negative ``t`` searches to index -1 and is clamped into
-        the first segment, where the ``t_ta <= 0`` mask in `_yieldfn` handles it.
+        the first segment, where the ``t_ratio <= 0`` mask in `_yieldfn` handles it.
         """
         p = self.segment_params
         i = np.maximum(np.searchsorted(p[:, self.T_IDX], t, side='right') - 1, 0)
         return p[i, self.TA_IDX], p[i, self.Y_IDX], p[i, self.M_IDX]
 
     def _yieldfn(self, t: NDFloat) -> NDFloat:
-        t_anchor, y_anchor, m = self._lookup(t)
+        t_anchor, y_anchor, m = self._lookup_segment(t)
 
-        t_ta = t / t_anchor
-        np.putmask(t_ta, mask=t_ta <= 0, values=MIN_EPSILON)  # type: ignore
-        t_m = m * np.log(t_ta)
-        np.putmask(t_m, mask=t_m > LOG_EPSILON, values=np.inf)  # type: ignore
-        np.putmask(t_m, mask=t_m < -LOG_EPSILON, values=-np.inf)  # type: ignore
+        t_ratio = t / t_anchor
+        np.putmask(t_ratio, mask=t_ratio <= 0, values=MIN_EPSILON)  # type: ignore
+        log_factor = m * np.log(t_ratio)
+        np.putmask(log_factor, mask=log_factor > LOG_EPSILON, values=np.inf)  # type: ignore
+        np.putmask(log_factor, mask=log_factor < -LOG_EPSILON, values=-np.inf)  # type: ignore
 
         if self.min is not None or self.max is not None:
             return np.where(t == 0.0, 0.0,
-                            np.clip(y_anchor * np.exp(t_m),  # type: ignore
+                            np.clip(y_anchor * np.exp(log_factor),  # type: ignore
                                     self.min, self.max))
-        return np.where(t == 0.0, 0.0, y_anchor * np.exp(t_m))
+        return np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
 
     def _mfn(self, t: NDFloat) -> NDFloat:
         """
         The slope of the segment containing each element of ``t``, zeroed wherever the
         yield function is clamped by ``min`` or ``max``.
         """
-        # advanced indexing in `_lookup` returns a copy, so this is safe to mutate
-        _, _, m = self._lookup(t)
+        # advanced indexing in `_lookup_segment` returns a copy, so this is safe to mutate
+        _, _, m = self._lookup_segment(t)
         y = self._yieldfn(t)
 
         if self.min is not None:
@@ -429,14 +429,14 @@ Change the class statement to `class PLYield(MultisegmentPLYield):`. Keep the do
         ``(t0, c)``, which is what makes the two branches meet there.
         """
         return np.array([
-            [0.0,     self.t0, self.c, self.m0],
+            [-np.inf, self.t0, self.c, self.m0],
             [self.t0, self.t0, self.c, self.m]
         ], dtype=np.float64)
 ```
 
 Also fix the `GOR/CGR/WOR/CGR` typo in the `c` parameter docstring — the fourth should be `WGR`.
 
-The result is bit-for-bit identical to the previous implementation: `_lookup` returns `t_anchor == t0` and `y_anchor == c` for every element, and the gathered `m` equals `np.where(t < t0, m0, m)` element for element, so each element still evaluates `c * exp(m * log(t / t0))` through the same masks, the same `np.exp`, the same optional `np.clip`, and the same `t == 0.0 -> 0.0` guard.
+The result is bit-for-bit identical to the previous implementation: `_lookup_segment` returns `t_anchor == t0` and `y_anchor == c` for every element, and the gathered `m` equals `np.where(t < t0, m0, m)` element for element, so each element still evaluates `c * exp(m * log(t / t0))` through the same masks, the same `np.exp`, the same optional `np.clip`, and the same `t == 0.0 -> 0.0` guard.
 
 - [ ] **Step 3: Verify the refactor changed nothing**
 
@@ -489,7 +489,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `MultisegmentPLYield` and its `_segments()` contract from Task 3.
-- Produces: `GeneralizedPLYield(c: float, m0: float, segments: Sequence[Tuple[float, float]], min: Optional[float] = None, max: Optional[float] = None)`, exported as `dca.GeneralizedPLYield`. `segments` is normalized to `Tuple[Tuple[float, float], ...]` during `__post_init__`. `M_BOUND: ClassVar[float] = 10.0`. Task 5 tests its multi-segment behaviour.
+- Produces: `GeneralizedPLYield(c: float, m0: float, segments: Sequence[Tuple[float, float]], min: Optional[float] = None, max: Optional[float] = None)`, exported as `dca.GeneralizedPLYield`. `segments` is normalized to `Tuple[Tuple[float, float], ...]` during `__post_init__`. The slope bound is `MultisegmentPLYield.SLOPE_BOUND` (see the as-built note). Task 5 tests its multi-segment behaviour.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -663,7 +663,6 @@ class GeneralizedPLYield(MultisegmentPLYield):
 
     validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 5)
 
-    M_BOUND: ClassVar[float] = 10.0
 
     def _validate(self) -> None:
         if len(self.segments) == 0:
@@ -681,15 +680,17 @@ class GeneralizedPLYield(MultisegmentPLYield):
         t = np.array([seg[0] for seg in segments], dtype=np.float64)
         m = np.array([seg[1] for seg in segments], dtype=np.float64)
 
-        if np.any(t <= 0.0):
-            raise ValueError('segments t <= 0')
+        if not np.all(np.isfinite(t) & (t > 0.0)):
+            raise ValueError('segments t must be finite and > 0')
 
         # np.diff of a single element is empty, and np.all of empty is True
         if not np.all(np.diff(t) > 0.0):
             raise ValueError('segments t not strictly increasing')
 
-        if np.any(np.abs(m) > self.M_BOUND):
-            raise ValueError(f'segments m outside [{-self.M_BOUND}, {self.M_BOUND}]')
+        if not np.all(np.abs(m) <= self.SLOPE_BOUND):
+            raise ValueError(
+                f'segments m must be finite and within '
+                f'[{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]')
 
         super()._validate()
 
@@ -709,18 +710,19 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # overflowing part-way through a running product.
         y_anchor = np.empty_like(t_anchor)
         y_anchor[0] = self.c
-        log_y = float(np.log(self.c)) if self.c > 0.0 else -np.inf
+        with np.errstate(divide='ignore', invalid='ignore'):
+            log_anchor = float(np.log(self.c))
 
         for i in range(1, t_anchor.size):
-            log_y += float(m[i - 1] * np.log(t_anchor[i] / t_anchor[i - 1]))
-            if log_y > LOG_EPSILON:
-                log_y = np.inf
-            elif log_y < -LOG_EPSILON:
-                log_y = -np.inf
-            y_anchor[i] = np.exp(log_y)
+            log_anchor += float(m[i - 1] * np.log(t_anchor[i] / t_anchor[i - 1]))
+            if log_anchor > LOG_EPSILON:
+                log_anchor = np.inf
+            elif log_anchor < -LOG_EPSILON:
+                log_anchor = -np.inf
+            y_anchor[i] = np.exp(log_anchor)
 
         return np.concatenate([
-            np.array([[0.0, t_anchor[0], self.c, self.m0]], dtype=np.float64),
+            np.array([[-np.inf, t_anchor[0], self.c, self.m0]], dtype=np.float64),
             np.column_stack([t_anchor, t_anchor, y_anchor, m])
         ])
 
@@ -816,35 +818,35 @@ Append to `test/test_dca.py`:
 
 ```python
 # a 4-segment model: pre-anchor slope m0, then three breakpoints
-GEN_C, GEN_M0 = 1200.0, -0.1
-GEN_SEGMENTS = ((90.0, 0.8), (365.0, 0.2), (1825.0, -0.3))
+GENERALIZED_C, GENERALIZED_M0 = 1200.0, -0.1
+GENERALIZED_SEGMENTS = ((90.0, 0.8), (365.0, 0.2), (1825.0, -0.3))
 
 
-def _gen_primary() -> dca.MH:
+def _generalized_primary() -> dca.MH:
     return dca.MH(1000.0, 0.7, 1.5, 0.08)
 
 
 def test_generalized_segment_count() -> None:
     """One row per segment: the pre-anchor segment plus one per breakpoint."""
-    y = dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS)
-    assert y.segment_params.shape == (len(GEN_SEGMENTS) + 1, 4)
+    y = dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS)
+    assert y.segment_params.shape == (len(GENERALIZED_SEGMENTS) + 1, 4)
     # the pre-anchor segment starts at zero and anchors at the first breakpoint
     assert y.segment_params[0, y.T_IDX] == 0.0
-    assert y.segment_params[0, y.TA_IDX] == GEN_SEGMENTS[0][0]
-    assert y.segment_params[0, y.Y_IDX] == GEN_C
+    assert y.segment_params[0, y.TA_IDX] == GENERALIZED_SEGMENTS[0][0]
+    assert y.segment_params[0, y.Y_IDX] == GENERALIZED_C
     # the first breakpoint's segment anchors at (t0, c), exactly as PLYield does
-    assert y.segment_params[1, y.Y_IDX] == GEN_C
+    assert y.segment_params[1, y.Y_IDX] == GENERALIZED_C
 
 
 def test_generalized_continuity() -> None:
     """The yield function must be continuous at every breakpoint. This is the property
     the anchor chain exists to guarantee -- a coefficient-form implementation that
     mis-chained the anchors would show a step here."""
-    mh = _gen_primary()
-    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    mh = _generalized_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
-    for T, _ in GEN_SEGMENTS:
+    for T, _ in GENERALIZED_SEGMENTS:
         before = y.gor(np.array([T * (1.0 - 1e-12)]))
         at = y.gor(np.array([T]))
         assert np.isclose(before, at, rtol=1e-9), T
@@ -854,12 +856,12 @@ def test_generalized_segment_slopes() -> None:
     """beta(t) is -m + t * primary.D(t), so beta - t * primary.D recovers -m exactly.
     Confirms the gather picks the right segment and the chain leaves slopes alone.
     Runs unclamped, since `_mfn` deliberately zeroes m wherever the yield is clamped."""
-    mh = _gen_primary()
-    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    mh = _generalized_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
     # one interior time per segment, with the slope that must apply there
-    cases = [(45.0, GEN_M0), (180.0, 0.8), (900.0, 0.2), (3650.0, -0.3)]
+    cases = [(45.0, GENERALIZED_M0), (180.0, 0.8), (900.0, 0.2), (3650.0, -0.3)]
     for t_i, m_i in cases:
         t = np.array([t_i])
         assert np.isclose(y.beta(t) - t * mh.D(t), -m_i, rtol=1e-12), t_i
@@ -867,15 +869,15 @@ def test_generalized_segment_slopes() -> None:
 
 def test_generalized_yield_values() -> None:
     """Spot-check the anchor chain against the products computed by hand."""
-    mh = _gen_primary()
-    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    mh = _generalized_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
-    t1, m1 = GEN_SEGMENTS[0]
-    t2, m2 = GEN_SEGMENTS[1]
-    t3, m3 = GEN_SEGMENTS[2]
+    t1, m1 = GENERALIZED_SEGMENTS[0]
+    t2, m2 = GENERALIZED_SEGMENTS[1]
+    t3, m3 = GENERALIZED_SEGMENTS[2]
 
-    y1 = GEN_C
+    y1 = GENERALIZED_C
     y2 = y1 * (t2 / t1) ** m1
     y3 = y2 * (t3 / t2) ** m2
 
@@ -884,7 +886,7 @@ def test_generalized_yield_values() -> None:
     assert np.isclose(y.gor(np.array([t3])), y3, rtol=1e-12)
 
     # pre-anchor segment, and a point inside each later segment
-    assert np.isclose(y.gor(np.array([45.0])), GEN_C * (45.0 / t1) ** GEN_M0, rtol=1e-12)
+    assert np.isclose(y.gor(np.array([45.0])), GENERALIZED_C * (45.0 / t1) ** GENERALIZED_M0, rtol=1e-12)
     assert np.isclose(y.gor(np.array([180.0])), y1 * (180.0 / t1) ** m1, rtol=1e-12)
     assert np.isclose(y.gor(np.array([900.0])), y2 * (900.0 / t2) ** m2, rtol=1e-12)
     assert np.isclose(y.gor(np.array([3650.0])), y3 * (3650.0 / t3) ** m3, rtol=1e-12)
@@ -996,7 +998,7 @@ Expected: all pass. If `test_generalized_model` fails on a hypothesis-generated 
 ruff check petbox/dca && mypy petbox/dca && pytest
 ```
 
-Expected: all pass. Check the coverage report for `associated.py`: every branch of `_validate` and `_segments` should be covered by the tests above. If `_segments`'s `log_y` saturation branches are uncovered, that is expected — they need extreme parameters — and may be left uncovered rather than adding a contrived test.
+Expected: all pass. Check the coverage report for `associated.py`: every branch of `_validate` and `_segments` should be covered by the tests above. If `_segments`'s `log_anchor` saturation branches are uncovered, that is expected — they need extreme parameters — and may be left uncovered rather than adding a contrived test.
 
 - [ ] **Step 5: Commit**
 
@@ -1207,4 +1209,79 @@ Neither may be skipped on the grounds that the per-task steps already ran the te
 
 **Placeholder scan.** No TBDs. Every code step carries the literal code. The one deliberate contingency — a possible `# type: ignore[unreachable]` on the `except` clause in Task 4 Step 5 — names the exact annotation, the exact fallback, and the reason the alternative is rejected.
 
-**Type consistency.** `_segments`, `_lookup`, `_mfn`, `_yieldfn`, `_qfn`, `_Nfn`, `_Dfn`, `_Dfn2`, `_betafn`, `_bfn` keep the same names and signatures between the Task 3 definition and the Task 4 subclass. Column indices `T_IDX`/`TA_IDX`/`Y_IDX`/`M_IDX` are defined once in Task 3 and used with those names in Tasks 3, 4, and 5. `segments` is `Sequence[Tuple[float, float]]` on the field and `Tuple[Tuple[float, float], ...]` after normalization, which Task 4's `test_generalized_segments_normalized` asserts. `M_BOUND` is defined and used only in Task 4.
+**Type consistency.** `_segments`, `_lookup_segment`, `_mfn`, `_yieldfn`, `_qfn`, `_Nfn`, `_Dfn`, `_Dfn2`, `_betafn`, `_bfn` keep the same names and signatures between the Task 3 definition and the Task 4 subclass. Column indices `T_IDX`/`TA_IDX`/`Y_IDX`/`M_IDX` are defined once in Task 3 and used with those names in Tasks 3, 4, and 5. `segments` is `Sequence[Tuple[float, float]]` on the field and `Tuple[Tuple[float, float], ...]` after normalization, which Task 4's `test_generalized_segments_normalized` asserts. `SLOPE_BOUND` was defined in Task 4 as planned, then moved onto `MultisegmentPLYield` during the post-implementation refactor so the `m0` descriptors read it too — see the as-built note.
+
+---
+
+## As built (2026-07-30)
+
+Implemented and merged onto `feat/generalized-plyield`. **`petbox/dca/associated.py` is the
+source of truth**; this document is the design record. The body above has been updated to
+match the delivered code, and the substantive differences from the design as first approved
+are listed here.
+
+Delivered: 59 tests pass, `ruff` and `mypy --strict` clean, `associated.py` at 100%
+statement coverage, and `PLYield` verified **bit-for-bit identical** to its pre-refactor
+implementation across 7 parameter cases x 50 output arrays x 403 time points (including
+`t=0`, negative `t`, both clamp bounds, and secondary + water attachment).
+
+### Differences from the approved design
+
+1. **`SLOPE_BOUND` lives on `MultisegmentPLYield`, not `GeneralizedPLYield`.** The design
+   put the bound on the concrete class. That left `10.0` in three hand-maintained copies —
+   the constant plus the `m0` `ParamDesc` bounds on both models — with nothing keeping them
+   in sync. It is now one `ClassVar` on the base that the descriptors and the segment-slope
+   check all read. `PLYield.m` keeps its own tighter `[-1, 1]`; it is the late-time slope,
+   a different quantity.
+
+2. **Segment row 0 starts at `-inf`, not `0.0`.** `_lookup_segment` binary searches the
+   `t_start` column, which requires it to be sorted. With a hardcoded `0.0` and a caller who
+   disabled validation to pass `t0 < 0`, `[0.0, t0]` was unsorted and the search result was
+   formally undefined. `-inf` makes the precondition hold unconditionally. Segment selection
+   for valid inputs is unchanged.
+
+3. **Non-finite segment values are rejected.** The design's validation was expressed as
+   `np.any(t <= 0)` / `np.any(abs(m) > bound)`. Every comparison against `NaN` is false, so
+   both forms *accepted* a `NaN` breakpoint or slope and silently produced an all-`NaN`
+   yield function; a lone `NaN` time also escaped the strictly-increasing check, since
+   `np.diff` of one element is empty. The checks are now positive assertions
+   (`not np.all(isfinite(t) & (t > 0))`), which reject `NaN` by construction, and reject an
+   infinite breakpoint as well.
+
+4. **The anchor chain is seeded from `log(c)` directly.** The design's
+   `log(c) if c > 0 else -inf` made `c == 0` report `c` on segment 0 and `0` on every later
+   segment. Seeding from `np.log(c)` under `errstate` keeps the chain consistent with
+   `anchor_values[0]`.
+
+5. **`_segment_arrays()` was extracted.** The `(t, m)` -> parallel-array split appeared in
+   both `_validate` and `_segments`.
+
+6. **`np.errstate` guards the degenerate `t = 0` divisions** in `_Dfn`, `_Dfn2`, `_betafn`,
+   and `_bfn`. The division by zero there is the correct power-law limit, and `_bfn` divides
+   by `D` inside an `np.where` that evaluates both branches. Values are unchanged; the
+   spurious `RuntimeWarning`s are gone.
+
+7. **`MultisegmentPLYield` is exported but deliberately absent from `docs/api.rst`.** The
+   design said to document both new classes. `MultisegmentHyperbolic` — the class this one
+   mirrors — is likewise exported without an `autoclass` entry, so following the existing
+   convention won out.
+
+8. **Local names were made descriptive** during the refactor pass: `params`,
+   `segment_index`, `t_ratio`, `log_factor`, `breakpoint_times`, `slopes`, `log_anchor`, and
+   `_lookup` -> `_lookup_segment`. The identifiers in the body above reflect the final
+   names.
+
+9. **The `mypy --warn-unreachable` contingency was not needed.** The design flagged that
+   the `except (TypeError, ValueError)` around the segment normalization might be reported
+   as unreachable, requiring a `# type: ignore`. `mypy` accepted it as written.
+
+### Not implemented (still open)
+
+- `ParamDesc` bound checking never rejects `NaN`, for **any** model — `param < lower_bound`
+  is false for `NaN`, so `PLYield(c=nan, ...)`, `MH(qi=nan, ...)` and `SE(tau=nan, ...)` all
+  construct and yield `NaN`. Fixing it changes validation semantics for all seven models and
+  was left out of scope.
+- `GeneralizedPLYield` has no worked example in `docs/examples.rst`; deferred so it can be
+  added alongside `GeneralizedHyperbolic`.
+
+All six tasks and both post-implementation review passes (`/code-refactor`, `/code-correctness`) are complete; the unchecked `- [ ]` boxes above are the historical build script, not outstanding work.

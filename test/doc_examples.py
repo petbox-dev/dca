@@ -263,7 +263,7 @@ print('Secondary Phase Decline Curve Models...')
 # https://doi.org/10.15530/urtec-2018-2903036.
 
 thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
-thm.add_secondary(dca.PLYield(c=1000, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10_000))
+thm.add_secondary(dca.PLYield(c=1.0, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10.0))
 
 
 # Secondary Phase Diagnostic Plots
