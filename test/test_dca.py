@@ -850,35 +850,35 @@ def test_generalized_errors() -> None:
 
 
 # a 4-segment model: pre-anchor slope m0, then three breakpoints
-GEN_C, GEN_M0 = 1200.0, -0.1
-GEN_SEGMENTS = ((90.0, 0.8), (365.0, 0.2), (1825.0, -0.3))
+GENERALIZED_C, GENERALIZED_M0 = 1200.0, -0.1
+GENERALIZED_SEGMENTS = ((90.0, 0.8), (365.0, 0.2), (1825.0, -0.3))
 
 
-def _gen_primary() -> dca.MH:
+def _generalized_primary() -> dca.MH:
     return dca.MH(1000.0, 0.7, 1.5, 0.08)
 
 
 def test_generalized_segment_count() -> None:
     """One row per segment: the pre-anchor segment plus one per breakpoint."""
-    y = dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS)
-    assert y.segment_params.shape == (len(GEN_SEGMENTS) + 1, 4)
+    y = dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS)
+    assert y.segment_params.shape == (len(GENERALIZED_SEGMENTS) + 1, 4)
     # the pre-anchor segment starts at zero and anchors at the first breakpoint
     assert y.segment_params[0, y.T_IDX] == 0.0
-    assert y.segment_params[0, y.TA_IDX] == GEN_SEGMENTS[0][0]
-    assert y.segment_params[0, y.Y_IDX] == GEN_C
+    assert y.segment_params[0, y.TA_IDX] == GENERALIZED_SEGMENTS[0][0]
+    assert y.segment_params[0, y.Y_IDX] == GENERALIZED_C
     # the first breakpoint's segment anchors at (t0, c), exactly as PLYield does
-    assert y.segment_params[1, y.Y_IDX] == GEN_C
+    assert y.segment_params[1, y.Y_IDX] == GENERALIZED_C
 
 
 def test_generalized_continuity() -> None:
     """The yield function must be continuous at every breakpoint. This is the property
     the anchor chain exists to guarantee -- a coefficient-form implementation that
     mis-chained the anchors would show a step here."""
-    mh = _gen_primary()
-    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    mh = _generalized_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
-    for T, _ in GEN_SEGMENTS:
+    for T, _ in GENERALIZED_SEGMENTS:
         before = y.gor(np.array([T * (1.0 - 1e-12)]))
         at = y.gor(np.array([T]))
         assert np.isclose(before, at, rtol=1e-9), T
@@ -888,12 +888,12 @@ def test_generalized_segment_slopes() -> None:
     """beta(t) is -m + t * primary.D(t), so beta - t * primary.D recovers -m exactly.
     Confirms the gather picks the right segment and the chain leaves slopes alone.
     Runs unclamped, since `_mfn` deliberately zeroes m wherever the yield is clamped."""
-    mh = _gen_primary()
-    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    mh = _generalized_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
     # one interior time per segment, with the slope that must apply there
-    cases = [(45.0, GEN_M0), (180.0, 0.8), (900.0, 0.2), (3650.0, -0.3)]
+    cases = [(45.0, GENERALIZED_M0), (180.0, 0.8), (900.0, 0.2), (3650.0, -0.3)]
     for t_i, m_i in cases:
         t = np.array([t_i])
         assert np.isclose(y.beta(t) - t * mh.D(t), -m_i, rtol=1e-12), t_i
@@ -901,15 +901,15 @@ def test_generalized_segment_slopes() -> None:
 
 def test_generalized_yield_values() -> None:
     """Spot-check the anchor chain against the products computed by hand."""
-    mh = _gen_primary()
-    mh.add_secondary(dca.GeneralizedPLYield(GEN_C, GEN_M0, GEN_SEGMENTS))
+    mh = _generalized_primary()
+    mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
-    t1, m1 = GEN_SEGMENTS[0]
-    t2, m2 = GEN_SEGMENTS[1]
-    t3, m3 = GEN_SEGMENTS[2]
+    t1, m1 = GENERALIZED_SEGMENTS[0]
+    t2, m2 = GENERALIZED_SEGMENTS[1]
+    t3, m3 = GENERALIZED_SEGMENTS[2]
 
-    y1 = GEN_C
+    y1 = GENERALIZED_C
     y2 = y1 * (t2 / t1) ** m1
     y3 = y2 * (t3 / t2) ** m2
 
@@ -918,7 +918,8 @@ def test_generalized_yield_values() -> None:
     assert np.isclose(y.gor(np.array([t3])), y3, rtol=1e-12)
 
     # pre-anchor segment, and a point inside each later segment
-    assert np.isclose(y.gor(np.array([45.0])), GEN_C * (45.0 / t1) ** GEN_M0, rtol=1e-12)
+    assert np.isclose(y.gor(np.array([45.0])),
+                      GENERALIZED_C * (45.0 / t1) ** GENERALIZED_M0, rtol=1e-12)
     assert np.isclose(y.gor(np.array([180.0])), y1 * (180.0 / t1) ** m1, rtol=1e-12)
     assert np.isclose(y.gor(np.array([900.0])), y2 * (900.0 / t2) ** m2, rtol=1e-12)
     assert np.isclose(y.gor(np.array([3650.0])), y3 * (3650.0 / t3) ** m3, rtol=1e-12)

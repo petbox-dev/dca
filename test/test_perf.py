@@ -1,26 +1,29 @@
 """
 Performance regression tests for numerical integration and bourdet derivative.
 """
+from typing import Callable, Sequence
+
 import numpy as np
 import pytest
 from scipy.integrate import quad
 from petbox import dca
 
 
-def _quad_cum(rate_fn, t: np.ndarray) -> np.ndarray:
+def _quad_cum(rate_fn: Callable[[float], float], t: np.ndarray) -> np.ndarray:
     """Trusted reference: cumulative volume by adaptive quadrature of the rate."""
     return np.array([quad(rate_fn, 0.0, float(ti))[0] for ti in t])
 
 
-def _quad_cum_piecewise(rate_fn, t: np.ndarray, breaks: tuple) -> np.ndarray:
+def _quad_cum_piecewise(rate_fn: Callable[[float], float], t: np.ndarray,
+                        breakpoints: Sequence[float]) -> np.ndarray:
     """Trusted reference for a piecewise rate: integrate across each kink separately,
     so adaptive quadrature never straddles a slope discontinuity."""
-    out = []
+    cumulative = []
     for ti in t:
-        nodes = [0.0] + [b for b in breaks if b < float(ti)] + [float(ti)]
-        out.append(sum(quad(rate_fn, nodes[i], nodes[i + 1])[0]
-                       for i in range(len(nodes) - 1)))
-    return np.array(out)
+        nodes = [0.0] + [b for b in breakpoints if b < float(ti)] + [float(ti)]
+        cumulative.append(sum(quad(rate_fn, nodes[i], nodes[i + 1])[0]
+                              for i in range(len(nodes) - 1)))
+    return np.array(cumulative)
 
 
 @pytest.mark.parametrize('n', [0.3, 0.4, 0.5, 0.6, 0.8])
@@ -78,22 +81,26 @@ def test_integrate_with_PLYield_accuracy() -> None:
 
 def test_integrate_with_GeneralizedPLYield_accuracy() -> None:
     """_integrate_with must reproduce the integral of a multi-segment yield rate."""
-    breaks = (90.0, 365.0, 1825.0)
+    yield_model = dca.GeneralizedPLYield(c=1200.0, m0=-0.1,
+                                         segments=((90.0, 0.8), (365.0, 0.2),
+                                                   (1825.0, -0.3)))
     mh = dca.MH(qi=1000.0, Di=0.8, bi=1.5, Dterm=0.05)
-    mh.add_secondary(dca.GeneralizedPLYield(c=1200.0, m0=-0.1,
-                                            segments=((90.0, 0.8), (365.0, 0.2),
-                                                      (1825.0, -0.3))))
-    sec = mh.secondary
+    mh.add_secondary(yield_model)
+    secondary = mh.secondary
 
     t = dca.get_time(1.0, 3000.0, 40)
-    cum = sec.cum(t)
+    cum = secondary.cum(t)
 
     assert np.all(np.isfinite(cum))
     assert np.all(cum >= 0.0)
     assert np.all(np.diff(cum) >= -1e-10)
 
-    ref = _quad_cum_piecewise(lambda s: float(sec.rate(np.array([s]))[0]), t, breaks)
-    assert np.allclose(cum, ref, rtol=1e-3)
+    # derive the kinks from the model rather than restating them, so the reference
+    # integral cannot drift out of sync with the segments above
+    breakpoints = tuple(breakpoint for breakpoint, _ in yield_model.segments)
+    reference = _quad_cum_piecewise(lambda s: float(secondary.rate(np.array([s]))[0]),
+                                    t, breakpoints)
+    assert np.allclose(cum, reference, rtol=1e-3)
 
 
 def test_bourdet_accuracy() -> None:
