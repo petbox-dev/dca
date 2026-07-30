@@ -11,16 +11,44 @@ Version History
 
 * New Model
     * ``GeneralizedPLYield`` --- a power-law associated-phase model taking an arbitrary
-      number of ``(t, m)`` breakpoint pairs, with the anchor value ``c`` at the first
-      breakpoint. The yield function is continuous at every breakpoint: each segment is
-      anchored at the value the preceding segment reaches there. A single breakpoint is
+      number of breakpoints, with the anchor value ``c`` at the first
+      breakpoint, given as :class:`PLYieldSegment` instances. A single breakpoint is
       bit-for-bit identical to ``PLYield``, i.e.
-      ``PLYield(c, m0, m, t0) == GeneralizedPLYield(c, m0, ((t0, m),))``.
+      ``PLYield(c, m0, m, t0) == GeneralizedPLYield(c, m0, (PLYieldSegment(t0, m=m),))``.
       Breakpoint times must be finite, positive, and strictly increasing, and each slope
       must be finite and within ``[-10, 10]``. ``NaN`` is rejected explicitly: the
       validation is written as ``not np.all(valid)`` rather than ``np.any(invalid)``,
       because every comparison against ``NaN`` is false and the latter form would accept
       a ``NaN`` breakpoint and silently return an all-``NaN`` yield function.
+
+* New Segment Type
+    * ``PLYieldSegment`` --- one segment of a ``GeneralizedPLYield``, with keyword-only
+      optional fields where ``None`` means *continuous from the previous segment*: an
+      omitted ``m`` continues the preceding slope, an omitted ``c`` leaves the yield
+      continuous. Supplying ``c`` **steps** the yield at that breakpoint and restarts the
+      anchor chain, so the model is value-continuous at every breakpoint *unless* that
+      segment sets ``c``. ``c`` on the first segment raises, since the model's own ``c``
+      already fixes the value there. The optional fields are keyword-only because
+      ``PLYieldSegment(180.0, 0.6)`` would otherwise set ``c`` while the equivalent builder
+      tuple ``(180.0, 0.6)`` means ``m``.
+    * ``GeneralizedPLYield.from_segments`` builds the same model from plain ``(t, m)`` or
+      ``(t, c, m)`` tuples, disambiguated by arity.
+
+* New Methods
+    * ``PLYield.shift(dt)`` and ``GeneralizedPLYield.shift(dt)`` re-anchor a fit made
+      against the wrong first-production date, moving the pivot or every breakpoint later
+      by ``dt`` days. This re-anchors rather than reproducing the original curve ---
+      late-time yield changes by roughly ``(t0 / (t0 + dt)) ** m`` because the power law's
+      origin moves --- so a rigorous correction is still a re-fit.
+
+* **Breaking:** the yield models return ``nan`` for ``t < 0``
+    * A power law is not real-valued there: ``(-30.4/180) ** 0.6`` is
+      ``-0.106 + 0.327j``. The previous implementation floored the negative time ratio at
+      ``MIN_EPSILON``, which produced a constant identical for every negative ``t`` that
+      flipped between ``3.07e-185`` and ``4.69e+184`` with the sign of ``m`` --- an artifact
+      of the floor carrying no information about ``t``. ``t == 0`` keeps its ``0.0``
+      convention and ``t > 0`` is unchanged. Use ``shift()`` to model the period before the
+      anchor.
 
 * Refactor
     * All power-law yield math moved to a new ``MultisegmentPLYield`` base class, which

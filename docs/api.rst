@@ -260,6 +260,7 @@ Implementations of associated (secondary and water) phase GOR/CGR/WOR/WGR models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: shift
     .. automethod:: get_param_desc
     .. automethod:: get_param_descs
     .. automethod:: from_params
@@ -274,9 +275,14 @@ Implementations of associated (secondary and water) phase GOR/CGR/WOR/WGR models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: shift
     .. automethod:: get_param_desc
     .. automethod:: get_param_descs
     .. automethod:: from_params
+    .. automethod:: from_segments
+
+
+.. autoclass:: PLYieldSegment
 
 
 Utility Functions

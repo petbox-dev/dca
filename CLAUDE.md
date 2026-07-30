@@ -54,7 +54,7 @@ DeclineCurve (ABC)
     ├── NullAssociatedPhase (extends SecondaryPhase, WaterPhase)
     └── MultisegmentPLYield (extends BothAssociatedPhase)
         ├── PLYield (Power-Law Yield, 2 segments)
-        └── GeneralizedPLYield (arbitrary segments, (t, m) breakpoints)
+        └── GeneralizedPLYield (arbitrary segments, PLYieldSegment)
 ```
 
 ### Key files

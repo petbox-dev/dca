@@ -125,15 +125,44 @@ the yield function is continuous at every breakpoint.
 .. code-block:: python
 
     >>> mh = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)
-    >>> mh.add_secondary(dca.GeneralizedPLYield(
-    ...     c=1.2, m0=0.0, segments=((180.0, 0.6), (1095.0, -0.2)), max=20.0))
+    >>> mh.add_secondary(dca.GeneralizedPLYield(c=1.2, m0=0.0, segments=(
+    ...     dca.PLYieldSegment(180.0, m=0.6),
+    ...     dca.PLYieldSegment(1095.0, m=-0.2)), max=20.0))
     >>> mh.secondary.gor([90.0, 180.0, 365.0, 1095.0, 3650.0])
     array([1.200, 1.200, 1.834, 3.545, 2.787])
 
 The GOR is flat at ``c`` up to the anchor at 180 days because ``m0`` is zero, rises as
 ``t**0.6`` to the second breakpoint at 1095 days, then declines as ``t**-0.2``. The
 two-segment ``PLYield`` is the single-breakpoint case of this model, i.e.
-``PLYield(c, m0, m, t0)`` and ``GeneralizedPLYield(c, m0, ((t0, m),))`` are equivalent.
+``PLYield(c, m0, m, t0)`` and ``GeneralizedPLYield(c, m0, (PLYieldSegment(t0, m=m),))``
+are equivalent.
+
+Omitting a field means *continuous from the previous segment*, so ``PLYieldSegment(t)`` with
+no ``m`` carries the preceding slope forward. Supplying ``c`` instead **steps** the yield at
+that breakpoint — a GOR change at a workover, say — and restarts the curve from there.
+``from_segments`` takes the same thing as plain ``(t, m)`` or ``(t, c, m)`` tuples.
+
+.. code-block:: python
+
+    >>> mh = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)
+    >>> mh.add_secondary(dca.GeneralizedPLYield.from_segments(
+    ...     1.2, 0.0, [(180.0, 0.6), (1095.0, 2.5, -0.2)], None, 20.0))
+    >>> mh.secondary.gor([1000.0, 1095.0, 2000.0])
+    array([3.358, 2.500, 2.216])
+
+The GOR reaches 3.358 just before the workover, steps to the specified 2.5, then declines
+from there.
+
+If a model was fit against the wrong first-production date, ``shift(dt)`` re-anchors it
+rather than requiring evaluation at negative time, where a power law is not real-valued:
+
+.. code-block:: python
+
+    >>> corrected = mh.secondary.shift(30.4)   # true first prod was 30.4 days earlier
+
+This moves the power law's origin, so it is a re-anchoring and not a lossless transform —
+late-time yield shifts by roughly ``(t0 / (t0 + dt)) ** m``. A rigorous correction is a
+re-fit.
 
 
 Once instantiated, the same functions and process for attaching a secondary phase work for any model.

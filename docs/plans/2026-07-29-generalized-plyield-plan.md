@@ -10,6 +10,11 @@
 
 **Design spec:** `docs/plans/2026-07-29-generalized-plyield-design.md`
 
+> **Superseded before release:** `GeneralizedPLYield.segments` takes `PLYieldSegment`
+> instances, not `(t, m)` tuples, and a segment may override `c` to step the yield. See
+> `docs/plans/2026-07-30-generalized-segments-design.md`. Everything else in this
+> document still describes the shipped code.
+
 ## Global Constraints
 
 - Max line length 100 (`ruff`, `pyproject.toml:68`). Max complexity 20.

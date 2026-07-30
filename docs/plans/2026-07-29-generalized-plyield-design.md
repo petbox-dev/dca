@@ -4,6 +4,11 @@
 **Status:** Implemented — see "As built" at the end of this document
 **Target version:** 2.2.0
 
+> **Superseded before release:** `GeneralizedPLYield.segments` takes `PLYieldSegment`
+> instances, not `(t, m)` tuples, and a segment may override `c` to step the yield. See
+> `docs/plans/2026-07-30-generalized-segments-design.md`. Everything else in this
+> document still describes the shipped code.
+
 ## Goal
 
 Add a power-law yield model supporting an arbitrary number of segments, specified as a
