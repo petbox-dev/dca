@@ -32,6 +32,7 @@ Secondary Phase Models
 .. autosummary::
 
     PLYield
+    GeneralizedPLYield
 
 
 Water Phase Models
@@ -42,6 +43,7 @@ Water Phase Models
 .. autosummary::
 
     PLYield
+    GeneralizedPLYield
 
 
 Model Functions
@@ -250,6 +252,20 @@ Associated Phase Models
 Implementations of associated (secondary and water) phase GOR/CGR/WOR/WGR models
 
 .. autoclass:: PLYield
+
+    .. automethod:: gor
+    .. automethod:: cgr
+    .. automethod:: rate
+    .. automethod:: cum
+    .. automethod:: D
+    .. automethod:: beta
+    .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
+
+
+.. autoclass:: GeneralizedPLYield
 
     .. automethod:: gor
     .. automethod:: cgr

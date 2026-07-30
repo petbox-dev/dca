@@ -51,8 +51,10 @@ DeclineCurve (ABC)
 └── AssociatedPhase (ABC)
     ├── SecondaryPhase (GOR/CGR)
     ├── WaterPhase (WOR/WGR)
-    └── PLYield (Power-Law Yield, extends BothAssociatedPhase)
-        └── NullAssociatedPhase
+    ├── NullAssociatedPhase (extends SecondaryPhase, WaterPhase)
+    └── MultisegmentPLYield (extends BothAssociatedPhase)
+        ├── PLYield (Power-Law Yield, 2 segments)
+        └── GeneralizedPLYield (arbitrary segments, (t, m) breakpoints)
 ```
 
 ### Key files

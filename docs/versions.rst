@@ -6,6 +6,42 @@ Version History
    :noindex:
 
 
+2.2.0
+-----
+
+* New Model
+    * ``GeneralizedPLYield`` --- a power-law associated-phase model taking an arbitrary
+      number of ``(t, m)`` breakpoint pairs, with the anchor value ``c`` at the first
+      breakpoint. The yield function is continuous at every breakpoint: each segment is
+      anchored at the value the preceding segment reaches there. A single breakpoint is
+      bit-for-bit identical to ``PLYield``, i.e.
+      ``PLYield(c, m0, m, t0) == GeneralizedPLYield(c, m0, ((t0, m),))``.
+      Breakpoint times must be positive and strictly increasing, and each slope must
+      lie within ``[-10, 10]``.
+
+* Refactor
+    * All power-law yield math moved to a new ``MultisegmentPLYield`` base class, which
+      caches per-segment anchor conditions and gathers them with ``searchsorted``.
+      ``PLYield`` is now a subclass and supplies only its two segments; its results are
+      bit-for-bit unchanged.
+
+* **Breaking:** ``PLYield`` now validates all six of its parameters
+    * Previously only ``c`` was bound-checked. ``DeclineCurve.validate_params`` defaults
+      to a one-element list and ``__post_init__`` zipped it against the descriptor list,
+      so the remaining five checks were silently skipped. ``PLYield`` was the only model
+      affected --- every other model already sized its flag list correctly. Constructions
+      with ``m0`` outside ``[-10, 10]``, ``m`` outside ``[-1, 1]``, ``t0 <= 0``, or a
+      negative ``min``/``max`` now raise ``ValueError`` instead of being accepted.
+
+* Bug Fix
+    * The sixth ``PLYield`` ``ParamDesc`` was named ``'min'`` while describing ``max``,
+      so ``PLYield.get_param_desc('max')`` raised ``KeyError`` and the descriptor list
+      reported ``min`` twice.
+    * ``DeclineCurve.__post_init__`` no longer skips bound checks when
+      ``validate_params`` is shorter than the descriptor list; short lists are padded
+      with ``True``.
+
+
 2.1.0
 -----
 

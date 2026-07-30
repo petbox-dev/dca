@@ -38,9 +38,11 @@ Analytic functions are implemented wherever possible. When not possible, numeric
 |                            | `Stretched Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SE>`_,                                  |
 |                            | `Duong <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.Duong>`_                                                |
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Secondary Phase            | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_                                    |
+| Secondary Phase            | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_,                                   |
+|                            | `Generalized Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.GeneralizedPLYield>`_             |
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
-| Water Phase                | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_                                    |
+| Water Phase                | `Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLYield>`_,                                   |
+|                            | `Generalized Power-Law Yield <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.GeneralizedPLYield>`_             |
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 
 The following functions are exposed for use
@@ -109,6 +111,24 @@ We can also attach secondary phase and water phase models, and evaluate the rate
     >>> mh.add_water(dca.PLYield(c=2.0, m0=0.0, m=0.1, t0=90.0, min=None, max=10.0))
     >>> mh.water.rate(t)
     array([1.950, 1.935, 1.917, ..., 0.000])
+
+
+A yield model may also use an arbitrary number of segments, given as ``(t, m)`` breakpoint
+pairs. The anchor value ``c`` sits at the first breakpoint, ``m0`` is the slope before it, and
+the yield function is continuous at every breakpoint.
+
+.. code-block:: python
+
+    >>> mh = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)
+    >>> mh.add_secondary(dca.GeneralizedPLYield(
+    ...     c=1200.0, m0=0.0, segments=((180.0, 0.6), (1095.0, -0.2)), max=20_000.0))
+    >>> mh.secondary.gor([90.0, 180.0, 365.0, 1095.0, 3650.0])
+    array([1200.000, 1200.000, 1833.975, 3545.408, 2786.702])
+
+The GOR is flat at ``c`` up to the anchor at 180 days because ``m0`` is zero, rises as
+``t**0.6`` to the second breakpoint at 1095 days, then declines as ``t**-0.2``. The
+two-segment ``PLYield`` is the single-breakpoint case of this model, i.e.
+``PLYield(c, m0, m, t0)`` and ``GeneralizedPLYield(c, m0, ((t0, m),))`` are equivalent.
 
 
 Once instantiated, the same functions and process for attaching a secondary phase work for any model.
