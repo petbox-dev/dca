@@ -238,8 +238,16 @@ The fill loop at [primary.py:550-554](../../petbox/dca/primary.py#L550-L554) mov
 def _fill_segment_chain(self, segments: NDFloat) -> NDFloat:
     """Resolve each row's q, D and N from the preceding row. A slot holding nan is
     inherited; a slot holding a value is an override and is preserved. N is always
-    inherited -- cumulative volume cannot jump."""
+    inherited -- cumulative volume cannot jump.
+
+    Mutates `segments` in place and returns it, matching the loop it replaces.
+    """
 ```
+
+It **must mutate in place and return the same array**, as THM's inline loop does. A copying
+implementation would work for any caller that uses the return value, but would silently
+produce an unfilled array for one that calls it as a statement and then returns its own
+local — a mistake the in-place contract makes impossible.
 
 `THM._segments` calls it in place of its inline loop. Because THM supplies `nan` for every
 `q` and `D` it wants filled, the conditional fill produces identical results — but this must
@@ -279,6 +287,36 @@ bit-for-bit:
 PLYield(c, m0, m, t0) == GeneralizedPLYield(c, m0, (PLYieldSegment(t0, m=m),))
 ```
 
+### Retrofit validation
+
+The existing checks carry over unchanged, expressed as positive assertions so `NaN` is
+rejected, and two are added for the new field:
+
+| Condition | Message |
+|---|---|
+| `len(segments) == 0` | `segments must contain at least one segment` |
+| any entry not a `PLYieldSegment` | `segments entries must be PLYieldSegment` |
+| any `t` not finite or `<= 0` | `segments t must be finite and > 0` |
+| times not strictly increasing | `segments t not strictly increasing` |
+| any given `m` not finite, or outside `[-10, 10]` | `segments m must be finite and within [-10.0, 10.0]` |
+| **new:** any given `c` not finite or `<= 0` | `segments c must be finite and > 0` |
+| **new:** `segments[0].c is not None` | `segments[0] c conflicts with the model c at the same time` |
+
+The `c` bound mirrors the model-level `c` descriptor, which is `lower_bound=0.0` with
+`exclude_lower_bound=True`. The `m` bound stays `MultisegmentPLYield.SLOPE_BOUND`, read from
+the base rather than restated, so it cannot drift from the `m0` descriptors.
+
+The first two messages change from the shipped wording (`segments must contain at least one
+(t, m) pair`, `segments entries must be (t, m) pairs`), so the existing
+`test_generalized_errors` `match=` patterns must be updated with them.
+
+### Retrofit descriptor
+
+`GeneralizedPLYield.segments`' `naive_gen` currently returns an `(n, 2)` array of `[t, m]`.
+It becomes an `(n, 3)` array of `[t, c, m]` with `t` sorted ascending, matching the new field
+order, so the generator keeps describing the parameter it belongs to. Bounds stay
+`None`/`None`.
+
 ## Testing
 
 Beyond the per-model checks above, three properties carry across both models:
@@ -296,6 +334,16 @@ Plus, for `GeneralizedHyperbolic`: `cum` against piecewise adaptive quadrature s
 breakpoints (reusing `_quad_cum_piecewise` from `test/test_perf.py`); the terminal-derivation
 edge cases (`b_L = 0`, and `Dterm` already reached, which must clamp); and the existing
 `check_model` helper over hypothesis-generated multi-segment models.
+
+## Exports
+
+`petbox/dca/__init__.py` must export all three new public names — `HyperbolicSegment` and
+`GeneralizedHyperbolic` from `.primary`, `PLYieldSegment` from `.associated`. This is not
+optional bookkeeping: callers cannot construct a segment without the dataclass, and
+`docs/api.rst` resolves its `autoclass` directives against `.. currentmodule:: petbox.dca`,
+so an unexported name yields an autodoc import warning and an empty section rather than
+documentation. The build still reports success — it is not run with `-W` — so this fails
+quietly and must be checked by looking for the rendered class in the output.
 
 ## Documentation
 
@@ -320,7 +368,17 @@ the protocol before the harder model depends on it.
 2. **`HyperbolicSegment` + `GeneralizedHyperbolic`** — `_fill_segment_chain` extraction with
    THM bit-for-bit verification, the new model, terminal derivation, tests, docs.
 3. **`docs/examples.rst`** — one worked section covering both generalized models with a
-   figure, closing the gap deferred from the `GeneralizedPLYield` work.
+   figure, closing the gap deferred from the `GeneralizedPLYield` work. The code in
+   `examples.rst` is mirrored in `test/doc_examples.py`, which is the script that actually
+   writes `docs/img/*.png`, so a new figure means editing **both** files and re-running
+   `python doc_examples.py` from `test/` to regenerate. Keeping the two in sync is a
+   requirement, not a nicety: `examples.rst` is prose-only and never executed, and
+   `doc_examples.py` is **not collected by pytest** either — `python_files` is left at its
+   default, which `doc_examples.py` does not match, verified with
+   `pytest --collect-only | grep doc_examples` returning nothing. So neither file's example
+   code is checked by CI, which is exactly how the `README.rst` outputs drifted ~1000x from
+   the library before this branch corrected them. Any example added here has to be run by
+   hand and its printed values pasted from real output.
 
 ## Out of scope
 
