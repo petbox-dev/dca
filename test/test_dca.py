@@ -704,3 +704,49 @@ def test_validate_params_flags_are_padded() -> None:
     # an over-long flags list must not produce `desc=True` -> AttributeError
     y = dca.PLYield(1000.0, 0.0, 0.6, 180.0, validate_params=[True] * 12)
     assert y.c == 1000.0
+
+
+def test_plyield_closed_form() -> None:
+    """Pin PLYield's yield/rate/D/beta/b to their closed forms, independent of the
+    internal segment representation. Gate for the MultisegmentPLYield refactor."""
+    c, m0, m, t0 = 1200.0, -0.1, 0.6, 180.0
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.PLYield(c, m0, m, t0))
+    y = mh.secondary
+
+    # start at t=1.0: the t == 0.0 -> 0.0 special case is covered by check_yield_model
+    t = dca.get_time(1.0, 1e4, 61)
+    m_t = np.where(t < t0, m0, m)
+
+    expected_y = c * (t / t0) ** m_t
+    assert np.allclose(y.gor(t), expected_y, rtol=1e-13)
+    assert np.allclose(y.rate(t), expected_y * mh.rate(t), rtol=1e-13)
+
+    expected_D = -m_t / t + mh.D(t)
+    assert np.allclose(y.D(t), expected_D, rtol=1e-13)
+    assert np.allclose(y.beta(t), expected_D * t, rtol=1e-13)
+
+    expected_b = np.where(expected_D == 0.0, 0.0,
+                          (-m_t / (t * t) - mh._Dfn2(t)) / (expected_D * expected_D))
+    assert np.allclose(y.b(t), expected_b, rtol=1e-13)
+
+
+def test_plyield_closed_form_clamped() -> None:
+    """Same, with min/max clamping active. The slope must be zeroed wherever the
+    yield function is clamped, which is what makes D and beta flatten there."""
+    c, m0, m, t0 = 1200.0, 0.8, 0.6, 180.0
+    lo, hi = 800.0, 5000.0
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.PLYield(c, m0, m, t0, lo, hi))
+    y = mh.secondary
+
+    t = dca.get_time(1.0, 1e4, 61)
+    expected_y = np.clip(c * (t / t0) ** np.where(t < t0, m0, m), lo, hi)
+    assert np.allclose(y.gor(t), expected_y, rtol=1e-13)
+
+    # both bounds must actually be exercised, or the test proves nothing
+    assert np.any(expected_y <= lo) and np.any(expected_y >= hi)
+
+    m_t = np.where((expected_y <= lo) | (expected_y >= hi), 0.0,
+                   np.where(t < t0, m0, m))
+    assert np.allclose(y.D(t), -m_t / t + mh.D(t), rtol=1e-13)
