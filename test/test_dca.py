@@ -750,3 +750,100 @@ def test_plyield_closed_form_clamped() -> None:
     m_t = np.where((expected_y <= lo) | (expected_y >= hi), 0.0,
                    np.where(t < t0, m0, m))
     assert np.allclose(y.D(t), -m_t / t + mh.D(t), rtol=1e-13)
+
+
+@given(
+    qi=st.floats(0.0, 1e6),
+    Di=st.floats(1e-3, 1.0, exclude_max=True),
+    bf=st.floats(0.0, 2.0),
+    telf=st.floats(1e-10, 1e4),
+    bterm=st.floats(1e-3, 0.3, exclude_max=True),
+    tterm=st.floats(5.0, 30.0),
+    c=st.floats(1e-10, 1e10),
+    m0=st.floats(-1.0, 1.0),
+    m=st.floats(-1.0, 1.0),
+    t0=st.floats(1e-10, 365.25),
+)
+@settings(deadline=None)  # type: ignore
+def test_generalized_reduces_to_plyield(qi: float, Di: float, bf: float, telf: float,
+                                        bterm: float, tterm: float, c: float, m0: float,
+                                        m: float, t0: float) -> None:
+    """A single-breakpoint GeneralizedPLYield must be bit-for-bit identical to PLYield.
+    Both of PLYield's segments anchor at (t0, c), so the anchor form reproduces its
+    arithmetic exactly -- array_equal, not allclose."""
+    assume(tterm * dca.DAYS_PER_YEAR > telf)
+    assume(bterm < bf)
+    t = dca.get_time()
+
+    thm_a = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
+    thm_a.add_secondary(dca.PLYield(c, m0, m, t0))
+
+    thm_b = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
+    thm_b.add_secondary(dca.GeneralizedPLYield(c, m0, ((t0, m),)))
+
+    for name in ('gor', 'cgr', 'rate', 'cum', 'D', 'beta', 'b'):
+        a = getattr(thm_a.secondary, name)(t)
+        b = getattr(thm_b.secondary, name)(t)
+        assert np.array_equal(a, b, equal_nan=True), name
+
+
+def test_generalized_segments_normalized() -> None:
+    """A list of lists is accepted and normalized to a tuple of float pairs, so the
+    instance stays hashable and `segments` matches its annotation at runtime."""
+    y = dca.GeneralizedPLYield(1200.0, 0.0, [[90, 0.8], [365, 0.2]])
+    assert y.segments == ((90.0, 0.8), (365.0, 0.2))
+    assert all(isinstance(v, float) for seg in y.segments for v in seg)
+
+
+def test_generalized_param_descs() -> None:
+    names = [d.name for d in dca.GeneralizedPLYield.get_param_descs()]
+    assert names == ['c', 'm0', 'segments', 'min', 'max']
+
+    # the `segments` descriptor must carry no scalar bounds, or the generic loop in
+    # __post_init__ would try to compare a tuple against a float
+    seg = dca.GeneralizedPLYield.get_param_desc('segments')
+    assert seg.lower_bound is None and seg.upper_bound is None
+
+    # from_params must round-trip now that the descriptor count matches the field count
+    y = dca.GeneralizedPLYield.from_params((1200.0, 0.0, ((180.0, 0.6),), None, 20_000.0))
+    assert y.segments == ((180.0, 0.6),)
+
+    with pytest.raises(ValueError):
+        dca.GeneralizedPLYield.from_params((1200.0, 0.0, ((180.0, 0.6),)))
+
+
+def test_generalized_errors() -> None:
+    with pytest.raises(ValueError):
+        # at least one breakpoint is required
+        dca.GeneralizedPLYield(1200.0, 0.0, ())
+
+    with pytest.raises(ValueError):
+        # entries must be (t, m) pairs
+        dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.8, 0.1),))  # type: ignore
+
+    with pytest.raises(ValueError):
+        # t must be positive
+        dca.GeneralizedPLYield(1200.0, 0.0, ((0.0, 0.8),))
+
+    with pytest.raises(ValueError):
+        # t must be strictly increasing
+        dca.GeneralizedPLYield(1200.0, 0.0, ((365.0, 0.8), (90.0, 0.2)))
+
+    with pytest.raises(ValueError):
+        # equal times are not strictly increasing
+        dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.8), (90.0, 0.2)))
+
+    with pytest.raises(ValueError):
+        # slope outside [-10, 10]
+        dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.8), (365.0, 25.0)))
+
+    with pytest.raises(ValueError):
+        # max < min, raised by the shared base
+        dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, 0.8),), 10.0, 1.0)
+
+    with pytest.raises(ValueError):
+        # c at its excluded lower bound
+        dca.GeneralizedPLYield(0.0, 0.0, ((90.0, 0.8),))
+
+    # the inclusive bound endpoints are accepted
+    dca.GeneralizedPLYield(1200.0, 0.0, ((90.0, -10.0), (365.0, 10.0)))
