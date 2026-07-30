@@ -441,9 +441,40 @@ have had earlier. Today it silently returns zero. `MH(1000, 0.8, 1.5, 0.0).rate(
 -10])` gives `[0, 0, 0]`, because `_vectorize` masks on `t >= t_start` and row 0's `t_start` is
 `0.0`, so no segment ever claims a negative `t` and the pre-zeroed output survives.
 
-This is the same defect already fixed on the yield side, and the same fix applies: **row 0's
-`t_start` becomes `-inf`**, making the segment column sorted for any anchor time and giving
-every finite `t` a home. `GeneralizedHyperbolic` should adopt it from the start.
+It is the same *defect* as on the yield side, but **the `-inf` fix does not transplant** —
+verified by running it, not by analogy. `MultisegmentPLYield` has two separate time columns,
+`T_IDX` for the segment boundary and `TA_IDX` for the anchor, so setting the boundary to
+`-inf` moved only the boundary. `MultisegmentHyperbolic` has **one** time column serving both
+roles: `_vectorize` masks on `p[i, T_IDX]` *and* passes the whole row into
+`_qcheck(t0, q, D, b, N, t)`, where `t0 = p[i, T_IDX]` and `dt = t - t0`. Setting it to `-inf`
+makes `dt = inf` and every output collapses to `0`/`inf`.
+
+The fix belongs in the mask instead — segment 0 claims everything below the next boundary,
+leaving `t0 = 0.0` intact so `dt` stays correct:
+
+```python
+for i in range(p.shape[0]):
+    where_seg = np.ones_like(t, dtype=bool) if i == 0 else t >= p[i, self.T_IDX]
+    if i < p.shape[0] - 1:
+        where_seg = where_seg & (t < p[i + 1, self.T_IDX])
+    x[where_seg] = fn(*p[i], t[where_seg])
+```
+
+Measured with that change on `MH(1000, 0.8, 1.5)`, pole at `-35.878`:
+
+| `t` | `rate` before | `rate` after | `cum` after | note |
+|---|---|---|---|---|
+| `-40` | `0` | `nan` | `nan` | past the pole; not real-valued |
+| `-35.878` | `0` | `nan` | `nan` | the pole |
+| `-35` | `0` | `11863.97` | `-76385.1` | |
+| `-10` | `0` | `1243.36` | `-11106.7` | |
+| `0` | `1000` | `1000` | `0` | unchanged |
+| `100` | `411.58` | `411.58` | `60139.4` | unchanged |
+
+Two consequences worth stating: past the pole the result is **`nan`, not `inf`**, which is the
+honest answer for a non-real-valued point; and `cum` at negative `t` is **negative**, being the
+volume between that time and the `t = 0` baseline expressed as a signed offset. Forward values
+are unchanged, which the bit-for-bit check must confirm.
 
 **There is a hard limit, and it is close in.** `q` has a pole where `1 + b·D·dt = 0`, i.e.
 `t = -1/(b·D_nom)`. For `MH(qi=1000, Di=0.8, bi=1.5)` that is **t = -35.88 days**: `q` reaches
@@ -453,11 +484,17 @@ must validate `1 + b·D·t > 0` for the earliest segment rather than assuming an
 is usable — the honest bound is `t > -1/(b·D_nom)` whenever `b·D != 0`, and unbounded when
 either is zero (exponential and constant-rate cases have no pole).
 
-Changing `MH`/`THM` to extrapolate rather than return zero is a **user-visible behaviour
-change** for valid models, unlike the guard fix, so it is deliberately not bundled with it and
-needs its own decision.
-
 ### Decisions taken
+
+- **Negative-time extrapolation is enabled unconditionally, by the one-line `_vectorize`
+  change above.** No new function, no per-call argument, no model field. The alternatives were
+  weighed and rejected: a per-call `extrapolate=` flag would have to be added to eight public
+  methods and forwarded through every private `_*fn`, including the ones the associated-phase
+  models call internally; a model field would add a non-parameter to every hyperbolic model and
+  double the behaviours to test. Making it unconditional is defensible because forward results
+  are provably unchanged — verified identical at `t = 0` and `t = 100` — and the only altered
+  behaviour is negative `t`, where the previous answer was a silent `0`, indistinguishable from
+  a dead well and so not a contract worth preserving.
 
 - **The shared math becomes sign-agnostic; `MH` and `THM` do not change.** The sign
   restriction already lives where it belongs — each concrete model's `get_param_descs()`.

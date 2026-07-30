@@ -714,9 +714,6 @@ class THM(MultisegmentHyperbolic):
             # no need to compute transient function
             return self._Dcheck(0.0, qi, Dnom_i, bi, 0.0, t)
 
-        elif Dnom_i < MIN_EPSILON:
-            raise ValueError(f'invalid Dnom in _transDfn {Dnom_i}')  # pragma: no cover
-
         if telf < MIN_EPSILON:
             # telf is too small to compute transient function
             D = self._Dcheck(0.0, qi, Dnom_i, bf, 0.0, t)
