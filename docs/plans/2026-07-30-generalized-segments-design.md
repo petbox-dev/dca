@@ -368,14 +368,19 @@ quietly and must be checked by looking for the rendered class in the output.
 
 ## Phases
 
-One spec, three implementation phases. `PLYield` goes first: it is smaller, and it validates
+One spec, four implementation phases. `PLYield` goes first: it is smaller, and it validates
 the protocol before the harder model depends on it.
 
 1. **`PLYieldSegment` + retrofit** — segment type, builder, `c` override, first-segment
    conflict, validation, tests, docs.
 2. **`HyperbolicSegment` + `GeneralizedHyperbolic`** — `_fill_segment_chain` extraction with
    THM bit-for-bit verification, the new model, terminal derivation, tests, docs.
-3. **`docs/examples.rst`** — one worked section covering both generalized models with a
+3. **`time_at_rate(q)` on `MultisegmentHyperbolic`** — the segment-bracketing rate inversion
+   above, plus the sign-agnostic guard conversion it depends on for inclining models.
+   Independent of the segment protocol, so it can land before or after Phase 2, but it needs
+   the guard fix and the `-inf` row-0 change to be useful at negative time.
+
+4. **`docs/examples.rst`** — one worked section covering both generalized models with a
    figure, closing the gap deferred from the `GeneralizedPLYield` work. The code in
    `examples.rst` is mirrored in `test/doc_examples.py`, which is the script that actually
    writes `docs/img/*.png`, so a new figure means editing **both** files and re-running
@@ -449,6 +454,60 @@ either is zero (exponential and constant-rate cases have no pole).
 Changing `MH`/`THM` to extrapolate rather than return zero is a **user-visible behaviour
 change** for valid models, unlike the guard fix, so it is deliberately not bundled with it and
 needs its own decision.
+
+### Decisions taken
+
+- **The shared math becomes sign-agnostic; `MH` and `THM` do not change.** The sign
+  restriction already lives where it belongs — each concrete model's `get_param_descs()`.
+  `MH` and `THM` declare `Di` in `[0, 1)` and `bi` in `[0, 2]`, so they cannot pass a negative
+  `D` or `b` into the base at all; every path was traced (`Di_nom`, `Dterm_nom`,
+  `b2 = bi - (bi - bf)/e >= bf >= 0`, `b4 = min(bterm, b3)`, and `_Dcheck`'s
+  `D/(1 + D·b·dt)`, which preserves sign). Converting the base's guards to magnitude tests is
+  therefore unobservable to them, and no bypass flag or parallel `_qcheck_signed` is needed —
+  a flag would thread a policy argument through four static methods, and a parallel function
+  would duplicate the math.
+- **A future `IncliningHyperbolic` declares its own negative descriptor ranges** and requires
+  `D < 0`, `b < 0`. It is the only model that widens the bounds.
+
+### `time_at_rate(q)` — inverting the rate function
+
+Rather than exposing the pole as a bare constant, invert the rate function. Solving
+`q = qi·(1 + b·D·t)^(-1/b)` gives
+
+```
+t(q) = ((q / qi) ** -b - 1) / (b · D)          general
+t(q) = -log(q / qi) / D                        when |b| <= B_EPSILON (exponential)
+t(q) = 0 if q == qi else nan                   when |D| < MIN_EPSILON (constant rate)
+```
+
+Verified against the library: exact round-trip for a declining hyperbolic (residual ~1e-13),
+for an exponential, and — using the corrected guards — for an inclining segment
+(`D = -0.002, b = -0.5`, `t = 100 -> q = 121 -> t = 100`).
+
+This subsumes the pole, which is simply the infinite-rate limit:
+
+| Model | `time_at_rate(inf)` | Meaning |
+|---|---|---|
+| `MH(1000, 0.8, 1.5)` | `-35.87798` | equals `-1/(b·D)` exactly; earliest evaluable time |
+| exponential (`b = 0`) | `-inf` | no pole; can be backed up indefinitely |
+| inclining (`D < 0, b < 0`) | `+inf` | no *backward* pole — an inclining rate diverges forward instead |
+
+So `t_min` would be a misnomer: the pole is a bound in whichever direction the rate grows, and
+`time_at_rate` states that without needing a direction-specific name. It also answers the
+forward question — time to an economic limit — with the same call.
+
+**It must bracket the segment before inverting.** Measured on `MH(1000, 0.8, 1.5, 0.08)`,
+whose terminal segment starts at t = 2884: `q(5000) = 32.84892`, and inverting that with
+*segment 0's* parameters yields `t = 5990`, wrong by 990 days. The implementation locates the
+segment whose rate range brackets `q` — the `Q_IDX` column is monotonic for a
+uniformly-declining or uniformly-inclining model — inverts relative to that segment's start
+time, and extrapolates with segment 0 when `q` exceeds `qi`.
+
+For a model mixing inclining and declining segments, rate is **not** monotonic and a given `q`
+may occur at several times. The documented rule is to return the **earliest** such time, which
+is what the backup use case wants.
+
+This is independent of the segment protocol and gets its own phase.
 
 ## Out of scope
 
