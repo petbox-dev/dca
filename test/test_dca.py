@@ -910,12 +910,41 @@ def test_generalized_segment_count() -> None:
     """One row per segment: the pre-anchor segment plus one per breakpoint."""
     y = dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS)
     assert y.segment_params.shape == (len(GENERALIZED_SEGMENTS) + 1, 4)
-    # the pre-anchor segment starts at zero and anchors at the first breakpoint
-    assert y.segment_params[0, y.T_IDX] == 0.0
+    # the pre-anchor segment starts at -inf and anchors at the first breakpoint
+    assert y.segment_params[0, y.T_IDX] == -np.inf
     assert y.segment_params[0, y.TA_IDX] == GENERALIZED_SEGMENTS[0][0]
     assert y.segment_params[0, y.Y_IDX] == GENERALIZED_C
     # the first breakpoint's segment anchors at (t0, c), exactly as PLYield does
     assert y.segment_params[1, y.Y_IDX] == GENERALIZED_C
+
+
+def test_segment_start_column_is_sorted() -> None:
+    """`_lookup_segment` binary searches the t_start column, so it must be sorted for
+    every constructible model -- including ones a caller reaches by disabling
+    validation. A hardcoded 0.0 first row left [0.0, t0] unsorted for t0 < 0, making the
+    search result formally undefined; starting the first segment at -inf makes the
+    precondition hold unconditionally."""
+    models = [
+        dca.PLYield(1200.0, 0.3, 0.6, 180.0),
+        dca.GeneralizedPLYield(1200.0, 0.3, ((90.0, 0.6), (365.0, -0.2))),
+        # validation off: t0 <= 0 would otherwise be rejected
+        dca.PLYield(1200.0, 0.3, 0.6, -5.0, validate_params=[False] * 4),
+        dca.PLYield(1200.0, 0.3, 0.6, 0.0, validate_params=[False] * 4),
+    ]
+    for model in models:
+        starts = model.segment_params[:, model.T_IDX]
+        assert np.all(np.diff(starts) >= 0.0), starts
+
+    # A non-positive t0 puts every t >= 0 on the late-time slope, since t >= t0 there --
+    # the same selection `np.where(t < t0, m0, m)` made before the segment array existed.
+    # The value is NOT nan: t / t0 is negative, and `_yieldfn` floors a non-positive
+    # ratio at MIN_EPSILON, so the result is c * exp(m * log(MIN_EPSILON)) -- a tiny
+    # positive number. Pinning it here documents that the mask, not the power, decides.
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.PLYield(1200.0, 0.3, 0.6, -5.0, validate_params=[False] * 4))
+    t = np.array([1.0, 10.0, 100.0])
+    expected = 1200.0 * np.exp(0.6 * np.log(np.finfo(np.float64).tiny))
+    assert np.allclose(mh.secondary.gor(t), expected, rtol=1e-13)
 
 
 def test_generalized_continuity() -> None:

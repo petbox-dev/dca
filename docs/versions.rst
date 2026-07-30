@@ -44,6 +44,25 @@ Version History
       ``validate_params`` is shorter than the descriptor list; short lists are padded
       with ``True``.
 
+* Other changes
+    * The first row of ``segment_params`` now starts at ``-inf`` rather than ``0``, so the
+      ``t_start`` column is sorted for any anchor time. ``_lookup_segment`` binary searches
+      that column, and a caller who disabled validation could pass ``t0 < 0`` and leave it
+      unsorted, making the search result formally undefined. Selected values are unchanged.
+    * The associated-phase ``D``, ``beta``, and ``b`` functions no longer emit
+      ``RuntimeWarning`` at ``t = 0``. The division by zero there is the expected limit of
+      a power law, and ``b`` additionally divides by ``D`` inside an ``np.where`` that
+      evaluates both branches; both are now wrapped in ``np.errstate``, matching how
+      ``MultisegmentHyperbolic`` guards its own overflow. Values are unchanged.
+    * Corrected the ``README.rst`` example outputs, which no longer matched the library:
+      the primary rates were stale, and the secondary/water rates had been scaled by
+      ``1/1000`` as though ``c`` were in ``scf/Bbl``. Added a note that ``c`` for a GOR is
+      in ``Mscf/Bbl`` per the documented unit convention, so a 1200 ``scf/Bbl`` GOR is
+      ``c=1.2``.
+    * Fixed two malformed grid tables in ``docs/numerical_integration.rst`` whose rows were
+      2 and 1 characters narrower than their borders. One raised a docutils ``ERROR`` and
+      failed to render as a table; the Sphinx build is now warning-free.
+
 
 2.1.0
 -----

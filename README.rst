@@ -97,7 +97,7 @@ A default time array of evenly-logspaced values over 5 log cycles is provided as
     >>> t = dca.get_time()
     >>> mh = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)
     >>> mh.rate(t)
-    array([986.738, 982.789, 977.692, ..., 0.000])
+    array([974.874, 971.927, 968.651, ..., 0.000])
 
 
 We can also attach secondary phase and water phase models, and evaluate the rate just as easily.
@@ -106,11 +106,16 @@ We can also attach secondary phase and water phase models, and evaluate the rate
 
     >>> mh.add_secondary(dca.PLYield(c=1200.0, m0=0.0, m=0.6, t0=180.0, min=None, max=20_000.0))
     >>> mh.secondary.rate(t)
-    array([1184.086, 1179.346, 1173.231, ..., 0.000])
+    array([1169848.370, 1166312.881, 1162381.400, ..., 0.000])
 
     >>> mh.add_water(dca.PLYield(c=2.0, m0=0.0, m=0.1, t0=90.0, min=None, max=10.0))
     >>> mh.water.rate(t)
-    array([1.950, 1.935, 1.917, ..., 0.000])
+    array([1949.747, 1943.855, 1937.302, ..., 0.000])
+
+Note the units of ``c``. The yield models resolve unit-magnitude inconsistencies by assuming
+``Bbl`` for oil and water and ``Mscf`` for gas, so ``c`` for a GOR is in ``Mscf/Bbl`` — a
+1200 ``scf/Bbl`` GOR is ``c=1.2``, not ``c=1200.0``. The secondary rate above is therefore in
+``Mscf/day`` and scales with the ``c`` you supply; it is not converted for you.
 
 
 A yield model may also use an arbitrary number of segments, given as ``(t, m)`` breakpoint
@@ -137,19 +142,19 @@ Once instantiated, the same functions and process for attaching a secondary phas
 
     >>> thm = dca.THM(qi=1000.0, Di=0.8, bi=2.0, bf=0.8, telf=30.0, bterm=0.03, tterm=10.0)
     >>> thm.rate(t)
-    array([968.681, 959.741, 948.451, ..., 0.000])
+    array([968.681, 965.058, 961.040, ..., 0.000])
 
     >>> thm.add_secondary(dca.PLYield(c=1200.0, m0=0.0, m=0.6, t0=180.0, min=None, max=20_000.0))
     >>> thm.secondary.rate(t)
-    array([1162.417, 1151.690, 1138.141, ..., 0.000])
+    array([1162417.254, 1158069.168, 1153248.148, ..., 0.000])
 
     >>> ple = dca.PLE(qi=1000.0, Di=0.1, Dinf=0.00001, n=0.5)
     >>> ple.rate(t)
-    array([904.828, 892.092, 877.768, ..., 0.000])
+    array([904.828, 899.482, 893.853, ..., 0.000])
 
     >>> ple.add_secondary(dca.PLYield(c=1200.0, m0=0.0, m=0.6, t0=180.0, min=None, max=20_000.0))
     >>> ple.secondary.rate(t)
-    array([1085.794, 1070.510, 1053.322, ..., 0.000])
+    array([1085794.044, 1079378.016, 1072623.077, ..., 0.000])
 
 
 Applying the above, we can easily evaluate each model against a data set.

@@ -116,6 +116,11 @@ class MultisegmentPLYield(BothAssociatedPhase):
         function is ``y = y_anchor_i * (t / t_anchor_i) ** m_i``. Anchoring each segment
         at the value the previous segment reaches makes the yield function continuous
         across every segment boundary.
+
+        The ``t_start`` column MUST be sorted ascending -- `_lookup_segment` binary
+        searches it. The first segment therefore starts at ``-inf`` rather than ``0``, so
+        the invariant holds for any anchor time, including a non-positive one reachable
+        when a caller disables parameter validation.
         """
         raise NotImplementedError
 
@@ -133,8 +138,10 @@ class MultisegmentPLYield(BothAssociatedPhase):
         element of ``t``.
 
         ``side='right'`` puts ``t == t_start_i`` in segment ``i``, i.e. on the
-        post-breakpoint slope. Negative ``t`` searches to index -1 and is clamped into
-        the first segment, where the ``t_ratio <= 0`` mask in `_yieldfn` handles it.
+        post-breakpoint slope. The first segment starts at ``-inf``, so every finite
+        ``t`` -- including a negative one, which the ``t_ratio <= 0`` mask in `_yieldfn`
+        then handles -- lands at index >= 1 before the ``- 1``. The clamp is defensive
+        only, covering ``t == -inf``.
         """
         params = self.segment_params
         segment_index = np.maximum(
@@ -191,8 +198,13 @@ class MultisegmentPLYield(BothAssociatedPhase):
         """
         ``D = -d/dt ln q``. For ``y = y_anchor * t ** m`` the yield contributes ``-m / t``,
         and the primary phase contributes its own ``D``.
+
+        ``t == 0`` divides by zero to give a signed infinity, which is the correct limit
+        for a power law. The warning is suppressed because the degenerate point is
+        expected, matching how `MultisegmentHyperbolic` guards its own overflow.
         """
-        return -self._mfn(t) / t + self.primary._Dfn(t)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return -self._mfn(t) / t + self.primary._Dfn(t)
 
     def _Dfn2(self, t: NDFloat) -> NDFloat:
         """
@@ -200,15 +212,27 @@ class MultisegmentPLYield(BothAssociatedPhase):
         contribution is deliberately excluded here: `_bfn` subtracts ``primary._Dfn2``
         itself, so including it here would double-count it.
         """
-        return -self._mfn(t) / (t * t)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return -self._mfn(t) / (t * t)
 
     def _betafn(self, t: NDFloat) -> NDFloat:
         """``beta = t * D``, so the yield term contributes a constant ``-m`` per segment."""
-        return self._Dfn(t) * t
+        # inf * 0 at t == 0 is an expected nan, not a caller error
+        with np.errstate(invalid='ignore'):
+            return self._Dfn(t) * t
 
     def _bfn(self, t: NDFloat) -> NDFloat:
+        """
+        ``b = d/dt (1 / D)``, expressed via the two D-derivatives.
+
+        `np.where` evaluates both branches, so the quotient is computed even where
+        ``D == 0`` and then discarded; the errstate suppresses that unavoidable
+        divide-by-zero rather than leaving it to surface as a spurious warning.
+        """
         D = self._Dfn(t)
-        return np.where(D == 0.0, 0.0, (self._Dfn2(t) - self.primary._Dfn2(t)) / (D * D))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return np.where(D == 0.0, 0.0,
+                            (self._Dfn2(t) - self.primary._Dfn2(t)) / (D * D))
 
 
 @dataclass(frozen=True)
@@ -265,9 +289,14 @@ class PLYield(MultisegmentPLYield):
         """
         Precache the anchor conditions of each power-law segment. Both segments anchor at
         ``(t0, c)``, which is what makes the two branches meet there.
+
+        The early-time segment starts at ``-inf``, not ``0``, so the ``t_start`` column
+        stays sorted for `_lookup_segment` even when ``t0 <= 0`` -- which a caller can
+        reach by disabling validation. With ``[0.0, t0]`` and a negative ``t0`` the column
+        was unsorted and the binary search returned an arbitrary segment.
         """
         return np.array([
-            [0.0,     self.t0, self.c, self.m0],
+            [-np.inf, self.t0, self.c, self.m0],
             [self.t0, self.t0, self.c, self.m]
         ], dtype=np.float64)
 
@@ -441,8 +470,10 @@ class GeneralizedPLYield(MultisegmentPLYield):
                 log_anchor = -np.inf
             anchor_values[i] = np.exp(log_anchor)
 
+        # the pre-anchor segment starts at -inf so the t_start column is sorted for
+        # `_lookup_segment` regardless of the first breakpoint time
         return np.concatenate([
-            np.array([[0.0, breakpoint_times[0], self.c, self.m0]], dtype=np.float64),
+            np.array([[-np.inf, breakpoint_times[0], self.c, self.m0]], dtype=np.float64),
             np.column_stack([breakpoint_times, breakpoint_times, anchor_values, slopes])
         ])
 
