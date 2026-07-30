@@ -1,5 +1,12 @@
 # Performance Improvements: _integrate_with and bourdet()
 
+> **Historical.** Implemented and since superseded. `_integrate_with` does **not** use the
+> `np.linspace` + `np.interp` scheme described below: it builds a log-spaced grid merged
+> with the requested `t`, sized by an `n_grid` keyword defaulting to 10,000, and extracts
+> values with `searchsorted` (see `petbox/dca/base.py`). The `_iter_t` helper this document
+> cites no longer exists, so its `base.py` line citations are stale. Test counts quoted
+> here predate later work.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eliminate Python-loop bottlenecks in `_integrate_with` and `bourdet()` by replacing them with vectorized NumPy operations.

@@ -65,6 +65,22 @@ Version History
       with ``m0`` outside ``[-10, 10]``, ``m`` outside ``[-1, 1]``, ``t0 <= 0``, or a
       negative ``min``/``max`` now raise ``ValueError`` instead of being accepted.
 
+* **Breaking:** every model rejects a non-finite parameter
+    * The bound checks could not: every comparison against ``NaN`` is False, so
+      ``param < lower_bound`` accepted it, and a parameter with no upper bound accepted
+      ``inf``. All seven models were affected --- ``MH``, ``THM``, ``PLE``, ``SE``,
+      ``Duong``, ``PLYield`` and ``GeneralizedPLYield`` all constructed with
+      ``NaN``/``inf`` parameters.
+    * The consequence was worse than a ``NaN`` forecast. ``_integrate_with`` zeroes ``NaN``
+      grid points so that one degenerate point cannot poison every later trapezoid, which
+      meant a ``NaN`` parameter produced ``NaN`` rates but a **definite zero cumulative** ---
+      a silent zero EUR rather than a visible failure. A ``NaN`` arriving from a fitter would
+      have been reported as a valid forecast of nothing.
+    * ``ValueError: <name> is not finite`` is now raised at construction. Finite extremes
+      such as ``c=1e300`` are still accepted, and ``validate_params`` still opts out per
+      parameter. Sequence-valued parameters (``GeneralizedPLYield.segments``) continue to
+      validate their own contents.
+
 * Bug Fix
     * The sixth ``PLYield`` ``ParamDesc`` was named ``'min'`` while describing ``max``,
       so ``PLYield.get_param_desc('max')`` raised ``KeyError`` and the descriptor list

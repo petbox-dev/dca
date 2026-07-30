@@ -612,9 +612,11 @@ This is independent of the segment protocol and gets its own phase.
 
 - Changing `MH`, `THM`, `PLE`, `SE`, or `Duong` behaviour. `THM` is refactored to call the
   extracted chain helper and must stay bit-for-bit identical.
-- The library-wide `ParamDesc` gap where bound checks never reject `NaN` (`param < bound` is
-  false for `NaN`). Still open from the previous audit; segment contents are checked
-  explicitly instead.
+- ~~The library-wide `ParamDesc` gap where bound checks never reject `NaN`.~~ **Closed.**
+  `DeclineCurve.__post_init__` now raises `<name> is not finite` for any non-finite
+  scalar parameter on all seven models. Pulled forward ahead of Phase 2 once the harm was
+  measured: `_integrate_with` zeroes `NaN`, so a `NaN` parameter gave `NaN` rates but a
+  definite zero cumulative — a silent zero EUR, not merely a `NaN` forecast.
 - Fitting or parameter estimation for either generalized model.
 - Making `GeneralizedHyperbolic` subsume `THM`. THM's b-interpolation across
   `telf`-derived breakpoints is a distinct parameterization that `THM` continues to serve.

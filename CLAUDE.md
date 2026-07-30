@@ -83,7 +83,7 @@ DeclineCurve (ABC)
 
 ## Dependencies
 
-Runtime: `numpy >= 1.21.1`, `scipy >= 1.7.1`
+Runtime: `numpy >= 2.1`, `scipy >= 1.13`. Requires Python >= 3.10.
 
 ## Version
 

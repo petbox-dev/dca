@@ -1304,6 +1304,34 @@ def test_shift_of_a_superseded_model_has_no_guard_to_mirror() -> None:
     assert np.all(shifted.rate(np.array([100.0])) > 0.0)
 
 
+def test_non_finite_params_are_rejected_on_every_model() -> None:
+    """The bound checks cannot reject NaN -- every comparison against it is False, so
+    `param < lower_bound` accepts it, and an unbounded-above parameter accepts inf. The
+    consequence was worse than a NaN forecast: `_integrate_with` zeroes NaN, so a NaN
+    parameter gave NaN rates but a definite ZERO cumulative, i.e. a silent zero EUR."""
+    nan = float('nan')
+    for bad in (nan, np.inf, -np.inf):
+        for ctor in (lambda v=bad: dca.MH(v, 0.7, 1.5, 0.08),
+                     lambda v=bad: dca.MH(1000.0, v, 1.5, 0.08),
+                     lambda v=bad: dca.THM(1000.0, 0.7, 2.0, 0.8, v),
+                     lambda v=bad: dca.PLE(1000.0, 0.5, 0.05, v),
+                     lambda v=bad: dca.SE(1000.0, v, 0.5),
+                     lambda v=bad: dca.Duong(1000.0, v, 1.2),
+                     lambda v=bad: dca.PLYield(1.2, 0.0, 0.6, v),
+                     lambda v=bad: dca.PLYield(v, 0.0, 0.6, 180.0),
+                     lambda v=bad: dca.GeneralizedPLYield(
+                         v, 0.0, (dca.PLYieldSegment(180.0, m=0.6),))):
+            with pytest.raises(ValueError):
+                ctor()
+
+    # a finite extreme is still accepted -- this rejects non-finite, not merely large
+    assert dca.PLYield(1e300, 0.0, 0.6, 180.0).c == 1e300
+
+    # and `validate_params=False` still opts out, as for every other check
+    y = dca.PLYield(nan, 0.0, 0.6, 180.0, validate_params=[False])
+    assert np.isnan(y.c)
+
+
 def test_yield_models_are_hashable() -> None:
     """A list default for validate_params makes a frozen dataclass unhashable, because the
     generated __hash__ hashes the field tuple. Both models must stay usable as dict keys

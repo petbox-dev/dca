@@ -13,7 +13,7 @@ Created on August 5, 2019
 """
 
 import sys
-from math import exp, expm1, log, log10, log1p, ceil as ceiling, floor
+from math import exp, expm1, isfinite, log, log10, log1p, ceil as ceiling, floor
 from functools import partial
 from itertools import chain, repeat
 import warnings
@@ -348,6 +348,18 @@ class DeclineCurve(ABC):
             if not do_validate:
                 continue
             param = getattr(self, desc.name)
+
+            # Reject non-finite scalars before the bound checks, which cannot do it: every
+            # comparison against NaN is False, so `param < lower_bound` accepts NaN, and an
+            # unbounded-above parameter accepts inf. The consequence is worse than a NaN
+            # forecast -- `_integrate_with` does `y[np.isnan(y)] = 0.0`, so a NaN parameter
+            # produces NaN rates but a DEFINITE ZERO cumulative, i.e. a silent zero EUR
+            # rather than a visible failure. Sequence-valued parameters (such as
+            # `GeneralizedPLYield.segments`) are skipped here and validate their own
+            # contents; `None` means "unset" for the optional bounds and is also skipped.
+            if isinstance(param, (int, float, np.floating)) and not isfinite(param):
+                raise ValueError(f'{desc.name} is not finite')
+
             if param is not None and desc.lower_bound is not None:
                 if desc.exclude_lower_bound:
                     if param <= desc.lower_bound:
@@ -481,6 +493,13 @@ class DeclineCurve(ABC):
         # evaluate fn on the full grid in one vectorized call
         with np.errstate(over='ignore', under='ignore', invalid='ignore'):
             y = fn(grid)
+
+        # A single NaN would otherwise poison every later trapezoid, so degenerate grid
+        # points (e.g. 0 * inf at t = 0) are zeroed. This is safe only because
+        # `__post_init__` rejects non-finite parameters: without that, a NaN parameter would
+        # give NaN rates but a definite zero cumulative here -- a silent zero EUR. The
+        # associated-phase `_Nfn` re-applies NaN for t < 0 for the same reason, since the
+        # requested `t` is merged into the grid above.
         y[np.isnan(y)] = 0.0
 
         # cumulative integral on the grid
