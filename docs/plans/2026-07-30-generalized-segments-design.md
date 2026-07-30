@@ -1,7 +1,8 @@
 # Generalized Segments — Design
 
 **Date:** 2026-07-30
-**Status:** Approved. Phase 1 plan written (`2026-07-30-plyield-segment-plan.md`); Phases 2-4 not yet planned
+**Status:** Approved. **Phase 1 is implemented** on `feat/generalized-plyield` (see
+`2026-07-30-plyield-segment-plan.md`); Phases 2-4 are designed but not yet planned
 **Target version:** 2.2.0 (unreleased — see "Why this is not a breaking change")
 
 ## Goal
@@ -22,6 +23,7 @@ taking an arbitrary user-specified segment sequence, mirroring `GeneralizedPLYie
 | `MultisegmentHyperbolic.time_at_rate` | method | inverts the rate function; subsumes the pole as `time_at_rate(inf)` |
 | sign-agnostic guards | modified | magnitude tests in the shared Arps math, enabling a future `IncliningHyperbolic` |
 | `PLYield.shift` / `GeneralizedPLYield.shift` | method | re-anchor a yield fit made against the wrong first-production date |
+| `nan` for yield at `t < 0` | modified | a power law is not real-valued before its origin; `shift` is the supported alternative |
 
 `HyperbolicSegment` and `GeneralizedHyperbolic` live in `petbox/dca/primary.py`;
 `PLYieldSegment` stays with its model in `petbox/dca/associated.py`.
@@ -375,13 +377,15 @@ One spec, four implementation phases. `PLYield` goes first: it is smaller, and i
 the protocol before the harder model depends on it.
 
 1. **`PLYieldSegment` + retrofit** — segment type, builder, `c` override, first-segment
-   conflict, validation, tests, docs.
+   conflict, validation, `shift(dt)`, `nan` for `t < 0`, tests, docs. **Implemented.**
 2. **`HyperbolicSegment` + `GeneralizedHyperbolic`** — `_fill_segment_chain` extraction with
    THM bit-for-bit verification, the new model, terminal derivation, tests, docs.
 3. **`time_at_rate(q)` on `MultisegmentHyperbolic`** — the segment-bracketing rate inversion
    above, plus the sign-agnostic guard conversion it depends on for inclining models.
    Independent of the segment protocol, so it can land before or after Phase 2, but it needs
-   the guard fix and the `-inf` row-0 change to be useful at negative time.
+   the guard fix and the `_vectorize` mask change to be useful at negative time. (Not a
+   `-inf` row-0 change: that is the yield-side fix, which this document establishes above
+   does **not** transplant to `MultisegmentHyperbolic`.)
 
 4. **`docs/examples.rst`** — one worked section covering both generalized models with a
    figure, closing the gap deferred from the `GeneralizedPLYield` work. The code in
@@ -532,7 +536,7 @@ def shift(self, dt: float) -> 'GeneralizedPLYield':
     """
 ```
 
-Verified on `GeneralizedPLYield(c=1.2, m0=0.6, segments=((180, 0.6), (1095, -0.2)))` with
+Verified on `GeneralizedPLYield(c=1.2, m0=0.6, segments=(PLYieldSegment(180.0, m=0.6), PLYieldSegment(1095.0, m=-0.2)))` with
 `dt = 30.4`:
 
 | true `t` | 0 | 1 | 15 | 30.4 |
@@ -544,12 +548,20 @@ The shifted model is real-valued and monotonic where the original was not define
 anchor observation is preserved: the original gives `gor(180) = 1.2` and the shifted gives
 `gor(210.4) = 1.2`.
 
-**It is not lossless, and that is the point.** Late-time yield falls 7-9% — measured ratios
-`0.959`, `0.928`, `0.929` at 365, 1000 and 3650 days, converging on
-`(t_1/(t_1 + dt)) ** m0 = 0.911`. The power law's origin has moved to true first production,
-which is what "time since first production" means, so the shifted model is the more correct
-one; the original parameters were biased by the wrong axis. A rigorous correction is a re-fit,
-and the docstring must say so rather than implying the shift recovers the true parameters.
+**It is not lossless, and that is the point.** Comparing the same *physical instant* —
+`shifted(t)` against `original(t - dt)` — late-time yield falls 7-9%: measured ratios
+`0.95939`, `0.92764`, `0.92923` at 365, 1000 and 3650 days, approaching ~`0.929`.
+
+Note which comparison that is. Against the same *nominal* `t` — `shifted(t)` over
+`original(t)`, which is what a reader plotting both curves on one axis sees — the ratio is
+exactly `(t_1/(t_1 + dt)) ** m0 = 0.911` throughout the first segment, then moves away in
+later ones. An earlier revision quoted the first set of ratios and the second set's asymptote
+in one sentence, which is why they did not agree.
+
+The power law's origin has moved to true first production, which is what "time since first
+production" means, so the shifted model is the more correct one; the original parameters were
+biased by the wrong axis. A rigorous correction is a re-fit, and the docstring must say so
+rather than implying the shift recovers the true parameters.
 
 **Yield only.** The yield anchor is an interior point `(t_1, c)`, so shifting is pure
 reparameterization. A hyperbolic model pins `qi` at `t = 0`, so shifting it later requires

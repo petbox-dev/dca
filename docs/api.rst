@@ -284,6 +284,8 @@ Implementations of associated (secondary and water) phase GOR/CGR/WOR/WGR models
 
 .. autoclass:: PLYieldSegment
 
+    .. automethod:: from_tuple
+
 
 Utility Functions
 -----------------

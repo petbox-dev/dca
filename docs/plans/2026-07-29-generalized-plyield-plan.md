@@ -12,8 +12,13 @@
 
 > **Superseded before release:** `GeneralizedPLYield.segments` takes `PLYieldSegment`
 > instances, not `(t, m)` tuples, and a segment may override `c` to step the yield. See
-> `docs/plans/2026-07-30-generalized-segments-design.md`. Everything else in this
-> document still describes the shipped code.
+> `docs/plans/2026-07-30-generalized-segments-design.md`.
+>
+> Two further behaviours changed after this document was written, so its `t < 0`
+> discussion is also stale: the yield models now return `nan` for `t < 0` rather than
+> the `MIN_EPSILON`-floored constant described here, and the first `segment_params` row
+> starts at `-inf` rather than `0.0`. The conclusions still hold; the premises do not.
+> Everything outside those topics still describes the shipped code.
 
 ## Global Constraints
 

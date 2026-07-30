@@ -10,6 +10,25 @@
 
 **Design spec:** `docs/plans/2026-07-30-generalized-segments-design.md` — Phase 1 of three.
 
+> **Status: implemented** on `feat/generalized-plyield`. The unchecked `- [ ]` boxes below are
+> the historical build script, not outstanding work. Delivered differently from the plan in
+> four places, all after post-implementation review:
+>
+> 1. The tuple builder is `PLYieldSegment.from_tuple` (a public classmethod on the segment
+>    type), not `GeneralizedPLYield._segment_from_tuple`. `/code-refactor` moved it so the
+>    target class owns its own construction, and it is the shape `HyperbolicSegment` will
+>    follow.
+> 2. `shift` is declared abstract on `MultisegmentPLYield`, so re-anchoring is a contract of
+>    every multisegment yield model rather than two classes sharing a method name. It also
+>    calls `AssociatedPhase._adopt_attachment`, without which `dc.replace` silently rebinds
+>    the copy to a `NullPrimaryPhase` and `rate`/`cum` return `0.0`.
+> 3. The `nan` for `t < 0` is applied in `_mfn` and `_Nfn` as well as `_yieldfn`. Without
+>    those two, `cum` returned `0.0` and `D`/`beta`/`b` returned definite values on a domain
+>    where the model is undefined.
+> 4. `validate_params` defaults are tuples, not lists — a list default makes a frozen
+>    dataclass unhashable — and the `segments` `naive_gen` emits `(n, 2)` `[t, m]` rather than
+>    `(n, 3)`, because a generated `c` on row 0 is rejected outright.
+
 ## Global Constraints
 
 - Max line length 100 (`ruff`). Max complexity 20.
@@ -29,7 +48,7 @@
 
 | File | Change |
 |---|---|
-| `petbox/dca/associated.py` | Add `PLYieldSegment`; rewrite `GeneralizedPLYield._segment_arrays`, `_validate`, `_segments`, `get_param_descs`; add `from_segments` + `_segment_from_tuple` |
+| `petbox/dca/associated.py` | Add `PLYieldSegment`; rewrite `GeneralizedPLYield._segment_arrays`, `_validate`, `_segments`, `get_param_descs`; add `from_segments` + `from_tuple` |
 | `petbox/dca/__init__.py` | Export `PLYieldSegment` |
 | `test/test_dca.py` | Migrate every `GeneralizedPLYield` test to the new API; add builder, override, and inheritance tests |
 | `test/test_perf.py` | Migrate the one `GeneralizedPLYield` construction |
@@ -53,7 +72,7 @@ and the negative-`t` `nan`, and Task 4 documents all of it.
   exported as `dca.PLYieldSegment`. Optional fields are **keyword-only**.
 - Produces `GeneralizedPLYield.from_segments(c, m0, segments, min=None, max=None)` accepting
   `(t, m)` and `(t, c, m)` tuples, and the private
-  `GeneralizedPLYield._segment_from_tuple(spec) -> PLYieldSegment`.
+  `PLYieldSegment.from_tuple(spec) -> PLYieldSegment`.
 - Changes `GeneralizedPLYield._segment_arrays()` from a 2-tuple to a 3-tuple return:
   `(breakpoint_times, slopes, overrides)`, where `overrides` holds `nan` for absent.
 - Phase 2 (`GeneralizedHyperbolic`) mirrors this protocol but shares no code with it.
@@ -246,7 +265,7 @@ Then replace `_segment_arrays`, `_validate` and the head of `_segments`:
 
 ```python
     @staticmethod
-    def _segment_from_tuple(spec: Sequence[Optional[float]]) -> PLYieldSegment:
+    def from_tuple(spec: Sequence[Optional[float]]) -> PLYieldSegment:
         """
         Normalize one loose tuple. Arity selects the meaning: ``(t, m)`` inherits the
         yield value, ``(t, c, m)`` sets it. An explicit ``None`` inherits exactly as a
@@ -271,7 +290,7 @@ Then replace `_segment_arrays`, `_validate` and the head of `_segments`:
         """
         Construct from plain tuples instead of :class:`PLYieldSegment` instances.
 
-        Each entry is ``(t, m)`` or ``(t, c, m)``; see :meth:`_segment_from_tuple`. The
+        Each entry is ``(t, m)`` or ``(t, c, m)``; see :meth:`from_tuple`. The
         constructor itself accepts only :class:`PLYieldSegment`, which keeps the field
         type free of unions -- this is the loose-tuple entry point.
 
@@ -296,7 +315,7 @@ Then replace `_segment_arrays`, `_validate` and the head of `_segments`:
         -------
             yield model: :class:`GeneralizedPLYield`
         """
-        return cls(c, m0, tuple(cls._segment_from_tuple(s) for s in segments), min, max)
+        return cls(c, m0, tuple(PLYieldSegment.from_tuple(spec) for spec in segments), min, max)
 
     def _segment_arrays(self) -> Tuple[NDFloat, NDFloat, NDFloat]:
         """
@@ -990,6 +1009,6 @@ says why transcribing them unchecked is unsafe.
 definition (Step 4) and is unpacked as three values at both call sites, `_validate`
 (discarding the third as `_`) and `_segments`. `PLYieldSegment` is constructed with
 keyword arguments everywhere, including in the migrated tests. `from_segments`' `segments`
-parameter is `Iterable[Sequence[Optional[float]]]`, matching what `_segment_from_tuple`
+parameter is `Iterable[Sequence[Optional[float]]]`, matching what `from_tuple`
 consumes. `SLOPE_BOUND` is read from `MultisegmentPLYield` in both the validation and the
 `naive_gen`, never restated as a literal.

@@ -160,9 +160,11 @@ rather than requiring evaluation at negative time, where a power law is not real
 
     >>> corrected = mh.secondary.shift(30.4)   # true first prod was 30.4 days earlier
 
-This moves the power law's origin, so it is a re-anchoring and not a lossless transform —
-late-time yield shifts by roughly ``(t0 / (t0 + dt)) ** m``. A rigorous correction is a
-re-fit.
+This moves the power law's origin, so it is a re-anchoring and not a lossless transform. For
+``PLYield`` the change in late-time yield is exactly ``(t0 / (t0 + dt)) ** m``. For
+``GeneralizedPLYield`` that holds only within the first segment: later segments re-anchor, and
+a segment that overrides ``c`` re-pins the value outright, so the shift can move late-time
+yield either way. A rigorous correction is a re-fit.
 
 
 Once instantiated, the same functions and process for attaching a secondary phase work for any model.

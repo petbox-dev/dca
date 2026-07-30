@@ -573,7 +573,11 @@ def test_terminal_exceeds() -> None:
     m=st.floats(-1.0, 1.0),
     t0=st.floats(1e-10, 365.25),
 )
-@settings(deadline=None)  # type: ignore
+# The two assume() calls below reject most draws, so hypothesis trips
+# filter_too_much on roughly 2 of 3 runs; suppress it as test_THM_terminal_exp
+# already does. deadline=None for the same reason as test_THM.
+@settings(deadline=None,
+          suppress_health_check=[hypothesis.HealthCheck.filter_too_much])  # type: ignore
 def test_yield(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm: float,
                c: float, m0: float, m: float, t0: float) -> None:
     assume(tterm * dca.DAYS_PER_YEAR > telf)

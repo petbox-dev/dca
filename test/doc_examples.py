@@ -284,14 +284,14 @@ ax4 = fig.add_subplot(224)
 
 # Rate vs Time
 q = thm.rate(t)
-g = thm.secondary.rate(t) / 1000.0
+g = thm.secondary.rate(t)
 y = thm.secondary.gor(t)
 
 ax1.plot(t, q, c='C2', label='Oil')
 ax1.plot(t, g, c='C3', label='Gas')
 ax1.plot(t, y, c='C1', label='GOR')
 ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-ax1.set(ylabel='Rate or GOR, BPD, MCFD, or scf/Bbl', xlabel='Time, Days')
+ax1.set(ylabel='Rate or GOR, BPD, MCFD, or Mscf/Bbl', xlabel='Time, Days')
 
 
 # Cumulative Volume vs Time
@@ -305,7 +305,7 @@ ax2.plot(t, _g_N, c='k', ls=':', label='Gas (numeric)')
 ax2.plot(t, y, c='C1', label='GOR')
 ax2.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e2, 1e7))
 ax2.set(ylabel='Rate, Dimensionless', xlabel='Time, Days')
-ax2.set(ylabel='Cumulative Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
+ax2.set(ylabel='Cumulative Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
 
 
 # Time vs Monthly Volume
@@ -319,7 +319,7 @@ ax3.plot(t, g_MN, c='C3', label='Gas')
 ax3.plot(t, _g_MN, c='k', ls=':', label='Gas (numeric)')
 ax3.plot(t, y, c='C1', label='GOR')
 ax3.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-ax3.set(ylabel='Monthly Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
+ax3.set(ylabel='Monthly Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
 
 
 # Time vs Interval Volume
@@ -332,7 +332,7 @@ ax4.plot(t, g_IN, c='C3', label='Gas')
 ax4.plot(t, _g_IN, c='k', ls=':', label='Gas (numeric)')
 ax4.plot(t, y, c='C1', label='GOR')
 ax4.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-ax4.set(ylabel='$\Delta$Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
+ax4.set(ylabel='$\Delta$Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
 
 for ax in [ax1, ax2, ax3, ax4]:
     ax.set_aspect(1)
@@ -355,7 +355,7 @@ ax4 = fig.add_subplot(224)
 # D-parameter vs Time
 q_D = thm.D(t)
 g_D = thm.secondary.D(t)
-_g_D = -np.gradient(np.log(thm.secondary.rate(t) / 1000.0), t)
+_g_D = -np.gradient(np.log(thm.secondary.rate(t)), t)
 
 ax1.plot(t, q_D, c='C2', label='Oil')
 ax1.plot(t, g_D, c='C3', label='Gas')

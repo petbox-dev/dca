@@ -45,7 +45,8 @@ Version History
     * A power law is not real-valued there: ``(-30.4/180) ** 0.6`` is
       ``-0.106 + 0.327j``. The previous implementation floored the negative time ratio at
       ``MIN_EPSILON``, which produced a constant identical for every negative ``t`` that
-      flipped between ``3.07e-185`` and ``4.69e+184`` with the sign of ``m`` --- an artifact
+      flipped between ``3.07e-185`` and ``4.69e+184`` with the sign of ``m`` (for ``c=1.2``;
+      the constant scales linearly with ``c``) --- an artifact
       of the floor carrying no information about ``t``. ``t == 0`` keeps its ``0.0``
       convention and ``t > 0`` is unchanged. Use ``shift()`` to model the period before the
       anchor.
@@ -54,7 +55,7 @@ Version History
     * All power-law yield math moved to a new ``MultisegmentPLYield`` base class, which
       caches per-segment anchor conditions and gathers them with ``searchsorted``.
       ``PLYield`` is now a subclass and supplies only its two segments; its results are
-      bit-for-bit unchanged.
+      bit-for-bit unchanged **for** ``t >= 0`` (see the ``nan`` change above for ``t < 0``).
 
 * **Breaking:** ``PLYield`` now validates all six of its parameters
     * Previously only ``c`` was bound-checked. ``DeclineCurve.validate_params`` defaults
@@ -95,7 +96,7 @@ Version History
       (``test/doc_examples.py``, ``docs/bourdet_validation.py``,
       ``docs/integration_validation.py``).
     * Fixed two malformed grid tables in ``docs/numerical_integration.rst`` whose rows were
-      2 and 1 characters narrower than their borders. One raised a docutils ``ERROR`` and
+      1 and 2 characters narrower than their borders, in document order. One raised a docutils ``ERROR`` and
       failed to render as a table; the Sphinx build is now warning-free.
 
 
