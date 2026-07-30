@@ -215,10 +215,18 @@ same defect found in `GeneralizedPLYield` during its correctness audit.
 
 A segment at `t = 0` is rejected: row 0 already starts there.
 
-**`b` is not required to be non-increasing.** `THM` enforces `bi >= bf >= bterm` because its
-segments model a specific transient-to-boundary transition. `GeneralizedHyperbolic` makes no
-such claim — a caller specifying segments explicitly may be modelling a restimulation — so
-monotonicity is documented as the caller's responsibility rather than enforced.
+### Validation philosophy
+
+**Reject only what is not physically meaningful; permit everything else.** A negative rate is
+rejected because no such forecast exists. A `b` that increases between segments is permitted,
+because a restimulation genuinely produces one. This is the rule to apply to any future
+question about what this model should accept — the point of `GeneralizedHyperbolic` is to let
+a caller express any physically meaningful forecast, so a constraint needs a physical
+justification, not merely a conventional one.
+
+Concretely, `b` is **not** required to be non-increasing. `THM` enforces
+`bi >= bf >= bterm` because its segments model one specific transient-to-boundary transition;
+`GeneralizedHyperbolic` makes no such claim, so monotonicity is the caller's responsibility.
 
 ### Parameter descriptors
 
@@ -379,6 +387,68 @@ the protocol before the harder model depends on it.
    code is checked by CI, which is exactly how the `README.rst` outputs drifted ~1000x from
    the library before this branch corrected them. Any example added here has to be run by
    hand and its printed values pasted from real output.
+
+## Forward compatibility: inclining models and negative time
+
+Two future capabilities were raised while this spec was being written. Neither is built here,
+but both constrain how validation should be written, and one exposes a latent defect in
+shipped code. All findings below were verified by execution, not inspection.
+
+### `IncliningHyperbolic` — positive `q`, negative `D`, negative `b`
+
+The math already supports it: `q = qi·exp(-log1p(D·b·dt)/b)` with `D < 0` and `b < 0` gives
+`D·b > 0`, so `log1p` stays in domain, and dividing by `b < 0` flips the sign to give a rising
+rate. `_Ncheck` likewise integrates correctly.
+
+**The guards do not.** `MIN_EPSILON` is `sys.float_info.min` — `2.2e-308`, a tiny *positive*
+number — so every `if D < MIN_EPSILON` and `if b < MIN_EPSILON` reads as "zero **or
+negative**" when the intent is "negligible in magnitude". Measured, with
+`D = -0.002, b = -0.5` over `t = [0, 100, 365, 1000]`:
+
+| Call | Returns | Correct |
+|---|---|---|
+| `_qcheck` | `[100, 100, 100, 100]` | `[100, 121, 186.3, 400]` |
+| `_Dcheck` | `[-0.002] * 4` | `[-0.002, -0.00182, -0.00147, -0.001]` |
+| `nominal_from_secant(-0.2, -0.5)` | `0.0` | `-0.19089` |
+
+An inclining forecast therefore comes back as a **flat line with no error**. Widening the
+`Di`/`bi` descriptor bounds alone would produce silently wrong numbers rather than a failure.
+
+The fix is to make each guard a magnitude test — `abs(D) < MIN_EPSILON`,
+`abs(b) <= B_EPSILON`, `abs(1.0 - b) < MIN_EPSILON`. This was verified to give correct
+inclining output **and** identical declining output. It is provably safe: `abs(x) == x` for
+every non-negative `x`, and `Di`/`bi`/`bterm` descriptors already exclude negatives, so no
+currently-constructible model can observe the change. It is only reachable today by passing
+`validate_params=[False, ...]`.
+
+Because it is bit-for-bit safe now and would otherwise require editing validated shared math
+later, **Phase 2 should convert these guards while it is already inside
+`MultisegmentHyperbolic`**, with the same worktree-diff verification applied to THM and MH.
+Descriptor bounds stay unchanged — an `IncliningHyperbolic` would widen them for itself, and
+that model is not in scope.
+
+### Negative time — backing up a forecast start
+
+Evaluating before `t = 0` is physically meaningful: it reconstructs the rate the well would
+have had earlier. Today it silently returns zero. `MH(1000, 0.8, 1.5, 0.0).rate([-500, -100,
+-10])` gives `[0, 0, 0]`, because `_vectorize` masks on `t >= t_start` and row 0's `t_start` is
+`0.0`, so no segment ever claims a negative `t` and the pre-zeroed output survives.
+
+This is the same defect already fixed on the yield side, and the same fix applies: **row 0's
+`t_start` becomes `-inf`**, making the segment column sorted for any anchor time and giving
+every finite `t` a home. `GeneralizedHyperbolic` should adopt it from the start.
+
+**There is a hard limit, and it is close in.** `q` has a pole where `1 + b·D·dt = 0`, i.e.
+`t = -1/(b·D_nom)`. For `MH(qi=1000, Di=0.8, bi=1.5)` that is **t = -35.88 days**: `q` reaches
+100,000 at `t = -35.84` and raises `ZeroDivisionError` at the pole. Past it the denominator
+turns negative and the result is meaningless. So a model permitting negative segment times
+must validate `1 + b·D·t > 0` for the earliest segment rather than assuming any negative time
+is usable — the honest bound is `t > -1/(b·D_nom)` whenever `b·D != 0`, and unbounded when
+either is zero (exponential and constant-rate cases have no pole).
+
+Changing `MH`/`THM` to extrapolate rather than return zero is a **user-visible behaviour
+change** for valid models, unlike the guard fix, so it is deliberately not bundled with it and
+needs its own decision.
 
 ## Out of scope
 
