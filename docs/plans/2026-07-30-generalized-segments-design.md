@@ -21,6 +21,7 @@ taking an arbitrary user-specified segment sequence, mirroring `GeneralizedPLYie
 | `GeneralizedPLYield` | modified | `segments` becomes `Sequence[PLYieldSegment]`, gains per-segment `c` |
 | `MultisegmentHyperbolic.time_at_rate` | method | inverts the rate function; subsumes the pole as `time_at_rate(inf)` |
 | sign-agnostic guards | modified | magnitude tests in the shared Arps math, enabling a future `IncliningHyperbolic` |
+| `PLYield.shift` / `GeneralizedPLYield.shift` | method | re-anchor a yield fit made against the wrong first-production date |
 
 `HyperbolicSegment` and `GeneralizedHyperbolic` live in `petbox/dca/primary.py`;
 `PLYieldSegment` stays with its model in `petbox/dca/associated.py`.
