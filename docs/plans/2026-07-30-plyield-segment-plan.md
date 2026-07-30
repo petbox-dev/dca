@@ -40,7 +40,8 @@
 ### Task 1: `PLYieldSegment`, the builder, and the `c` override
 
 The type change and the `c` override are one atomic task: the dataclass exists in order to
-carry `c`, so a reviewer cannot accept one and reject the other.
+carry `c`, so a reviewer cannot accept one and reject the other. Tasks 2 and 3 then add `shift(dt)`
+and the negative-`t` `nan`, and Task 4 documents all of it.
 
 **Files:**
 - Modify: `petbox/dca/associated.py:338-500` (the whole `GeneralizedPLYield` block)
@@ -566,14 +567,268 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 2: Documentation
+### Task 2: `shift(dt)` on both yield models
+
+Re-anchors a fit made against the wrong first-production date. Expressible in the existing
+parameterization, so no new field: `PLYield` shifts `t0`, `GeneralizedPLYield` shifts every
+segment time. Design spec section "`shift(dt)`".
+
+**Files:** Modify `petbox/dca/associated.py`; test `test/test_dca.py`.
+
+**Interfaces:** produces `PLYield.shift(dt) -> PLYield` and
+`GeneralizedPLYield.shift(dt) -> GeneralizedPLYield`. Both return a new instance; neither
+mutates. Consumed by Task 3, whose docstring points callers at them.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+def test_plyield_shift_reanchors() -> None:
+    """A fit anchored 30.4 days late is corrected by shifting the pivot later, which moves
+    the power-law origin to true first production."""
+    y = dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0)
+    s = y.shift(30.4)
+    assert isinstance(s, dca.PLYield)
+    assert s.t0 == 180.0 + 30.4
+    assert (s.c, s.m0, s.m) == (y.c, y.m0, y.m)
+    assert y.t0 == 180.0                      # original untouched
+
+    # the anchor value is preserved, at the shifted time
+    mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08); mh_a.add_secondary(y)
+    mh_b = dca.MH(1000.0, 0.7, 1.5, 0.08); mh_b.add_secondary(s)
+    assert mh_a.secondary.gor(np.array([180.0]))[0] == 1.2
+    assert mh_b.secondary.gor(np.array([210.4]))[0] == 1.2
+
+    # and the shifted model is defined where the original needed negative t
+    assert np.all(np.isfinite(mh_b.secondary.gor(np.array([1.0, 15.0, 30.4]))))
+
+
+def test_generalized_shift_reanchors() -> None:
+    """Every breakpoint moves; c, m0 and the slopes are unchanged."""
+    y = dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),
+                                          dca.PLYieldSegment(1095.0, m=-0.2)))
+    s = y.shift(30.4)
+    assert [seg.t for seg in s.segments] == [210.4, 1125.4]
+    assert [seg.m for seg in s.segments] == [0.6, -0.2]
+    assert (s.c, s.m0) == (y.c, y.m0)
+    assert [seg.t for seg in y.segments] == [180.0, 1095.0]   # original untouched
+
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08); mh.add_secondary(s)
+    # real-valued and rising over the month the original fit could not reach
+    got = mh.secondary.gor(np.array([1.0, 15.0, 30.4]))
+    assert np.all(np.isfinite(got)) and np.all(np.diff(got) > 0.0)
+
+
+def test_shift_preserves_c_overrides_and_validates() -> None:
+    """A shifted override keeps its value; a shift that pushes a breakpoint to <= 0 is
+    rejected by the usual validation, because dc.replace re-runs __post_init__."""
+    y = dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
+                                          dca.PLYieldSegment(1095.0, c=2.5, m=-0.2)))
+    s = y.shift(-90.0)
+    assert s.segments[1].c == 2.5 and s.segments[0].t == 90.0
+
+    with pytest.raises(ValueError, match='finite and > 0'):
+        y.shift(-180.0)          # first breakpoint would land exactly on 0
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+```
+pytest test/test_dca.py -k shift -v --no-cov
+```
+
+Expected: `AttributeError: 'PLYield' object has no attribute 'shift'`.
+
+- [ ] **Step 3: Implement**
+
+On `PLYield`:
+
+```python
+    def shift(self, dt: float) -> 'PLYield':
+        """
+        Return a copy with the pivot time moved later by ``dt`` days.
+
+        Use when a fit was anchored to the wrong first-production date: shifting by the
+        correction moves the power law's origin to true first production, so the model is
+        defined over the period the original could only reach at negative ``t``, where a
+        power law is not real-valued.
+
+        This re-anchors rather than reproducing the original curve. Late-time yield changes
+        by roughly ``(t0 / (t0 + dt)) ** m``, because the origin has moved. The original
+        parameters were biased by the wrong axis, so the shifted model is the more correct
+        one, but a rigorous correction is a re-fit.
+
+        Parameters
+        ----------
+            dt: float
+                Days to move the pivot later. Negative moves it earlier.
+
+        Returns
+        -------
+            yield model: :class:`PLYield`
+        """
+        return dc.replace(self, t0=self.t0 + dt)
+```
+
+On `GeneralizedPLYield`:
+
+```python
+    def shift(self, dt: float) -> 'GeneralizedPLYield':
+        """
+        Return a copy with every breakpoint moved later by ``dt`` days. Value overrides,
+        slopes, ``c`` and ``m0`` are unchanged. See :meth:`PLYield.shift` for when to use
+        this, and for the caveat that it re-anchors rather than reproducing the original.
+
+        Parameters
+        ----------
+            dt: float
+                Days to move every breakpoint later. Negative moves them earlier.
+
+        Returns
+        -------
+            yield model: :class:`GeneralizedPLYield`
+        """
+        return dc.replace(self, segments=tuple(
+            dc.replace(segment, t=segment.t + dt) for segment in self.segments))
+```
+
+`dc` is already imported as `dataclasses` at the top of the module. `dc.replace` re-runs
+`__post_init__`, so a shift that drives a breakpoint to `<= 0` is rejected by the existing
+validation with no separate check.
+
+- [ ] **Step 4: Run the tests, then the full CI sequence**
+
+```
+pytest test/test_dca.py -k shift -v --no-cov
+ruff check petbox/dca test && mypy petbox/dca && pytest
+```
+
+- [ ] **Step 5: Commit**
+
+Commit message subject: `feat: shift(dt) to re-anchor a yield fit made against the wrong start date`.
+Body must state that it re-anchors rather than reproducing the original curve, that late-time
+yield changes by about `(t0/(t0+dt))**m`, and that a rigorous correction is a re-fit.
+
+---
+
+### Task 3: `nan` for yield at `t < 0`
+
+`_yieldfn` currently floors a negative `t / t_anchor` at `MIN_EPSILON`, which produces a
+**constant** — identical for every negative `t` — that flips 369 orders of magnitude with the
+sign of `m`: measured `3.07e-185` for `m = +0.6` and `4.69e+184` for `m = -0.6`. It carries no
+information about `t` and is a pure artifact of the floor. The true value is complex,
+`(-30.4/180) ** 0.6 = -0.106 + 0.327j`, so there is no real answer to return.
+
+This also pre-empts a regression. Phase 2's `_vectorize` change makes the primary extrapolate
+to negative `t`, at which point `rate = yield x primary_rate` becomes
+`4.69e+184 x 1243 = inf` for `m < 0`.
+
+**Files:** Modify `petbox/dca/associated.py` (`MultisegmentPLYield._yieldfn`); test
+`test/test_dca.py`.
+
+**Interfaces:** consumes `shift` from Task 2, which the docstring directs callers to.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+def test_yield_is_nan_before_zero() -> None:
+    """A power law is not real-valued at t < 0 -- (-30.4/180)**0.6 is complex. The old
+    MIN_EPSILON floor returned a constant that flipped from 3.07e-185 to 4.69e+184 with the
+    sign of m, carrying no information about t. nan is the honest answer, and shift() is the
+    supported way to model the period before the anchor."""
+    t = np.array([-30.4, -10.0, -1e-9])
+    for m in (0.6, -0.6):
+        mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+        mh.add_secondary(dca.PLYield(c=1.2, m0=m, m=m, t0=180.0))
+        assert np.all(np.isnan(mh.secondary.gor(t))), m
+        assert np.all(np.isnan(mh.secondary.rate(t))), m
+
+    # t == 0 keeps its existing 0.0 convention, and t > 0 is untouched
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0))
+    assert mh.secondary.gor(np.array([0.0]))[0] == 0.0
+    assert np.isclose(mh.secondary.gor(np.array([180.0]))[0], 1.2)
+
+
+def test_yield_nan_applies_to_generalized() -> None:
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),)))
+    assert np.all(np.isnan(mh.secondary.gor(np.array([-30.4, -1.0]))))
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Expected: the `np.isnan` assertions fail, since the current values are finite
+(`3.07e-185` / `4.69e+184`).
+
+- [ ] **Step 3: Implement**
+
+In `MultisegmentPLYield._yieldfn`, keep the `t_ratio <= 0` putmask — it keeps `log` in domain —
+but capture the negative-`t` mask first and overwrite the result at the end:
+
+```python
+        t_anchor, y_anchor, m = self._lookup_segment(t)
+
+        # A power law is not real-valued for t < 0: (t/t_anchor)**m is complex for
+        # non-integer m. The putmask below keeps `log` in domain, but the value it then
+        # produces is a constant artifact -- identical for every negative t and flipping by
+        # hundreds of orders of magnitude with the sign of m -- so those elements are
+        # overwritten with nan. `shift()` re-anchors a model whose start date was wrong,
+        # which is the supported way to cover the period before the anchor.
+        before_zero = t < 0.0
+
+        t_ratio = t / t_anchor
+        np.putmask(t_ratio, mask=t_ratio <= 0, values=MIN_EPSILON)  # type: ignore
+        ...
+```
+
+and replace the two return statements with a single guarded return:
+
+```python
+        if self.min is not None or self.max is not None:
+            out = np.where(t == 0.0, 0.0,
+                           np.clip(y_anchor * np.exp(log_factor),  # type: ignore
+                                   self.min, self.max))
+        else:
+            out = np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
+        return np.where(before_zero, np.nan, out)
+```
+
+`before_zero` must be captured **before** the putmask mutates `t_ratio`, and keyed on `t`
+rather than on `t_ratio`: `t_ratio <= 0` is also true at `t == 0`, which keeps its `0.0`
+convention.
+
+- [ ] **Step 4: Run the tests and the full CI sequence**
+
+```
+pytest test/test_dca.py -k "nan_before_zero or nan_applies" -v --no-cov
+ruff check petbox/dca test && mypy petbox/dca && pytest
+```
+
+- [ ] **Step 5: Re-verify `PLYield` against `main`, now for `t >= 0` only**
+
+Task 1 Step 9's dump includes `t = -5.0`, which now **deliberately** differs. Re-run it with
+the negative sample removed so the check still proves the `t >= 0` domain is untouched: change
+`t = np.concatenate([[-5.0, 0.0], dca.get_time(1e-8, 1e6, 401)])` to
+`t = np.concatenate([[0.0], dca.get_time(1e-8, 1e6, 401)])`. Expected:
+`BIT-FOR-BIT IDENTICAL`. The negative-`t` change is covered by the tests in Step 1 instead.
+
+- [ ] **Step 6: Commit**
+
+Commit message subject: `fix: yield models return nan for t < 0 instead of a floor artifact`.
+Body must record both measured constants, that the true value is complex, that `t == 0` and
+`t > 0` are unchanged, and that this pre-empts the `inf` that Phase 2 would otherwise create.
+
+---
+
+### Task 4: Documentation
+
 
 **Files:**
 - Modify: `docs/api.rst`, `README.rst`, `docs/versions.rst`, `CLAUDE.md`
 - Modify: `docs/plans/2026-07-29-generalized-plyield-design.md`,
   `docs/plans/2026-07-29-generalized-plyield-plan.md`
 
-**Interfaces:** consumes `dca.PLYieldSegment` from Task 1; produces nothing.
+**Interfaces:** consumes `dca.PLYieldSegment` from Task 1 and `shift` from Task 2; produces nothing.
 
 - [ ] **Step 1: `docs/api.rst`**
 
