@@ -210,6 +210,11 @@ class MultisegmentPLYield(BothAssociatedPhase):
         The slope of the segment containing each element of ``t``, zeroed wherever the
         yield function is clamped by ``min`` or ``max`` -- a clamped yield is flat, so it
         contributes no slope to `_Dfn` or `_Dfn2`.
+
+        ``nan`` for ``t < 0``, where the yield itself is undefined. This is the single point
+        that keeps `_Dfn`, `_Dfn2`, `_betafn` and `_bfn` consistent with `_yieldfn`: the
+        slope is stored per segment and exists for any ``t``, so without this they would all
+        report definite values for a domain in which there is no rate to differentiate.
         """
         # advanced indexing in `_lookup_segment` returns a copy, so this is safe to mutate
         _, _, m = self._lookup_segment(t)
@@ -219,15 +224,25 @@ class MultisegmentPLYield(BothAssociatedPhase):
             m[y <= self.min] = 0.0
         if self.max is not None:
             m[y >= self.max] = 0.0
-        return m
+        return np.where(t < 0.0, np.nan, m)
 
     def _qfn(self, t: NDFloat) -> NDFloat:
         """Associated-phase rate: the yield ratio times the primary phase rate."""
         return self._yieldfn(t) * self.primary._qfn(t)
 
     def _Nfn(self, t: NDFloat, **kwargs: Dict[Any, Any]) -> NDFloat:
-        """Cumulative volume. No closed form exists, so integrate `_qfn` numerically."""
-        return self._integrate_with(self._qfn, t, **kwargs)
+        """
+        Cumulative volume. No closed form exists, so integrate `_qfn` numerically.
+
+        ``nan`` for ``t < 0`` must be applied here rather than inherited: `_integrate_with`
+        builds a strictly positive grid, so it never evaluates `_qfn` at a negative ``t`` and
+        the ``nan`` from `_yieldfn` cannot propagate -- `searchsorted` would instead map a
+        negative ``t`` to grid index 0 and return ``0.0``. Volume is the quantity callers
+        sum, so a silent zero there would under-count a forecast whose start date is wrong,
+        which is exactly what the ``nan`` exists to surface.
+        """
+        return np.where(t < 0.0, np.nan,
+                        self._integrate_with(self._qfn, t, **kwargs))
 
     def _Dfn(self, t: NDFloat) -> NDFloat:
         """

@@ -1266,3 +1266,28 @@ def test_yield_nan_applies_to_generalized() -> None:
     mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
     mh.add_secondary(dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),)))
     assert np.all(np.isnan(mh.secondary.gor(np.array([-30.4, -1.0]))))
+
+
+def test_yield_nan_is_consistent_across_every_output() -> None:
+    """Every output that depends on the yield being defined must agree at t < 0. gor and
+    rate get nan from _yieldfn, but cum reaches the integrator -- whose grid is strictly
+    positive, so the nan cannot propagate and searchsorted would return 0.0 -- and D/beta/b
+    read the per-segment slope, which exists for any t. A definite volume or decline for a
+    domain with no rate is the failure mode this guards."""
+    t = np.array([-30.4, -10.0])
+    for model in (dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0),
+                  dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),
+                                                    dca.PLYieldSegment(1095.0, m=-0.2)))):
+        mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+        mh.add_secondary(model)
+        y = mh.secondary
+        for name in ('gor', 'cgr', 'rate', 'cum', 'D', 'beta', 'b'):
+            assert np.all(np.isnan(getattr(y, name)(t))), (type(model).__name__, name)
+
+        # the volume methods route through _Nfn, so they must agree too
+        assert np.all(np.isnan(y.interval_vol(t)))
+        assert np.all(np.isnan(y.monthly_vol(t)))
+
+        # and t >= 0 is untouched
+        assert np.all(np.isfinite(y.gor(np.array([1.0, 180.0, 3650.0]))))
+        assert np.all(np.isfinite(y.cum(np.array([1.0, 180.0, 3650.0]))))
