@@ -1841,19 +1841,26 @@ def test_generalized_hyperbolic_terminal_clamps_instead_of_raising() -> None:
 
 
 def test_generalized_hyperbolic_skips_the_terminal_row_when_nothing_to_cap() -> None:
-    """MH's guard, generalized to the last segment. Appending a degenerate terminal row
-    instead would change the row count and break the row-for-row reduction to MH."""
-    # no terminal decline
+    """The terminal row is skipped only when it would never bind. Appending a degenerate row
+    regardless would change the row count and break the row-for-row reduction to MH."""
+    # no terminal decline requested
     assert dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ()).segment_params.shape[0] == 1
 
-    # an already-exponential tail: b_last rounds to zero
+    # an already-exponential tail declining FASTER than Dterm: the cap never binds. Di = 0.8
+    # secant on b = 0 is far steeper than a 0.08 terminal.
     assert dca.GeneralizedHyperbolic(
         1000.0, 0.8, 0.0, (), 0.08).segment_params.shape[0] == 1
     assert dca.GeneralizedHyperbolic.from_segments(
         1000.0, 0.8, 1.5, [(365.0, 0.0)], Dterm=0.08).segment_params.shape[0] == 2
 
-    # no decline to cap
-    assert dca.GeneralizedHyperbolic(1000.0, 0.0, 1.5, (), 0.08).segment_params.shape[0] == 1
+    # But a tail declining SLOWER than Dterm must be capped, even though its decline is
+    # constant and so never reaches Dterm on its own -- see
+    # test_terminal_segment_binds_on_a_constant_decline_tail. Di = 0 is the extreme case: a
+    # flat tail produces volume forever, so dropping the cap gives an unbounded EUR.
+    flat = dca.GeneralizedHyperbolic(1000.0, 0.0, 1.5, (), 0.08)
+    assert flat.segment_params.shape[0] == 2
+    assert flat.segment_params[-1, flat.T_IDX] == 0.0
+    assert np.isfinite(flat.cum(np.array([1e12]))[0])
 
 
 def test_generalized_hyperbolic_errors() -> None:
@@ -1937,6 +1944,159 @@ def test_generalized_hyperbolic_extrapolates_before_zero() -> None:
     assert np.array_equal(gh.rate(t), base.rate(t))
     assert np.all(gh.rate(t) > 1000.0)
     assert np.all(gh.cum(t) < 0.0)
+
+
+def test_generalized_segments_accept_a_generator() -> None:
+    """A generator passed to either constructor must not be exhausted by validation. Both
+    models iterate `segments` several times -- isinstance check, per-field checks, float
+    normalization -- so consuming it in the first pass left GeneralizedHyperbolic with no
+    segments at all, silently: an empty sequence is legal there and reduces to MH, so the
+    model constructed cleanly and returned a plausible single-segment forecast."""
+    HS = dca.HyperbolicSegment
+    generated = dca.GeneralizedHyperbolic(
+        1000.0, 0.8, 1.5, (HS(t, b=1.0) for t in (100.0, 200.0)))
+    explicit = dca.GeneralizedHyperbolic(
+        1000.0, 0.8, 1.5, (HS(100.0, b=1.0), HS(200.0, b=1.0)))
+    assert len(generated.segments) == 2
+    assert generated == explicit
+    assert np.array_equal(generated.segment_params, explicit.segment_params)
+
+    # GeneralizedPLYield only escaped this by accident -- its empty check raised TypeError
+    # from len() before the exhaustion could matter
+    generated_yield = dca.GeneralizedPLYield(
+        1.2, 0.0, (dca.PLYieldSegment(t, m=0.5) for t in (180.0, 365.0)))
+    explicit_yield = dca.GeneralizedPLYield(
+        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.5), dca.PLYieldSegment(365.0, m=0.5)))
+    assert len(generated_yield.segments) == 2
+    assert generated_yield == explicit_yield
+    assert np.array_equal(generated_yield.segment_params, explicit_yield.segment_params)
+
+    # an empty generator still reaches the empty check rather than a TypeError
+    with pytest.raises(ValueError) as e:
+        dca.GeneralizedPLYield(1.2, 0.0, (segment for segment in ()))
+    assert 'at least one segment' in str(e.value)
+
+    # a list is still accepted, and normalizing to a tuple keeps the instance hashable
+    for model in (dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, [HS(100.0, b=1.0)]),
+                  dca.GeneralizedPLYield(1.2, 0.0, [dca.PLYieldSegment(180.0, m=0.5)])):
+        assert isinstance(model.segments, tuple)
+        assert isinstance(hash(model), int)
+
+
+def test_validate_params_is_normalized_to_a_tuple() -> None:
+    """`validate_params` is annotated Iterable, so a caller may pass a list or a generator.
+    A list left the instance unhashable -- a frozen dataclass hashes its field tuple, and the
+    field held the list itself -- and it constructed fine, failing only at the first hash().
+    A generator was consumed by the single read in __post_init__, so anything rebuilding the
+    instance through dataclasses.replace, such as shift(), silently re-enabled every check
+    the caller had opted out of."""
+    from_list = dca.MH(1000.0, 0.8, 2.5, 0.0, validate_params=[True, True, False, True])
+    assert from_list.validate_params == (True, True, False, True)
+    assert isinstance(from_list.validate_params, tuple)
+    assert isinstance(hash(from_list), int)
+
+    # the opt-out is still honoured: bi = 2.5 is above the descriptor bound
+    with pytest.raises(ValueError) as e:
+        dca.MH(1000.0, 0.8, 2.5, 0.0)
+    assert 'bi > 2.0' in str(e.value)
+
+    # a generator survives a rebuild
+    flags = (flag for flag in (False, True, True, True, True, True))
+    y = dca.PLYield(c=1.2, m0=0.0, m=0.6, t0=180.0, validate_params=flags)
+    assert y.validate_params == (False, True, True, True, True, True)
+    assert y.shift(30.0).validate_params == (False, True, True, True, True, True)
+
+    # every model normalizes it, and the default is already a tuple
+    for model in (dca.MH(1000.0, 0.8, 1.5), dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
+                  dca.PLE(1000.0, 0.8, 0.0, 0.5), dca.SE(1000.0, 100.0, 0.5),
+                  dca.Duong(1000.0, 1.5, 1.2),
+                  dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ()),
+                  dca.PLYield(c=1.2, m0=0.0, m=0.6, t0=180.0),
+                  dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.5),))):
+        assert isinstance(model.validate_params, tuple), type(model).__name__
+
+
+def test_terminal_segment_binds_on_a_constant_decline_tail() -> None:
+    """A tail whose decline is constant -- an exponential segment, or no decline at all --
+    never *reaches* Dterm the way a hyperbolic tail does, so the cap either never binds or
+    binds from the tail's first day. Skipping it unconditionally made a decline of exactly
+    0.0 drop the cap while 1e-300 kept it: a 20,045x difference in EUR across that step, and
+    an unbounded one, since an uncapped zero-decline tail produces volume forever."""
+    # a plateau segment: the cap must bind, and identically for 0.0 and a denormal
+    volumes = []
+    for D in (0.0, 1e-300, 1e-11):
+        model = dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 2.0, [(365.0, D, None)], Dterm=0.08)
+        assert model.segment_params.shape[0] == 3, D
+        volumes.append(model.cum(np.array([1e8]))[0])
+    assert np.allclose(volumes, volumes[0], rtol=1e-9)
+    assert volumes[0] == pytest.approx(998080.0, rel=1e-4)
+
+    # an exponential tail declining slower than Dterm: same
+    rates = []
+    for b in (0.0, 1e-300, 1e-11):
+        model = dca.GeneralizedHyperbolic(1000.0, 0.05, b, (), 0.5)
+        assert model.segment_params.shape[0] == 2, b
+        rates.append(model.rate(np.array([36525.0]))[0])
+    assert np.allclose(rates, rates[0], rtol=1e-9)
+
+    # an exponential tail already declining faster than Dterm needs no cap
+    assert dca.GeneralizedHyperbolic(1000.0, 0.5, 0.0, (), 0.05).segment_params.shape[0] == 1
+
+    # and a hyperbolic tail still binds later rather than immediately
+    later = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0, [(365.0, 0.3, 0.8)], Dterm=0.08)
+    assert later.segment_params[-1, later.T_IDX] > later.segment_params[-2, later.T_IDX]
+
+    # no terminal decline requested is still a no-op
+    assert dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (), 0.0).segment_params.shape[0] == 1
+
+
+def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
+    """_Ncheck guards on ``q / D`` overflowing, but the coefficient it actually uses is
+    ``q / ((1 - b) D)`` -- the ``1 - b`` factor shrinks the denominator further, so it goes
+    infinite at a much larger D than the guard catches. An infinite coefficient times the
+    zero ``expm1`` of a zero-width boundary is nan: a nan cumulative volume under a
+    perfectly finite rate, which _integrate_with would then read as a definite zero."""
+    model = dca.GeneralizedHyperbolic(
+        9235.481100137427, 1e-12, 1.0097199755572828,
+        (dca.HyperbolicSegment(18839.180085839886, D=0.0),
+         dca.HyperbolicSegment(92952.86641079251, D=1e-300)), 0.06)
+    t = np.array([1e3, 9.2e4, 9.3e4, 1e5, 1e6])
+
+    assert np.isfinite(model.segment_params[-1, model.N_IDX])
+    assert np.all(np.isfinite(model.rate(t)))
+    assert np.all(np.isfinite(model.cum(t)))
+    assert np.all(np.diff(model.cum(t)) >= 0.0)
+
+    # and it must not warn
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', RuntimeWarning)
+        model.cum(t)
+        dca.GeneralizedHyperbolic.from_segments(
+            1e4, 0.9, 1.9, [(10.0, 1e-303, 1.9)], Dterm=0.0).cum(np.array([100.0, 1e5]))
+
+
+def test_nan_time_propagates_for_any_segment_count() -> None:
+    """`_vectorize` masks the first segment from below and every segment from above, and
+    every comparison against nan is False -- so a nan time was claimed by no segment and fell
+    through as the zero initialiser. That is a rate and a volume of exactly 0 for an
+    unanswerable time, the silent-zero-EUR failure the non-finite parameter checks exist to
+    prevent, and it disagreed with single-segment models, which have no upper mask."""
+    nan_t = np.array([np.nan])
+    for model in (dca.MH(1000.0, 0.8, 1.5),                       # 1 row
+                  dca.MH(1000.0, 0.8, 1.5, 0.08),                 # 2 rows
+                  dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),           # 3 rows
+                  dca.GeneralizedHyperbolic.from_segments(
+                      1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8)], Dterm=0.08)):
+        for name in ('rate', 'cum', 'D', 'beta', 'b'):
+            assert np.isnan(getattr(model, name)(nan_t)[0]), (type(model).__name__, name)
+
+    # an infinite time is NOT nan: b is still the last segment's exponent in the limit,
+    # matching rate, which saturates to 0 there
+    for model in (dca.MH(1000.0, 0.8, 1.5), dca.MH(1000.0, 0.8, 1.5, 0.08)):
+        assert model.rate(np.array([np.inf]))[0] == 0.0
+        assert np.isfinite(model.b(np.array([np.inf]))[0])
 
 
 def test_generalized_hyperbolic_is_hashable_and_attaches_phases() -> None:

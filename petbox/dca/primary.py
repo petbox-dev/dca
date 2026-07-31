@@ -13,7 +13,7 @@ Created on August 5, 2019
 """
 
 import sys
-from math import exp, expm1, log, log1p, ceil as ceiling, floor
+from math import exp, expm1, isfinite, log, log1p, ceil as ceiling, floor
 import warnings
 
 import dataclasses as dc
@@ -164,14 +164,31 @@ class MultisegmentHyperbolic(PrimaryPhase):
         Dterm_nom = self._nominal_per_day_from_tangent(Dterm)
         t_last, D_last, b_last = segments[-1, [self.T_IDX, self.D_IDX, self.B_IDX]]
 
-        if Dterm_nom < MIN_EPSILON or D_last < MIN_EPSILON or b_last < MIN_EPSILON:
+        # no terminal decline asked for, so there is nothing to cap
+        if Dterm_nom < MIN_EPSILON:
             return segments
 
-        # a denormal b_last -- one that clears MIN_EPSILON by a hair -- overflows this
-        # division to inf, which places the terminal row at a time no t can reach. That row
-        # is then inert and the forecast is the uncapped tail, which is the right answer
-        with np.errstate(over='ignore'):
-            t_term = max(t_last, t_last + (1.0 / Dterm_nom - 1.0 / D_last) / b_last)
+        if b_last < MIN_EPSILON or D_last < MIN_EPSILON:
+            # The tail's decline is constant -- an exponential segment, or no decline at all
+            # -- so it never *reaches* Dterm the way a hyperbolic tail does. The cap either
+            # never binds, or binds from the tail's very first day.
+            #
+            # MH cannot arrive here with D_last < Dterm_nom, since it rejects Di < Dterm up
+            # front; GeneralizedHyperbolic can, and clamping is what its docstring promises.
+            # Skipping unconditionally made a decline of exactly 0.0 drop the cap while
+            # 1e-300 kept it, a 20,045x difference in EUR across that step.
+            if D_last >= Dterm_nom:
+                return segments
+            t_term = t_last
+
+        else:
+            # a b_last that clears MIN_EPSILON by a hair overflows this division to inf,
+            # which places the terminal row at a time no t can reach. That row is then inert
+            # and the forecast is the uncapped tail, which is the right answer. A hyperbolic
+            # tail whose decline is already below Dterm gives a negative offset, which the
+            # max() clamps to t_last -- the same "binds immediately" outcome as above.
+            with np.errstate(over='ignore'):
+                t_term = max(t_last, t_last + (1.0 / Dterm_nom - 1.0 / D_last) / b_last)
 
         return self._fill_segment_chain(np.vstack([
             segments,
@@ -195,8 +212,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # q * np.exp(-D * dt)
         # q * np.log(1.0 + D * b * dt) ** (1.0 / b)
         # ``1 + D b dt`` reaches 0 at the pole of a backward extrapolation and goes negative
-        # past it, so log1p legitimately yields -inf then nan: silence both
-        with np.errstate(divide='ignore', invalid='ignore'):
+        # past it, so log1p legitimately yields -inf then nan: silence both. ``D * b * dt``
+        # itself overflows for an extreme dt, which the putmask below then saturates.
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
             if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
                 D_dt = D * dt
             else:
@@ -218,11 +236,16 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if q < MIN_EPSILON:
             return cast(NDFloat, np.atleast_1d(N) + np.zeros_like(t, dtype=np.float64))
 
-        if abs(D) < MIN_EPSILON or abs(q / D) == np.inf:
-            return np.atleast_1d(N + q * dt)
+        # ``q / D`` overflows for a tiny D, which is precisely what this guard is testing for
+        # -- so the test itself has to be shielded. ``abs(D) < MIN_EPSILON`` short-circuits,
+        # so the division is never reached for a D of zero.
+        with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
+            if abs(D) < MIN_EPSILON or abs(q / D) == np.inf:
+                return np.atleast_1d(N + q * dt)
 
-        # as in _qcheck, log1p hits its own pole on a backward extrapolation
-        with np.errstate(divide='ignore', invalid='ignore'):
+        # as in _qcheck, log1p hits its own pole on a backward extrapolation, and the
+        # products overflow for an extreme dt
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
             if abs(1.0 - b) < MIN_EPSILON:
                 return N + q / D * np.log1p(D * dt)
 
@@ -234,6 +257,14 @@ class MultisegmentHyperbolic(PrimaryPhase):
             else:
                 D_dt = (1.0 - 1.0 / b) * np.log1p(b * D * dt)
                 q_b_D = q / ((1.0 - b) * D)
+
+        # The coefficient is what overflows, not ``q / D``: the ``1 - b`` factor shrinks the
+        # denominator further, so it goes infinite at a much larger D than the guard above
+        # catches. An infinite coefficient times a zero ``expm1`` -- which is what a
+        # zero-width segment boundary produces -- is nan, i.e. a nan cumulative volume under
+        # a perfectly finite rate. Fall back to the same linear form the guard above uses.
+        if not isfinite(q_b_D):
+            return np.atleast_1d(N + q * dt)
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
@@ -286,10 +317,17 @@ class MultisegmentHyperbolic(PrimaryPhase):
         real value beyond the pole of a backward extrapolation
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
+
+        # A nan dt is tested for explicitly. Every comparison against nan is False, so the
+        # pole test alone would return b for a nan time -- and a single-segment model has no
+        # upper mask in `_vectorize` to catch it, so it would disagree with a multi-segment
+        # one. An infinite dt is deliberately NOT nan: b is still that segment's exponent in
+        # the limit, matching `_qcheck`, which saturates to a rate of 0 there.
+        #
         # as in _Dcheck, ``D * b`` is ``inf * 0`` for an exponential segment carrying an
         # infinite decline; the resulting nan compares False and leaves b untouched
         with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-            return np.where(1.0 + D * b * dt < 0.0, np.nan, b)
+            return np.where(np.isnan(dt) | (1.0 + D * b * dt < 0.0), np.nan, b)
 
     def _vectorize(self, fn: Callable[..., NDFloat],
                    t: Union[float, NDFloat]) -> NDFloat:
@@ -298,7 +336,14 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         t = np.atleast_1d(t)
         p = self.segment_params
-        x = np.zeros_like(t, dtype=np.float64)
+
+        # nan, not zeros: with the first segment claiming everything below the next boundary,
+        # the masks below cover every finite t exactly once, so the initial value survives
+        # only where t is nan -- every comparison against which is False. Zeros there meant a
+        # nan time silently produced a rate and a cumulative volume of 0, the same
+        # silent-zero-EUR failure the non-finite parameter checks exist to prevent, and it
+        # disagreed with single-segment models, which have no upper mask and did return nan.
+        x = np.full_like(t, np.nan, dtype=np.float64)
 
         for i in range(p.shape[0]):
             # the first segment extrapolates backwards: it claims everything below the next
@@ -1083,6 +1128,13 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             segment is pulled forward to the segment's own start time rather than raising --
             :class:`MH` raises ``Di < Dterm`` instead, so the two models agree only over the
             range :class:`MH` accepts.
+
+            ``Dterm`` acts as a floor on the decline, so it also binds on a tail whose
+            decline is *constant* -- an exponential segment, or one with no decline at all.
+            Such a tail never reaches ``Dterm`` on its own, so the cap applies from its first
+            day if its decline is below ``Dterm``, and not at all if it is above. Without
+            this a tail declining at exactly ``0`` would produce volume forever while one
+            declining at ``1e-300`` would be capped.
     """
     qi: float
     Di: float
@@ -1131,6 +1183,15 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                    Dterm)
 
     def _validate(self) -> None:
+        # Materialize before anything else. ``segments`` is annotated Sequence, but nothing
+        # stops a caller passing a generator, and every pass below iterates it -- the first
+        # would exhaust it and leave the model with *no* segments, silently, because an empty
+        # sequence is legal and reduces to MH. A frozen field that is read repeatedly has no
+        # use for laziness.
+        # this is a little naughty: bypass the "frozen" protection, just this once...
+        # naturally, this should only be called during the __post_init__ process
+        object.__setattr__(self, 'segments', tuple(self.segments))
+
         if not all(isinstance(segment, HyperbolicSegment) for segment in self.segments):
             raise ValueError('segments entries must be HyperbolicSegment')
 
@@ -1149,8 +1210,8 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                     np.isfinite(segment.b) and 0.0 <= segment.b <= 2.0):
                 raise ValueError('segments b must be finite and within [0, 2]')
 
-        # this is a little naughty: bypass the "frozen" protection, just this once...
-        # naturally, this should only be called during the __post_init__ process
+        # normalize every field to float, so the instance stays hashable and its fields
+        # match their annotations at runtime even when given ints
         object.__setattr__(self, 'segments', tuple(
             HyperbolicSegment(float(segment.t),
                               q=None if segment.q is None else float(segment.q),

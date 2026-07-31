@@ -421,6 +421,20 @@ class DeclineCurve(ABC):
     def __post_init__(self) -> None:
         self._set_defaults()
 
+        # Normalize the flags to a tuple before reading them. `validate_params` is annotated
+        # Iterable, so a caller may hand over a list or a generator, and both break:
+        #
+        #   - a list makes the instance unhashable, since a frozen dataclass hashes its field
+        #     tuple and the field holds the list itself. The model constructs fine and only
+        #     fails later, at the first `hash()` -- e.g. on use as a dict key.
+        #   - a generator is consumed here, the only place it is read. `dataclasses.replace`
+        #     re-runs this hook, so anything rebuilding the instance -- `PLYield.shift`, for
+        #     example -- re-reads an exhausted iterator and silently re-enables every check
+        #     the caller had opted out of.
+        #
+        # bypass the "frozen" protection, as `_validate` does for its own caching
+        object.__setattr__(self, 'validate_params', tuple(self.validate_params))
+
         # pad the flags with True: a model that under-sizes `validate_params` must not
         # silently skip its remaining bound checks. `zip` still truncates an over-long
         # flags list -- `zip_longest` would instead yield `desc=True` and blow up on

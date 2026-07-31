@@ -616,6 +616,15 @@ class GeneralizedPLYield(MultisegmentPLYield):
         return times, slopes, overrides
 
     def _validate(self) -> None:
+        # Materialize before anything else: ``segments`` is annotated Sequence, but a caller
+        # can pass a generator and every pass below iterates it. See the same guard in
+        # `GeneralizedHyperbolic._validate`. Without this, the empty check below would have
+        # raised TypeError from `len` on a generator -- better than the silent segment loss
+        # that guard prevents, but an accident rather than a design.
+        # this is a little naughty: bypass the "frozen" protection, just this once...
+        # naturally, this should only be called during the __post_init__ process
+        object.__setattr__(self, 'segments', tuple(self.segments))
+
         if len(self.segments) == 0:
             raise ValueError('segments must contain at least one segment')
 
@@ -631,8 +640,8 @@ class GeneralizedPLYield(MultisegmentPLYield):
             if segment.c is not None and not (np.isfinite(segment.c) and segment.c > 0.0):
                 raise ValueError('segments c must be finite and > 0')
 
-        # this is a little naughty: bypass the "frozen" protection, just this once...
-        # naturally, this should only be called during the __post_init__ process
+        # normalize every field to float, so the instance stays hashable and its fields
+        # match their annotations at runtime even when given ints
         object.__setattr__(self, 'segments', tuple(
             PLYieldSegment(float(segment.t),
                            c=None if segment.c is None else float(segment.c),

@@ -40,6 +40,14 @@ Version History
       known until the chain is built, so a caller cannot be asked to guarantee it in advance.
       The equivalence above therefore holds over ``Di >= Dterm``, the only region ``MH`` is
       constructible in.
+    * ``Dterm`` is a floor on the decline, so it binds on a tail whose decline is *constant*
+      too --- an exponential segment, or one with no decline at all. Such a tail never
+      reaches ``Dterm`` on its own, so the cap applies from its first day when its decline is
+      below ``Dterm``, and not at all when it is above. ``MH`` skips the terminal row outright
+      in that situation, which is correct there only because it rejects ``Di < Dterm`` up
+      front; carrying the same skip into this model made a tail declining at exactly ``0``
+      produce volume forever while one declining at ``1e-300`` was capped --- a 20,045x
+      difference in EUR across that step.
 
 * New Segment Types
     * ``HyperbolicSegment`` --- one segment of a ``GeneralizedHyperbolic``, with keyword-only
@@ -100,7 +108,13 @@ Version History
       a finite ``q / ((1 - b) D)`` for ``b > 1``, where the integral is convergent. Beyond the
       pole every output is ``nan``: ``rate`` and ``cum`` already were, but ``D``, ``beta`` and
       ``b`` remained algebraically defined and reported a plausible decline for a domain with
-      no rate. All five now agree.
+      no rate. All five now agree for any ``b`` the rate function treats as hyperbolic, i.e.
+      ``b > 1e-10``. Below that the rate function switches to the exponential form, which has
+      no pole, while ``D`` and ``b`` still test for one --- so a ``b`` between ``1e-308`` and
+      ``1e-10`` disagrees, but only past ``|t|`` of order ``1e12`` days. That threshold
+      difference between the rate and decline functions predates this release and is left
+      alone: aligning them would change ``MH`` and ``THM`` results for such a ``b`` at every
+      ``t``, not just beyond the pole.
 
 * Refactor
     * ``MultisegmentHyperbolic``'s sign-assuming guards are now magnitude tests.
@@ -147,6 +161,33 @@ Version History
       validate their own contents.
 
 * Bug Fix
+    * ``cum`` could return ``NaN`` under a perfectly finite rate. ``_Ncheck`` falls back to a
+      linear form when its volume coefficient overflows, but guarded on ``q / D`` while
+      actually using ``q / ((1 - b) D)`` --- the ``1 - b`` factor shrinks the denominator
+      further, so the coefficient goes infinite at a much larger ``D`` than the guard caught.
+      An infinite coefficient times the zero ``expm1`` of a zero-width segment boundary is
+      ``NaN``, which ``_integrate_with`` would then read as a definite zero volume. The
+      fallback now tests the coefficient it uses.
+    * A ``NaN`` time returned ``0.0`` from every hyperbolic model with two or more segments.
+      ``_vectorize`` masks the first segment from below and every segment from above, and
+      every comparison against ``NaN`` is false, so a ``NaN`` time was claimed by no segment
+      and fell through as the zero initialiser --- a rate and a cumulative volume of exactly
+      zero for an unanswerable time. Single-segment models, which have no upper mask, already
+      returned ``NaN``. All row counts now agree. An *infinite* time is deliberately not
+      ``NaN``: ``b`` remains the last segment's exponent in the limit, matching ``rate``,
+      which saturates to zero there.
+    * ``validate_params`` given as a list left the instance unhashable, and given as a
+      generator lost its opt-outs. A frozen dataclass hashes its field tuple, so a list there
+      raised ``TypeError`` at the first ``hash()`` rather than at construction; a generator
+      was consumed by the single read in ``__post_init__``, so anything rebuilding the
+      instance through :func:`dataclasses.replace` --- ``shift()``, for example --- silently
+      re-enabled every check the caller had opted out of. It is now normalized to a tuple.
+    * ``GeneralizedHyperbolic`` silently dropped every segment when ``segments`` was given as
+      a generator. Validation iterates the sequence several times, and the first pass
+      exhausted it; an empty sequence is legal and reduces to ``MH``, so the model
+      constructed cleanly and returned a plausible single-segment forecast.
+      ``GeneralizedPLYield`` escaped only because its empty check raised ``TypeError`` from
+      ``len`` first. Both now materialize the sequence before validating it.
     * The sixth ``PLYield`` ``ParamDesc`` was named ``'min'`` while describing ``max``,
       so ``PLYield.get_param_desc('max')`` raised ``KeyError`` and the descriptor list
       reported ``min`` twice.
