@@ -131,6 +131,50 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         return segments
 
+    def _append_terminal_segment(self, segments: NDFloat, Dterm: float) -> NDFloat:
+        """
+        Append the terminal exponential segment to ``segments``, if there is any decline
+        left for it to cap.
+
+        ``Dterm`` is a terminal *tangent* effective decline per year. The segment begins
+        where the last segment's decline reaches it. If that time has already passed by the
+        time the last segment begins, it is clamped forward to that segment's own start
+        time rather than raising -- the last segment's decline is not known until the chain
+        is built, so a caller cannot be asked to guarantee it in advance.
+
+        Returns ``segments`` unchanged when there is nothing to cap: no terminal decline, an
+        already-exponential tail, or no decline at all. Appending a degenerate row instead
+        would change the row count for a model that has no terminal behaviour.
+
+        Parameters
+        ----------
+            segments: NDFloat
+                A filled segment array, as returned by :meth:`_fill_segment_chain`.
+
+            Dterm: float
+                Terminal decline [tangent effective / year].
+
+        Returns
+        -------
+            segments: NDFloat
+        """
+        Dterm_nom = self.nominal_from_tangent(Dterm) / DAYS_PER_YEAR
+        t_last, D_last, b_last = segments[-1, [self.T_IDX, self.D_IDX, self.B_IDX]]
+
+        if Dterm_nom < MIN_EPSILON or D_last < MIN_EPSILON or b_last < MIN_EPSILON:
+            return segments
+
+        # a denormal b_last -- one that clears MIN_EPSILON by a hair -- overflows this
+        # division to inf, which places the terminal row at a time no t can reach. That row
+        # is then inert and the forecast is the uncapped tail, which is the right answer
+        with np.errstate(over='ignore'):
+            t_term = max(t_last, t_last + (1.0 / Dterm_nom - 1.0 / D_last) / b_last)
+
+        return self._fill_segment_chain(np.vstack([
+            segments,
+            [t_term, np.nan, Dterm_nom, 0.0, np.nan]
+        ]))
+
     @staticmethod
     def _qcheck(t0: float, q: float, D: float, b: float, N: float,
                 t: Union[float, NDFloat]) -> NDFloat:
@@ -396,21 +440,10 @@ class MH(MultisegmentHyperbolic):
         Precache the initial conditions of each hyperbolic segment.
         """
         Di_nom = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
-        Dterm_nom = self.nominal_from_tangent(self.Dterm) / DAYS_PER_YEAR
 
-        if Di_nom < MIN_EPSILON or Dterm_nom < MIN_EPSILON or self.bi < MIN_EPSILON:
-            return np.array([
-                [0.0, self.qi, Di_nom, self.bi, 0.0]
-            ], dtype=np.float64)
-
-        tterm = ((1.0 / Dterm_nom) - (1.0 / Di_nom)) / self.bi
-
-        # the terminal decline is prescribed, so it is an override; rate and volume are
-        # inherited from the initial segment evaluated at tterm
-        return self._fill_segment_chain(np.array([
-            [0.0, self.qi, Di_nom, self.bi, 0.0],
-            [tterm, np.nan, Dterm_nom, 0.0, np.nan]
-        ], dtype=np.float64))
+        # `_validate` rejects Di < Dterm, so the terminal time is never clamped here
+        return self._append_terminal_segment(
+            np.array([[0.0, self.qi, Di_nom, self.bi, 0.0]], dtype=np.float64), self.Dterm)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -884,6 +917,297 @@ class THM(MultisegmentHyperbolic):
                 'tterm', 'Terminal time [years]',
                 0.0, None,
                 lambda r, n: np.full(n, 0.0))
+        ]
+
+
+@dataclass(frozen=True)
+class HyperbolicSegment:
+    """
+    One segment of a :class:`GeneralizedHyperbolic` forecast.
+
+    ``None`` means "continuous from the previous segment": an omitted ``b`` continues the
+    preceding exponent, an omitted ``D`` leaves the decline continuous at ``t``, and an
+    omitted ``q`` leaves the rate continuous. Supplying ``q`` steps the rate to that value
+    at ``t`` -- a restimulation, say -- and supplying ``D`` prescribes the decline there.
+
+    Cumulative volume is never overridable. It is always inherited, because production
+    already recovered cannot change when the rate does.
+
+    The optional fields are keyword-only on purpose. Positionally,
+    ``HyperbolicSegment(365.0, 0.3)`` would set ``q``, while the equivalent builder tuple
+    ``(365.0, 0.3)`` means ``b`` -- the same two values meaning different things depending
+    on which entry point was used.
+
+    Parameters
+    ----------
+        t: float
+            The segment start time in days. Must be finite and positive; a segment at
+            ``t = 0`` is rejected, since the model's own initial conditions start there.
+
+        q: Optional[float] = None
+            The rate at ``t``, in units of ``volume / day``. ``None`` leaves the rate
+            continuous. Must be finite and positive when given.
+
+        D: Optional[float] = None
+            The decline at ``t`` in secant effective decline, i.e. annual effective percent
+            decline, matching ``Di`` and ``Dterm``. ``None`` leaves the decline continuous.
+            Must be finite and within ``[0, 1)`` when given.
+
+        b: Optional[float] = None
+            The hyperbolic exponent from ``t`` onward. ``None`` continues the previous
+            exponent. Must be finite and within ``[0, 2]`` when given.
+    """
+    t: float
+    q: Optional[float] = field(default=None, kw_only=True)
+    D: Optional[float] = field(default=None, kw_only=True)
+    b: Optional[float] = field(default=None, kw_only=True)
+
+    @classmethod
+    def from_tuple(cls, spec: Sequence[Optional[float]]) -> 'HyperbolicSegment':
+        """
+        Build one segment from a loose tuple. Arity selects the meaning, following one rule:
+        the shape parameter is always last, and short forms omit the level. ``(t, b)``
+        inherits both rate and decline, ``(t, D, b)`` inherits the rate, and
+        ``(t, q, D, b)`` is fully specified.
+
+        An explicit ``None`` inherits exactly as a short form does, so ``(t, None, D, b)``
+        is ``(t, D, b)`` and ``(t, None, None, b)`` is ``(t, b)``.
+
+        ``t`` is the one field with no inherit semantics -- there is no previous segment to
+        continue a start time from -- so it is required.
+
+        Parameters
+        ----------
+            spec: Sequence[Optional[float]]
+                A ``(t, b)``, ``(t, D, b)`` or ``(t, q, D, b)`` tuple.
+
+        Returns
+        -------
+            segment: :class:`HyperbolicSegment`
+        """
+        if len(spec) not in (2, 3, 4):
+            raise ValueError('segment tuples must be (t, b), (t, D, b) or (t, q, D, b)')
+
+        t = spec[0]
+        if t is None:
+            raise ValueError('segment t must be given')
+
+        if len(spec) == 2:
+            return cls(t, b=spec[1])
+        if len(spec) == 3:
+            return cls(t, D=spec[1], b=spec[2])
+        return cls(t, q=spec[1], D=spec[2], b=spec[3])
+
+
+@dataclass(frozen=True)
+class GeneralizedHyperbolic(MultisegmentHyperbolic):
+    """
+    Generalized Multi-Segment Hyperbolic Model
+
+    Extends :class:`MH` to an arbitrary number of caller-specified segments. Each segment
+    is an Arps hyperbolic with its own exponent, and by default is continuous in rate and
+    decline with the one before it:
+
+    .. math::
+
+        q(t) = q_i \\, (1 + b \\, D_i \\, (t - t_i)) ^ \\frac{-1}{b}
+
+    A segment may instead override its rate or its decline, which is how a restimulation or
+    a prescribed decline is expressed. Cumulative volume is always continuous.
+
+    With an empty segment list this model is exactly :class:`MH`, including the terminal
+    exponential segment. Unlike :class:`MH`, a ``Dterm`` steeper than the last segment's
+    decline is clamped rather than rejected -- see the note under ``Dterm``.
+
+    Reject-only-what-is-not-physical: an exponent that *increases* between segments is
+    permitted, because a restimulation genuinely produces one. :class:`THM` enforces
+    ``bi >= bf >= bterm`` because its segments model one specific transient-to-boundary
+    transition; this model makes no such claim, so monotonicity is the caller's choice.
+
+    Parameters
+    ----------
+        qi: float
+            The initial production rate in units of ``volume / day``.
+
+        Di: float
+            The initial decline rate in secant effective decline aka annual
+            effective percent decline, i.e.
+
+            .. math::
+
+                D_i = 1 - \\frac{q(t=1 \\, year)}{qi}
+
+        bi: float
+            The initial hyperbolic parameter, defined as
+            :math:`\\frac{d}{dt}\\frac{1}{D}`. This parameter is dimensionless.
+
+        segments: Sequence[HyperbolicSegment] = ()
+            The segments after the initial one, in strictly increasing time order. Each is
+            a :class:`HyperbolicSegment`; use :meth:`from_segments` to build them from
+            plain tuples. An empty sequence reduces this model to :class:`MH`.
+
+        Dterm: float = 0.0
+            The terminal secant effective decline rate aka annual effective percent decline.
+            The terminal exponential segment begins where the last segment's decline reaches
+            it. If it has already been reached before that segment begins, the terminal
+            segment is pulled forward to the segment's own start time rather than raising --
+            :class:`MH` raises ``Di < Dterm`` instead, so the two models agree only over the
+            range :class:`MH` accepts.
+    """
+    qi: float
+    Di: float
+    bi: float
+    segments: Sequence[HyperbolicSegment] = ()
+    Dterm: float = 0.0
+
+    # a tuple, not a list: a list default makes a frozen dataclass unhashable,
+    # since the generated __hash__ hashes the field tuple
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 5)
+
+    @classmethod
+    def from_segments(cls, qi: float, Di: float, bi: float,
+                      segments: Iterable[Sequence[Optional[float]]],
+                      Dterm: float = 0.0) -> 'GeneralizedHyperbolic':
+        """
+        Construct from plain tuples instead of :class:`HyperbolicSegment` instances.
+
+        Each entry is ``(t, b)``, ``(t, D, b)`` or ``(t, q, D, b)``. The constructor itself
+        accepts only :class:`HyperbolicSegment`, which keeps the field type free of unions
+        -- this is the loose-tuple entry point.
+
+        Parameters
+        ----------
+            qi: float
+                As :class:`GeneralizedHyperbolic`.
+
+            Di: float
+                As :class:`GeneralizedHyperbolic`.
+
+            bi: float
+                As :class:`GeneralizedHyperbolic`.
+
+            segments: Iterable[Sequence[Optional[float]]]
+                An iterable of ``(t, b)``, ``(t, D, b)`` or ``(t, q, D, b)`` tuples.
+
+            Dterm: float = 0.0
+                As :class:`GeneralizedHyperbolic`.
+
+        Returns
+        -------
+            model: :class:`GeneralizedHyperbolic`
+        """
+        return cls(qi, Di, bi,
+                   tuple(HyperbolicSegment.from_tuple(spec) for spec in segments),
+                   Dterm)
+
+    def _validate(self) -> None:
+        if not all(isinstance(segment, HyperbolicSegment) for segment in self.segments):
+            raise ValueError('segments entries must be HyperbolicSegment')
+
+        # Check the optional fields per field rather than via the segment array: that array
+        # uses nan to mean "inherited", so an explicitly-NaN q, D or b would be silently
+        # read as an inherit rather than rejected.
+        for segment in self.segments:
+            if segment.q is not None and not (np.isfinite(segment.q) and segment.q > 0.0):
+                raise ValueError('segments q must be finite and > 0')
+
+            if segment.D is not None and not (
+                    np.isfinite(segment.D) and 0.0 <= segment.D < 1.0):
+                raise ValueError('segments D must be finite and within [0, 1)')
+
+            if segment.b is not None and not (
+                    np.isfinite(segment.b) and 0.0 <= segment.b <= 2.0):
+                raise ValueError('segments b must be finite and within [0, 2]')
+
+        # this is a little naughty: bypass the "frozen" protection, just this once...
+        # naturally, this should only be called during the __post_init__ process
+        object.__setattr__(self, 'segments', tuple(
+            HyperbolicSegment(float(segment.t),
+                              q=None if segment.q is None else float(segment.q),
+                              D=None if segment.D is None else float(segment.D),
+                              b=None if segment.b is None else float(segment.b))
+            for segment in self.segments))
+
+        start_times = np.array([segment.t for segment in self.segments], dtype=np.float64)
+
+        # These are written as `not np.all(<valid>)` rather than `np.any(<invalid>)` on
+        # purpose: every comparison against NaN is False, so `np.any(t <= 0.0)` would
+        # accept a NaN start time, which silently produces an all-NaN forecast. The
+        # positive form rejects NaN, and the explicit isfinite rejects an infinite start
+        # time, which would place a segment that never begins.
+        if not np.all(np.isfinite(start_times) & (start_times > 0.0)):
+            raise ValueError('segments t must be finite and > 0')
+
+        # np.diff of a single element is empty, and np.all of empty is True
+        if not np.all(np.diff(start_times) > 0.0):
+            raise ValueError('segments t not strictly increasing')
+
+        super()._validate()
+
+    def _segments(self) -> NDFloat:
+        """
+        Precache the initial conditions of each hyperbolic segment.
+
+        Row 0 holds the model's own initial conditions. Each caller segment contributes one
+        row, with ``nan`` in every inherited slot for :meth:`_fill_segment_chain` to resolve
+        from the row before it. A terminal exponential row is appended last, unless there is
+        no decline left to cap.
+        """
+        Di_nom = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
+        rows = [[0.0, self.qi, Di_nom, self.bi, 0.0]]
+
+        # `b` must be resolved before `D` is converted: the secant-to-nominal conversion
+        # depends on the exponent, including where `D` is given and `b` is inherited.
+        b = self.bi
+        for segment in self.segments:
+            if segment.b is not None:
+                b = segment.b
+
+            D_nom = (np.nan if segment.D is None
+                     else self.nominal_from_secant(segment.D, b) / DAYS_PER_YEAR)
+            q = np.nan if segment.q is None else segment.q
+            rows.append([segment.t, q, D_nom, b, np.nan])
+
+        return self._append_terminal_segment(
+            self._fill_segment_chain(np.array(rows, dtype=np.float64)), self.Dterm)
+
+    @classmethod
+    def get_param_descs(cls) -> List[ParamDesc]:
+        return [
+            ParamDesc(
+                'qi', 'Initial rate [vol/day]',
+                0.0, None,
+                lambda r, n: r.uniform(1e-10, 1e6, n)),
+            ParamDesc(  # TODO
+                'Di', 'Initial decline [sec. eff. / yr]',
+                0.0, 1.0,
+                lambda r, n: r.uniform(0.0, 1.0, n),
+                exclude_upper_bound=True),
+            ParamDesc(
+                'bi', 'Hyperbolic exponent',
+                0.0, 2.0,
+                lambda r, n: r.uniform(0.0, 2.0, n)),
+            ParamDesc(
+                # No scalar bounds: this parameter is a sequence, so the generic bound
+                # loop in `DeclineCurve.__post_init__` must skip it. `_validate` checks
+                # the contents instead.
+                #
+                # `naive_gen` emits sorted (t, D, b) rows. Feed the result through
+                # `from_segments`, which reads each 3-row as (t, D, b); the raw array is
+                # not accepted by the constructor, whose isinstance check requires
+                # HyperbolicSegment.
+                'segments', 'Segment start times, declines and exponents '
+                            '[(days, sec. eff. / yr, dimensionless), ...]',
+                None, None,
+                lambda r, n: np.column_stack([
+                    np.sort(r.uniform(1.0, 1e5, n)),
+                    r.uniform(0.0, 1.0, n),
+                    r.uniform(0.0, 2.0, n)])),
+            ParamDesc(  # TODO
+                'Dterm', 'Terminal decline [tan. eff. / yr]',
+                0.0, 1.0,
+                lambda r, n: np.zeros(n, dtype=np.float64),
+                exclude_upper_bound=True)
         ]
 
 

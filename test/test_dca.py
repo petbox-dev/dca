@@ -1629,3 +1629,324 @@ def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
     seed = np.array([[0.0, 1000.0, Di_nom, 1.5, 0.0],
                      [365.25, np.nan, np.nan, 1.5, np.nan]], dtype=np.float64)
     assert mh._fill_segment_chain(seed) is seed
+
+
+# ---------------------------------------------------------------------------------------
+# GeneralizedHyperbolic
+# ---------------------------------------------------------------------------------------
+
+
+@given(
+    qi=st.floats(1e-10, 1e6),
+    Di=st.floats(0.0, 1.0, exclude_max=True),
+    bi=st.floats(0.0, 2.0),
+    Dterm=st.floats(0.0, 1.0, exclude_max=True),
+)
+def test_generalized_hyperbolic_reduces_to_MH(qi: float, Di: float, bi: float,
+                                              Dterm: float) -> None:
+    """With no segments, GeneralizedHyperbolic must be bit-for-bit identical to MH --
+    array_equal, not allclose. Row 0 is the same expression and the terminal row goes
+    through the same _fill_segment_chain calls at the same derived time. Restricted to
+    Di >= Dterm, the only region MH is constructible in: MH raises there while the
+    generalized model clamps."""
+    assume(dca.MH.nominal_from_secant(Di, bi) >= dca.MH.nominal_from_tangent(Dterm))
+    t = np.concatenate([[0.0], dca.get_time()])
+
+    mh = dca.MH(qi, Di, bi, Dterm)
+    gh = dca.GeneralizedHyperbolic(qi, Di, bi, (), Dterm)
+
+    assert np.array_equal(mh.segment_params, gh.segment_params, equal_nan=True)
+    for name in ('rate', 'cum', 'D', 'beta', 'b'):
+        assert np.array_equal(getattr(mh, name)(t), getattr(gh, name)(t), equal_nan=True), \
+            name
+
+
+def test_generalized_hyperbolic_model() -> None:
+    """The generic model invariants, on a model with every kind of segment override."""
+    gh = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0,
+        [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08)
+    assert check_model(gh, 1000.0)
+
+
+def test_hyperbolic_segment_from_tuple_arities() -> None:
+    """Arity selects the meaning: the shape parameter is always last and short forms omit
+    the level. An explicit None inherits exactly as a short form does."""
+    HS = dca.HyperbolicSegment
+    assert HS.from_tuple((30.0, 1.2)) == HS(30.0, b=1.2)
+    assert HS.from_tuple((30.0, 0.3, 1.2)) == HS(30.0, D=0.3, b=1.2)
+    assert HS.from_tuple((30.0, 500.0, 0.3, 1.2)) == HS(30.0, q=500.0, D=0.3, b=1.2)
+
+    # an explicit None is the same as omitting the slot
+    assert HS.from_tuple((30.0, None, 0.3, 1.2)) == HS.from_tuple((30.0, 0.3, 1.2))
+    assert HS.from_tuple((30.0, None, None, 1.2)) == HS.from_tuple((30.0, 1.2))
+    assert HS.from_tuple((30.0, None)) == HS(30.0)
+
+    with pytest.raises(ValueError) as e:
+        HS.from_tuple((30.0,))
+    assert 'must be (t, b), (t, D, b) or (t, q, D, b)' in str(e.value)
+
+    with pytest.raises(ValueError) as e:
+        HS.from_tuple((30.0, 1.0, 2.0, 3.0, 4.0))
+
+    with pytest.raises(ValueError) as e:
+        HS.from_tuple((None, 1.2))
+    assert 'segment t must be given' in str(e.value)
+
+
+def test_hyperbolic_segment_is_keyword_only() -> None:
+    """Positionally, HyperbolicSegment(365.0, 0.3) would set q while the builder's 2-tuple
+    (365.0, 0.3) means b -- the same values meaning different things by entry point. The
+    optional fields are keyword-only so that ambiguity cannot be expressed."""
+    with pytest.raises(TypeError):
+        dca.HyperbolicSegment(365.0, 0.3)  # type: ignore[misc]
+
+    assert dca.HyperbolicSegment(365.0, b=0.3).b == 0.3
+    assert dca.HyperbolicSegment(365.0).q is None
+
+
+def test_generalized_hyperbolic_builder_matches_dataclasses() -> None:
+    HS = dca.HyperbolicSegment
+    built = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0,
+        [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08)
+    explicit = dca.GeneralizedHyperbolic(
+        1000.0, 0.8, 2.0,
+        (HS(30.0, b=1.2), HS(365.0, D=0.3, b=0.8), HS(730.0, q=250.0, b=0.5)), 0.08)
+    assert built == explicit
+    assert np.array_equal(built.segment_params, explicit.segment_params)
+
+    # the builder normalizes ints to float, so the instance stays hashable and its fields
+    # match their annotations at runtime
+    from_ints = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 2.0, [(30, 1)])
+    assert from_ints.segments == (HS(30.0, b=1.0),)
+    assert isinstance(hash(from_ints), int)
+
+
+def test_generalized_hyperbolic_continuity_and_overrides() -> None:
+    """Rate and decline are continuous across a boundary unless overridden; cumulative
+    volume is continuous always, including across a rate jump."""
+    gh = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0,
+        [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08)
+
+    # Continuity is exact by construction, not merely numerical: _fill_segment_chain seeds
+    # each row from the previous segment evaluated at the boundary. Assert that directly --
+    # comparing rate(t - eps) to rate(t) instead would fold in the real decline over eps,
+    # which at D ~ 0.011/day and eps = 1e-6 is a relative 1e-8, not round-off.
+    params = gh.segment_params
+    for i in range(1, params.shape[0]):
+        previous = [*params[i - 1], params[i, gh.T_IDX]]
+        assert params[i, gh.N_IDX] == gh._Ncheck(*previous).item()
+        if i != 3:  # row 3 overrides the rate
+            assert params[i, gh.Q_IDX] == gh._qcheck(*previous).item()
+        if i not in (2, 4):  # row 2 overrides the decline, row 4 is the terminal segment
+            assert params[i, gh.D_IDX] == gh._Dcheck(*previous).item()
+
+    # and numerically, to within the decline over a 1e-6 day step
+    for t_bound in (30.0, 365.0):
+        assert gh.rate(np.array([t_bound]))[0] == pytest.approx(
+            gh.rate(np.array([t_bound - 1e-6]))[0], rel=1e-7)
+    for t_bound in (30.0, 365.0, 730.0):
+        assert gh.cum(np.array([t_bound]))[0] == pytest.approx(
+            gh.cum(np.array([t_bound - 1e-6]))[0], abs=1e-3)
+
+    # the rate override steps the rate at 730 and nowhere else
+    assert gh.rate(np.array([730.0]))[0] == 250.0
+    assert gh.rate(np.array([730.0 - 1e-6]))[0] == pytest.approx(98.94299, rel=1e-6)
+
+    # the decline override steps the decline at 365
+    assert gh.D(np.array([365.0]))[0] != pytest.approx(gh.D(np.array([364.999999]))[0])
+
+    # b steps at every boundary, taking each segment's value from its start onward
+    assert np.array_equal(gh.b(np.array([1.0, 30.0, 365.0, 730.0, 1e5])),
+                          [2.0, 1.2, 0.8, 0.5, 0.0])
+
+
+def test_generalized_hyperbolic_decline_is_secant_effective() -> None:
+    """A per-segment D is secant effective decline per year, matching Di and Dterm, and its
+    conversion to nominal-per-day depends on b -- so b must be resolved first, including
+    where b is inherited and D is given."""
+    msh = dca.MultisegmentHyperbolic
+    D_IDX = dca.GeneralizedHyperbolic.D_IDX
+    B_IDX = dca.GeneralizedHyperbolic.B_IDX
+
+    # b given on the same segment: the conversion must use 0.8, not the inherited 2.0
+    given_b = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 2.0, [(365.0, 0.3, 0.8)])
+    assert given_b.segment_params[1, D_IDX] == \
+        msh.nominal_from_secant(0.3, 0.8) / dca.DAYS_PER_YEAR
+    assert msh.secant_from_nominal(
+        given_b.segment_params[1, D_IDX] * dca.DAYS_PER_YEAR, 0.8) == pytest.approx(0.3)
+
+    # b inherited, D given: the conversion must use the inherited 2.0
+    inherited_b = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0, [(365.0, 0.3, None)])
+    assert inherited_b.segment_params[1, B_IDX] == 2.0
+    assert inherited_b.segment_params[1, D_IDX] == \
+        msh.nominal_from_secant(0.3, 2.0) / dca.DAYS_PER_YEAR
+
+
+def test_generalized_hyperbolic_noop_segment_is_permitted() -> None:
+    """A segment with every optional None is a legal no-op, accepted rather than
+    special-cased so the protocol stays uniform. It re-anchors the chain at its start time,
+    which is mathematically identity but not bit-for-bit: the measured departure is ~4 ULP
+    (max relative 8.2e-16), so this is allclose, unlike the empty-segment reduction to MH
+    which is exact."""
+    t = np.concatenate([[0.0], dca.get_time()])
+    noop = dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (dca.HyperbolicSegment(365.0),))
+    base = dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ())
+
+    # the extra row exists and holds exactly the values the base model reports there
+    assert noop.segment_params.shape[0] == base.segment_params.shape[0] + 1
+    assert noop.segment_params[1, noop.Q_IDX] == base.rate(np.array([365.0]))[0]
+    assert noop.segment_params[1, noop.D_IDX] == base.D(np.array([365.0]))[0]
+
+    for name in ('rate', 'cum', 'D', 'beta', 'b'):
+        assert np.allclose(getattr(noop, name)(t), getattr(base, name)(t), rtol=1e-12), name
+
+
+def test_generalized_hyperbolic_permits_increasing_b() -> None:
+    """Reject only what is not physically meaningful. THM enforces bi >= bf >= bterm because
+    its segments model one specific transient-to-boundary transition; this model makes no
+    such claim, and a restimulation genuinely raises b."""
+    gh = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 0.5, [(365.0, 1.8)])
+    assert np.array_equal(gh.b(np.array([100.0, 400.0])), [0.5, 1.8])
+    assert np.all(np.isfinite(gh.rate(dca.get_time())))
+
+
+def test_generalized_hyperbolic_terminal_clamps_instead_of_raising() -> None:
+    """MH raises Di < Dterm; the generalized model clamps with max(), because the last
+    segment's decline is not known until the chain is built. A terminal decline already
+    reached before the last segment begins pulls the exponential tail forward to that
+    segment's own start time."""
+    with pytest.raises(ValueError) as e:
+        dca.MH(1000.0, 0.5, 1.0, 0.9)
+    assert 'Di < Dterm' in str(e.value)
+
+    # with no segments the tail starts at t = 0, giving a pure exponential at Dterm
+    steep = dca.GeneralizedHyperbolic(1000.0, 0.5, 1.0, (), 0.9)
+    t = np.array([0.0, 1.0, 365.25, 3652.5])
+    Dterm_nom = dca.MultisegmentHyperbolic.nominal_from_tangent(0.9) / dca.DAYS_PER_YEAR
+    assert np.allclose(steep.rate(t), 1000.0 * np.exp(-Dterm_nom * t))
+    assert np.all(steep.b(t) == 0.0)
+
+    # the clamped terminal row is zero-width and inert: rate and cum stay continuous
+    clamped = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0, [(3650.0, 0.05, 1.0)], Dterm=0.5)
+    assert clamped.segment_params[-1, clamped.T_IDX] == \
+        clamped.segment_params[-2, clamped.T_IDX] == 3650.0
+    around = np.array([3649.999, 3650.0, 3650.001])
+    assert np.allclose(clamped.rate(around), 64.4376, rtol=1e-4)
+    assert np.all(np.diff(clamped.cum(around)) > 0.0)
+
+
+def test_generalized_hyperbolic_skips_the_terminal_row_when_nothing_to_cap() -> None:
+    """MH's guard, generalized to the last segment. Appending a degenerate terminal row
+    instead would change the row count and break the row-for-row reduction to MH."""
+    # no terminal decline
+    assert dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ()).segment_params.shape[0] == 1
+
+    # an already-exponential tail: b_last rounds to zero
+    assert dca.GeneralizedHyperbolic(
+        1000.0, 0.8, 0.0, (), 0.08).segment_params.shape[0] == 1
+    assert dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0)], Dterm=0.08).segment_params.shape[0] == 2
+
+    # no decline to cap
+    assert dca.GeneralizedHyperbolic(1000.0, 0.0, 1.5, (), 0.08).segment_params.shape[0] == 1
+
+
+def test_generalized_hyperbolic_errors() -> None:
+    HS = dca.HyperbolicSegment
+    GH = dca.GeneralizedHyperbolic
+
+    for segments, message in (
+            ((HS(0.0, b=1.0),), 'segments t must be finite and > 0'),
+            ((HS(-5.0, b=1.0),), 'segments t must be finite and > 0'),
+            ((HS(np.nan, b=1.0),), 'segments t must be finite and > 0'),
+            ((HS(np.inf, b=1.0),), 'segments t must be finite and > 0'),
+            ((HS(100.0, b=1.0), HS(50.0, b=1.0)), 'segments t not strictly increasing'),
+            ((HS(100.0, b=1.0), HS(100.0, b=1.0)), 'segments t not strictly increasing'),
+            ((HS(100.0, q=0.0),), 'segments q must be finite and > 0'),
+            ((HS(100.0, q=-1.0),), 'segments q must be finite and > 0'),
+            ((HS(100.0, q=np.nan),), 'segments q must be finite and > 0'),
+            ((HS(100.0, q=np.inf),), 'segments q must be finite and > 0'),
+            ((HS(100.0, D=1.0),), 'segments D must be finite and within [0, 1)'),
+            ((HS(100.0, D=-0.1),), 'segments D must be finite and within [0, 1)'),
+            ((HS(100.0, D=np.nan),), 'segments D must be finite and within [0, 1)'),
+            ((HS(100.0, b=2.5),), 'segments b must be finite and within [0, 2]'),
+            ((HS(100.0, b=-0.1),), 'segments b must be finite and within [0, 2]'),
+            ((HS(100.0, b=np.nan),), 'segments b must be finite and within [0, 2]'),
+            (((100.0, 1.0),), 'segments entries must be HyperbolicSegment'),
+    ):
+        with pytest.raises(ValueError) as e:
+            GH(1000.0, 0.8, 1.5, segments)  # type: ignore[arg-type]
+        assert message in str(e.value), segments
+
+    # scalar parameters keep MH's bounds
+    for params in ((-1000.0, 0.8, 1.5), (1000.0, 1.0, 1.5), (1000.0, 0.8, 2.5)):
+        with pytest.raises(ValueError):
+            GH(*params, ())
+
+    with pytest.raises(ValueError):
+        GH(1000.0, 0.8, 1.5, (), 1.0)
+
+    with pytest.raises(ValueError):
+        GH(np.nan, 0.8, 1.5, ())
+
+
+def test_generalized_hyperbolic_param_descs() -> None:
+    descs = dca.GeneralizedHyperbolic.get_param_descs()
+    assert [d.name for d in descs] == ['qi', 'Di', 'bi', 'segments', 'Dterm']
+
+    # segments carries no scalar bounds, so the generic loop in __post_init__ skips it
+    segments_desc = dca.GeneralizedHyperbolic.get_param_desc('segments')
+    assert segments_desc.lower_bound is None and segments_desc.upper_bound is None
+
+    # naive_gen must emit rows a constructor actually accepts -- nothing else in the suite
+    # exercises it, so a broken generator is invisible
+    rng = np.random.default_rng(20260731)
+    raw = segments_desc.naive_gen(rng, 5)
+    assert raw.shape == (5, 3)
+    assert np.all(np.diff(raw[:, 0]) > 0.0)
+    model = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0, [tuple(row) for row in raw])
+    assert model.segment_params.shape[0] == 6
+    assert np.all(np.isfinite(model.rate(dca.get_time())))
+
+
+def test_generalized_hyperbolic_many_segments() -> None:
+    """A long chain must stay finite and monotonic: each segment re-anchors from the one
+    before it, so round-off accumulates across the chain rather than being reset."""
+    gh = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0, [(30.0 * i, 2.0 - 0.1 * i) for i in range(1, 16)], Dterm=0.06)
+    assert gh.segment_params.shape[0] == 17
+
+    t = np.concatenate([[0.0], dca.get_time(1e-8, 1e6, 401)])
+    rate, cum = gh.rate(t), gh.cum(t)
+    assert np.all(np.isfinite(rate)) and np.all(rate >= 0.0)
+    assert np.all(np.isfinite(cum)) and np.all(np.diff(cum) >= 0.0)
+    assert np.all(np.isfinite(gh.D(t))) and np.all(gh.D(t) >= 0.0)
+
+
+def test_generalized_hyperbolic_extrapolates_before_zero() -> None:
+    """The backward extrapolation runs off row 0, so it is unaffected by the segment list."""
+    gh = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 2.0, [(30.0, 1.2)])
+    base = dca.GeneralizedHyperbolic(1000.0, 0.8, 2.0, ())
+    t = np.array([-10.0, -1.0])
+    assert np.array_equal(gh.rate(t), base.rate(t))
+    assert np.all(gh.rate(t) > 1000.0)
+    assert np.all(gh.cum(t) < 0.0)
+
+
+def test_generalized_hyperbolic_is_hashable_and_attaches_phases() -> None:
+    gh = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 2.0, [(30.0, 1.2)])
+    assert isinstance(hash(gh), int)
+    assert gh == dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 2.0, [(30.0, 1.2)])
+
+    gh.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=-0.2, t0=180.0))
+    gh.add_water(dca.PLYield(c=0.5, m0=0.1, m=0.1, t0=180.0))
+    t = dca.get_time()
+    assert np.all(np.isfinite(gh.secondary.gor(t)))
+    assert np.all(np.isfinite(gh.water.wor(t)))
+    assert np.all(np.isfinite(gh.secondary.rate(t)))
