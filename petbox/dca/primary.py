@@ -109,6 +109,28 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # naturally, this should only be called during the __post_init__ process
         object.__setattr__(self, 'segment_params', self._segments())
 
+    def _fill_segment_chain(self, segments: NDFloat) -> NDFloat:
+        """
+        Seed each segment after the first from the end state of the one before it, so the
+        chain is continuous across every boundary. Mutates ``segments`` in place and returns
+        the same array.
+
+        A ``nan`` in the rate or decline slot means "continuous from the previous segment";
+        a value there is an explicit override and is preserved -- a rate jump at a
+        restimulation, or a prescribed terminal decline. Cumulative volume is *always*
+        inherited: it cannot jump even where rate does.
+        """
+        for i in range(segments.shape[0] - 1):
+            # the previous segment's full parameter row, evaluated at this segment's start
+            p = [*segments[i], segments[i + 1, self.T_IDX]]
+            if np.isnan(segments[i + 1, self.D_IDX]):
+                segments[i + 1, self.D_IDX] = self._Dcheck(*p).item()
+            if np.isnan(segments[i + 1, self.Q_IDX]):
+                segments[i + 1, self.Q_IDX] = self._qcheck(*p).item()
+            segments[i + 1, self.N_IDX] = self._Ncheck(*p).item()
+
+        return segments
+
     @staticmethod
     def _qcheck(t0: float, q: float, D: float, b: float, N: float,
                 t: Union[float, NDFloat]) -> NDFloat:
@@ -382,13 +404,13 @@ class MH(MultisegmentHyperbolic):
             ], dtype=np.float64)
 
         tterm = ((1.0 / Dterm_nom) - (1.0 / Di_nom)) / self.bi
-        qterm = self._qcheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm)).item()
-        Nterm = self._Ncheck(0.0, self.qi, Di_nom, self.bi, 0.0, np.array(tterm)).item()
 
-        return np.array([
+        # the terminal decline is prescribed, so it is an override; rate and volume are
+        # inherited from the initial segment evaluated at tterm
+        return self._fill_segment_chain(np.array([
             [0.0, self.qi, Di_nom, self.bi, 0.0],
-            [tterm, qterm, Dterm_nom, 0.0, Nterm]
-        ], dtype=np.float64)
+            [tterm, np.nan, Dterm_nom, 0.0, np.nan]
+        ], dtype=np.float64))
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -579,15 +601,9 @@ class THM(MultisegmentHyperbolic):
                     dtype=np.float64
                 )
 
-        # Compute initial values for each segment after the first, from the
-        #   previous segment's values
-        for i in range(segments.shape[0] - 1):
-            p = [*segments[i], segments[i + 1, self.T_IDX]]
-            segments[i + 1, self.D_IDX] = self._Dcheck(*p).item()
-            segments[i + 1, self.Q_IDX] = self._qcheck(*p).item()
-            segments[i + 1, self.N_IDX] = self._Ncheck(*p).item()
-
-        return segments
+        # every segment after the first supplies None -- i.e. nan -- for its rate, decline
+        # and volume, so all three are inherited from the segment before it
+        return self._fill_segment_chain(segments)
 
     def transient_rate(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
         """

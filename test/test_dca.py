@@ -1588,3 +1588,44 @@ def test_backward_extrapolation_emits_no_warnings() -> None:
                       dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0)):
             for name in ('rate', 'cum', 'D', 'beta', 'b'):
                 getattr(model, name)(t)
+
+
+def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
+    """The chain fill is shared by MH, THM and GeneralizedHyperbolic. nan means "continuous
+    from the previous segment"; a value is an explicit override. Volume is always inherited
+    -- cumulative production cannot jump even where rate does."""
+    mh = dca.MH(1000.0, 0.8, 1.5)
+    Di_nom = mh.nominal_from_secant(0.8, 1.5) / dca.base.DAYS_PER_YEAR
+
+    # all three slots nan: every one is inherited at t = 365.25
+    filled = mh._fill_segment_chain(np.array([
+        [0.0, 1000.0, Di_nom, 1.5, 0.0],
+        [365.25, np.nan, np.nan, 1.5, np.nan],
+    ], dtype=np.float64))
+    assert filled[1, mh.Q_IDX] == mh.rate(np.array([365.25]))[0]
+    assert filled[1, mh.D_IDX] == mh.D(np.array([365.25]))[0]
+    assert filled[1, mh.N_IDX] == pytest.approx(mh.cum(np.array([365.25]))[0])
+
+    # an explicit rate survives -- a restimulation doubling the rate -- while volume is
+    # still inherited from the decline that preceded it
+    inherited_N = filled[1, mh.N_IDX]
+    override = mh._fill_segment_chain(np.array([
+        [0.0, 1000.0, Di_nom, 1.5, 0.0],
+        [365.25, 2000.0, np.nan, 1.5, np.nan],
+    ], dtype=np.float64))
+    assert override[1, mh.Q_IDX] == 2000.0
+    assert override[1, mh.N_IDX] == inherited_N
+    assert override[1, mh.D_IDX] == filled[1, mh.D_IDX]
+
+    # an explicit decline survives too: this is how MH prescribes its terminal segment
+    override_D = mh._fill_segment_chain(np.array([
+        [0.0, 1000.0, Di_nom, 1.5, 0.0],
+        [365.25, np.nan, 1e-4, 0.0, np.nan],
+    ], dtype=np.float64))
+    assert override_D[1, mh.D_IDX] == 1e-4
+    assert override_D[1, mh.Q_IDX] == filled[1, mh.Q_IDX]
+
+    # it mutates in place and returns the same array, so callers can chain the construction
+    seed = np.array([[0.0, 1000.0, Di_nom, 1.5, 0.0],
+                     [365.25, np.nan, np.nan, 1.5, np.nan]], dtype=np.float64)
+    assert mh._fill_segment_chain(seed) is seed
