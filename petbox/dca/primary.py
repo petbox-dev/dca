@@ -330,7 +330,9 @@ class MH(MultisegmentHyperbolic):
     bi: float
     Dterm: float = 0.0
 
-    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 4)
+    # a tuple, not a list: a list default makes a frozen dataclass unhashable,
+    # since the generated __hash__ hashes the field tuple
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 4)
 
     def _validate(self) -> None:
         if self.nominal_from_secant(self.Di, self.bi) < self.nominal_from_tangent(self.Dterm):
@@ -457,7 +459,9 @@ class THM(MultisegmentHyperbolic):
     bterm: float = 0.0
     tterm: float = 0.0
 
-    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 7)
+    # a tuple, not a list: a list default makes a frozen dataclass unhashable,
+    # since the generated __hash__ hashes the field tuple
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 7)
 
     EXP_GAMMA: ClassVar[float] = exp(0.5572156)
     EXP_1: ClassVar[float] = exp(1.0)
@@ -873,7 +877,9 @@ class PLE(PrimaryPhase):
     Dinf: float
     n: float
 
-    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 4)
+    # a tuple, not a list: a list default makes a frozen dataclass unhashable,
+    # since the generated __hash__ hashes the field tuple
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 4)
 
     def _validate(self) -> None:
         if self.Dinf > self.Di:
@@ -968,7 +974,9 @@ class SE(PrimaryPhase):
     tau: float
     n: float
 
-    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
+    # a tuple, not a list: a list default makes a frozen dataclass unhashable,
+    # since the generated __hash__ hashes the field tuple
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 3)
 
     def _qfn(self, t: NDFloat) -> NDFloat:
         qi = self.qi
@@ -1054,7 +1062,9 @@ class Duong(PrimaryPhase):
     a: float
     m: float
 
-    validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 3)
+    # a tuple, not a list: a list default makes a frozen dataclass unhashable,
+    # since the generated __hash__ hashes the field tuple
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 3)
 
     def _duong_exp_arg(self, t: NDFloat) -> NDFloat:
         """Compute ``a / (1-m) * (t^(1-m) - 1)`` using expm1 for precision near t=1."""

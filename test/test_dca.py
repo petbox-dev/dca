@@ -1332,14 +1332,25 @@ def test_non_finite_params_are_rejected_on_every_model() -> None:
     assert np.isnan(y.c)
 
 
-def test_yield_models_are_hashable() -> None:
+def test_every_model_is_hashable() -> None:
     """A list default for validate_params makes a frozen dataclass unhashable, because the
-    generated __hash__ hashes the field tuple. Both models must stay usable as dict keys
-    and set members."""
-    y = dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)
-    g = dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),))
-    assert len({y, g}) == 2
-    assert {y: 'a'}[dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)] == 'a'
+    generated __hash__ hashes the field tuple. Every model must stay usable as a dict key,
+    a set member, and an lru_cache argument -- and all seven must agree, not just the two
+    that happened to be edited."""
+    models = [
+        dca.MH(1000.0, 0.5, 1.2, 0.08),
+        dca.THM(1000.0, 0.5, 2.0, 0.8, 30.0, 0.1, 20.0),
+        dca.PLE(1000.0, 0.5, 0.05, 0.5),
+        dca.SE(1000.0, 100.0, 0.5),
+        dca.Duong(1000.0, 1.5, 1.2),
+        dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0),
+        dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),)),
+    ]
+    assert len(set(models)) == len(models)
+
+    # equal models must hash equal, or dict lookup silently misses
+    assert {models[5]: 'a'}[dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)] == 'a'
+    assert {models[0]: 'b'}[dca.MH(1000.0, 0.5, 1.2, 0.08)] == 'b'
 
 
 def test_segments_naive_gen_is_usable() -> None:
