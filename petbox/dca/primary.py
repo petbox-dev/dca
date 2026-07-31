@@ -164,31 +164,40 @@ class MultisegmentHyperbolic(PrimaryPhase):
         Dterm_nom = self._nominal_per_day_from_tangent(Dterm)
         t_last, D_last, b_last = segments[-1, [self.T_IDX, self.D_IDX, self.B_IDX]]
 
-        # no terminal decline asked for, so there is nothing to cap
+        # no terminal decline asked for, so there is nothing to cap and nothing to report
         if Dterm_nom < MIN_EPSILON:
             return segments
 
-        if b_last < MIN_EPSILON or D_last < MIN_EPSILON:
-            # The tail's decline is constant -- an exponential segment, or no decline at all
-            # -- so it never *reaches* Dterm the way a hyperbolic tail does. The cap either
-            # never binds, or binds from the tail's very first day.
-            #
-            # MH cannot arrive here with D_last < Dterm_nom, since it rejects Di < Dterm up
-            # front; GeneralizedHyperbolic can, and clamping is what its docstring promises.
-            # Skipping unconditionally made a decline of exactly 0.0 drop the cap while
-            # 1e-300 kept it, a 20,045x difference in EUR across that step.
-            if D_last >= Dterm_nom:
-                return segments
-            t_term = t_last
+        # A terminal decline caps a *hyperbolic* tail: one whose decline falls with time until
+        # it reaches Dterm, from which point the forecast goes exponential. A tail that is
+        # already exponential, flat, or inclining has no such crossing -- its decline is
+        # constant or rising -- so Dterm cannot be applied and is ignored.
+        #
+        # That is worth saying out loud rather than dropping silently. The caller asked for a
+        # cap the model will not deliver, and for a flat tail the consequence is a forecast
+        # that produces volume forever, i.e. an unbounded EUR.
+        ignored_because = None
+        if D_last < 0.0:
+            ignored_because = 'is inclining'
+        elif b_last < MIN_EPSILON:
+            ignored_because = 'is exponential'
+        elif D_last < MIN_EPSILON:
+            ignored_because = 'is flat'
 
-        else:
-            # a b_last that clears MIN_EPSILON by a hair overflows this division to inf,
-            # which places the terminal row at a time no t can reach. That row is then inert
-            # and the forecast is the uncapped tail, which is the right answer. A hyperbolic
-            # tail whose decline is already below Dterm gives a negative offset, which the
-            # max() clamps to t_last -- the same "binds immediately" outcome as above.
-            with np.errstate(over='ignore'):
-                t_term = max(t_last, t_last + (1.0 / Dterm_nom - 1.0 / D_last) / b_last)
+        if ignored_because is not None:
+            warnings.warn(
+                f'Dterm ignored: the last segment {ignored_because}, '
+                f'so its decline never falls to Dterm',
+                RuntimeWarning, stacklevel=2)
+            return segments
+
+        # a b_last that clears MIN_EPSILON by a hair overflows this division to inf, which
+        # places the terminal row at a time no t can reach. That row is then inert and the
+        # forecast is the uncapped tail, which is the right answer. A hyperbolic tail whose
+        # decline is already below Dterm gives a negative offset, which the max() clamps to
+        # t_last, so the exponential tail starts with that segment.
+        with np.errstate(over='ignore'):
+            t_term = max(t_last, t_last + (1.0 / Dterm_nom - 1.0 / D_last) / b_last)
 
         return self._fill_segment_chain(np.vstack([
             segments,
@@ -1129,12 +1138,11 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             :class:`MH` raises ``Di < Dterm`` instead, so the two models agree only over the
             range :class:`MH` accepts.
 
-            ``Dterm`` acts as a floor on the decline, so it also binds on a tail whose
-            decline is *constant* -- an exponential segment, or one with no decline at all.
-            Such a tail never reaches ``Dterm`` on its own, so the cap applies from its first
-            day if its decline is below ``Dterm``, and not at all if it is above. Without
-            this a tail declining at exactly ``0`` would produce volume forever while one
-            declining at ``1e-300`` would be capped.
+            A terminal decline caps a *hyperbolic* tail, whose decline falls with time until
+            it reaches ``Dterm``. A last segment that is already exponential, flat, or
+            inclining has no such crossing -- its decline is constant or rising -- so
+            ``Dterm`` cannot be applied and is ignored, with a ``RuntimeWarning`` saying so.
+            Note that for a flat tail this means the forecast produces volume forever.
     """
     qi: float
     Di: float
@@ -1443,7 +1451,11 @@ class SE(PrimaryPhase):
         # it the cumulative and EUR are wrong by a factor of gamma(1/n) (e.g. +33% at n=0.4).
         coef = qi * tau / n * gamma(1.0 / n)
         if np.isfinite(coef):
-            return coef * gammainc(1.0 / n, (t / tau) ** n)
+            # (t/tau)**n is not real-valued for t < 0 at non-integer n, so the result is nan
+            # there -- the same answer `_integrate_with` now gives for a negative time, and an
+            # expected outcome of a valid call rather than something to warn about
+            with np.errstate(invalid='ignore'):
+                return coef * gammainc(1.0 / n, (t / tau) ** n)
         # gamma(1/n) overflows for very small n (where the closed-form EUR diverges);
         # fall back to the bounded numerical integral.
         return self._integrate_with(self._qfn, t, **kwargs)
@@ -1517,10 +1529,16 @@ class Duong(PrimaryPhase):
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 3)
 
     def _duong_exp_arg(self, t: NDFloat) -> NDFloat:
-        """Compute ``a / (1-m) * (t^(1-m) - 1)`` using expm1 for precision near t=1."""
+        """Compute ``a / (1-m) * (t^(1-m) - 1)`` using expm1 for precision near t=1.
+
+        ``log`` is out of domain for ``t < 0``, so the result is nan there -- the same answer
+        `_integrate_with` gives for a negative time, and an expected outcome of a valid call
+        rather than something to warn about.
+        """
         a = self.a
         m = self.m
-        return a / (1.0 - m) * np.expm1((1.0 - m) * np.log(np.where(t == 0.0, 1.0, t)))
+        with np.errstate(invalid='ignore'):
+            return a / (1.0 - m) * np.expm1((1.0 - m) * np.log(np.where(t == 0.0, 1.0, t)))
 
     def _qfn(self, t: NDFloat) -> NDFloat:
         qi = self.qi

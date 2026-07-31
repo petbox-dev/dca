@@ -468,6 +468,7 @@ def test_THM_terminal_exp(qi: float, Di: float, bf: float, telf: float, bterm: f
     check_transient_model(thm)
 
 
+@pytest.mark.filterwarnings('ignore:Dterm ignored')  # bi = 0 with Dterm > 0 is in range here
 @given(
     qi=st.floats(0.0, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
@@ -1636,6 +1637,7 @@ def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
 # ---------------------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings('ignore:Dterm ignored')  # bi = 0 with Dterm > 0 is in range here
 @given(
     qi=st.floats(1e-10, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
@@ -1846,21 +1848,15 @@ def test_generalized_hyperbolic_skips_the_terminal_row_when_nothing_to_cap() -> 
     # no terminal decline requested
     assert dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ()).segment_params.shape[0] == 1
 
-    # an already-exponential tail declining FASTER than Dterm: the cap never binds. Di = 0.8
-    # secant on b = 0 is far steeper than a 0.08 terminal.
-    assert dca.GeneralizedHyperbolic(
-        1000.0, 0.8, 0.0, (), 0.08).segment_params.shape[0] == 1
-    assert dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 1.5, [(365.0, 0.0)], Dterm=0.08).segment_params.shape[0] == 2
-
-    # But a tail declining SLOWER than Dterm must be capped, even though its decline is
-    # constant and so never reaches Dterm on its own -- see
-    # test_terminal_segment_binds_on_a_constant_decline_tail. Di = 0 is the extreme case: a
-    # flat tail produces volume forever, so dropping the cap gives an unbounded EUR.
-    flat = dca.GeneralizedHyperbolic(1000.0, 0.0, 1.5, (), 0.08)
-    assert flat.segment_params.shape[0] == 2
-    assert flat.segment_params[-1, flat.T_IDX] == 0.0
-    assert np.isfinite(flat.cum(np.array([1e12]))[0])
+    # An exponential tail has a constant decline that never falls to Dterm, so the cap is
+    # ignored -- with a warning, asserted in
+    # test_terminal_decline_is_ignored_with_a_warning_on_a_constant_decline_tail.
+    with pytest.warns(RuntimeWarning):
+        assert dca.GeneralizedHyperbolic(
+            1000.0, 0.8, 0.0, (), 0.08).segment_params.shape[0] == 1
+    with pytest.warns(RuntimeWarning):
+        assert dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 1.5, [(365.0, 0.0)], Dterm=0.08).segment_params.shape[0] == 2
 
 
 def test_generalized_hyperbolic_errors() -> None:
@@ -2016,40 +2012,44 @@ def test_validate_params_is_normalized_to_a_tuple() -> None:
         assert isinstance(model.validate_params, tuple), type(model).__name__
 
 
-def test_terminal_segment_binds_on_a_constant_decline_tail() -> None:
-    """A tail whose decline is constant -- an exponential segment, or no decline at all --
-    never *reaches* Dterm the way a hyperbolic tail does, so the cap either never binds or
-    binds from the tail's first day. Skipping it unconditionally made a decline of exactly
-    0.0 drop the cap while 1e-300 kept it: a 20,045x difference in EUR across that step, and
-    an unbounded one, since an uncapped zero-decline tail produces volume forever."""
-    # a plateau segment: the cap must bind, and identically for 0.0 and a denormal
-    volumes = []
-    for D in (0.0, 1e-300, 1e-11):
-        model = dca.GeneralizedHyperbolic.from_segments(
-            1000.0, 0.8, 2.0, [(365.0, D, None)], Dterm=0.08)
-        assert model.segment_params.shape[0] == 3, D
-        volumes.append(model.cum(np.array([1e8]))[0])
-    assert np.allclose(volumes, volumes[0], rtol=1e-9)
-    assert volumes[0] == pytest.approx(998080.0, rel=1e-4)
+def test_terminal_decline_is_ignored_with_a_warning_on_a_constant_decline_tail() -> None:
+    """A terminal decline caps a hyperbolic tail, whose decline falls with time until it
+    reaches Dterm. A tail that is already exponential, flat, or inclining has no such
+    crossing, so Dterm cannot be applied. It is ignored -- but with a warning, because the
+    caller asked for a cap the model will not deliver, and for a flat tail the consequence is
+    a forecast that produces volume forever."""
+    cases = [
+        ('is exponential', dca.GeneralizedHyperbolic, (1000.0, 0.8, 0.0, (), 0.08), 1),
+        ('is flat', dca.GeneralizedHyperbolic, (1000.0, 0.0, 1.5, (), 0.08), 1),
+        # MH shares the helper, so it reports the same thing
+        ('is exponential', dca.MH, (1000.0, 0.8, 0.0, 0.08), 1),
+    ]
+    for reason, model_type, args, rows in cases:
+        with pytest.warns(RuntimeWarning, match=f'Dterm ignored: the last segment {reason}'):
+            model = model_type(*args)
+        assert model.segment_params.shape[0] == rows, (model_type.__name__, args)
 
-    # an exponential tail declining slower than Dterm: same
-    rates = []
-    for b in (0.0, 1e-300, 1e-11):
-        model = dca.GeneralizedHyperbolic(1000.0, 0.05, b, (), 0.5)
-        assert model.segment_params.shape[0] == 2, b
-        rates.append(model.rate(np.array([36525.0]))[0])
-    assert np.allclose(rates, rates[0], rtol=1e-9)
+    # a flat *segment* tail, not just a flat model
+    with pytest.warns(RuntimeWarning, match='the last segment is flat'):
+        flat_segment = dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 2.0, [(365.0, 0.0, None)], Dterm=0.08)
+    assert flat_segment.segment_params.shape[0] == 2
 
-    # an exponential tail already declining faster than Dterm needs no cap
-    assert dca.GeneralizedHyperbolic(1000.0, 0.5, 0.0, (), 0.05).segment_params.shape[0] == 1
+    # a hyperbolic tail is capped as normal, and says nothing
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', RuntimeWarning)
+        capped = dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 2.0, [(365.0, 0.3, 0.8)], Dterm=0.08)
+    assert capped.segment_params.shape[0] == 3
+    assert capped.segment_params[-1, capped.T_IDX] > capped.segment_params[-2, capped.T_IDX]
 
-    # and a hyperbolic tail still binds later rather than immediately
-    later = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0, [(365.0, 0.3, 0.8)], Dterm=0.08)
-    assert later.segment_params[-1, later.T_IDX] > later.segment_params[-2, later.T_IDX]
-
-    # no terminal decline requested is still a no-op
-    assert dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (), 0.0).segment_params.shape[0] == 1
+    # no terminal decline asked for is a silent no-op: there is nothing to report
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', RuntimeWarning)
+        assert dca.GeneralizedHyperbolic(
+            1000.0, 0.8, 1.5, (), 0.0).segment_params.shape[0] == 1
+        assert dca.GeneralizedHyperbolic(
+            1000.0, 0.0, 1.5, (), 0.0).segment_params.shape[0] == 1
 
 
 def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
@@ -2075,6 +2075,48 @@ def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
         model.cum(t)
         dca.GeneralizedHyperbolic.from_segments(
             1e4, 0.9, 1.9, [(10.0, 1e-303, 1.9)], Dterm=0.0).cum(np.array([100.0, 1e5]))
+
+
+def test_numerical_integration_isolates_negative_time() -> None:
+    """`_integrate_with` merges the requested times into its own grid, so a single negative
+    entry moved the lower limit of integration from 0 to min(t) and EVERY returned value --
+    including the positive ones -- picked up the area over [min(t), 0]. The NaN zeroing made
+    that area a definite number rather than a visible failure. Every model that integrates
+    numerically raises time to a non-integer power, so none is real-valued before 0."""
+    models = (dca.PLE(1000.0, 0.8, 0.1, 0.5), dca.SE(1000.0, 100.0, 0.5),
+              dca.Duong(1000.0, 1.5, 1.2))
+    positive = np.array([30.0, 100.0, 365.0, 1000.0])
+
+    for model in models:
+        baseline = model.cum(positive)
+        with_negative = model.cum(np.concatenate([[-30.0], positive]))
+        assert np.isnan(with_negative[0]), type(model).__name__
+        assert np.array_equal(baseline, with_negative[1:]), type(model).__name__
+
+    # the associated-phase yields integrate the same way
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0))
+    baseline = mh.secondary.cum(positive)
+    with_negative = mh.secondary.cum(np.concatenate([[-30.0], positive]))
+    assert np.isnan(with_negative[0])
+    assert np.array_equal(baseline, with_negative[1:])
+
+    # an all-negative request is all nan, not an empty-grid crash
+    assert np.all(np.isnan(dca.PLE(1000.0, 0.8, 0.1, 0.5).cum(np.array([-10.0, -5.0]))))
+
+    # The grid spans max(t), not t[-1], so an unsorted request stays inside it: each value
+    # must match what the sorted request gave at the same time. positive is
+    # [30, 100, 365, 1000] and shuffled reorders it to [1000, 30, 365, 100].
+    ple = dca.PLE(1000.0, 0.8, 0.1, 0.5)
+    sorted_volumes = ple.cum(positive)
+    shuffled = np.array([1000.0, 30.0, 365.0, 100.0])
+    assert np.allclose(ple.cum(shuffled), sorted_volumes[[3, 0, 2, 1]])
+
+    # and none of it warns: an unanswerable time is an expected outcome of a valid call
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', RuntimeWarning)
+        for model in models:
+            model.cum(np.concatenate([[-30.0], positive]))
 
 
 def test_nan_time_propagates_for_any_segment_count() -> None:

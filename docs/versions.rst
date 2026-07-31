@@ -40,14 +40,11 @@ Version History
       known until the chain is built, so a caller cannot be asked to guarantee it in advance.
       The equivalence above therefore holds over ``Di >= Dterm``, the only region ``MH`` is
       constructible in.
-    * ``Dterm`` is a floor on the decline, so it binds on a tail whose decline is *constant*
-      too --- an exponential segment, or one with no decline at all. Such a tail never
-      reaches ``Dterm`` on its own, so the cap applies from its first day when its decline is
-      below ``Dterm``, and not at all when it is above. ``MH`` skips the terminal row outright
-      in that situation, which is correct there only because it rejects ``Di < Dterm`` up
-      front; carrying the same skip into this model made a tail declining at exactly ``0``
-      produce volume forever while one declining at ``1e-300`` was capped --- a 20,045x
-      difference in EUR across that step.
+    * A terminal decline caps a *hyperbolic* tail, whose decline falls with time until it
+      reaches ``Dterm``. A last segment that is already exponential, flat, or inclining has no
+      such crossing --- its decline is constant or rising --- so ``Dterm`` cannot be applied
+      and is ignored. Note that for a flat tail this means the forecast produces volume
+      forever.
 
 * New Segment Types
     * ``HyperbolicSegment`` --- one segment of a ``GeneralizedHyperbolic``, with keyword-only
@@ -159,6 +156,24 @@ Version History
       such as ``c=1e300`` are still accepted, and ``validate_params`` still opts out per
       parameter. Sequence-valued parameters (``GeneralizedPLYield.segments``) continue to
       validate their own contents.
+
+* **Breaking:** an ignored ``Dterm`` now warns, and numerical integration rejects ``t < 0``
+    * ``MH``, ``THM`` and ``GeneralizedHyperbolic`` discard ``Dterm`` when the last segment is
+      already exponential, flat, or inclining, since a decline that is constant or rising
+      never falls to ``Dterm``. That was silent; it now raises a ``RuntimeWarning`` naming the
+      reason. Forecast values are unchanged. It matters most for a flat tail, where the
+      discarded cap means the forecast produces volume forever.
+    * ``_integrate_with`` returns ``NaN`` for ``t < 0`` instead of corrupting the result at
+      every *other* time. It merged the requested times into its own grid, so a single
+      negative entry moved the lower limit of integration from ``0`` to ``min(t)`` and every
+      returned value picked up the area over ``[min(t), 0]`` --- which the ``NaN`` zeroing
+      turned into a definite number rather than a visible failure.
+      ``PLE(1000, 0.8, 0.1, 0.5).cum([30, 100, 365, 1000])`` returns ~``1819``; prepending a
+      single ``-30.0`` turned those same four entries into ~``16819``, an 8.2x error at
+      positive times. ``PLE``, ``SE``, ``Duong`` and the power-law yields all integrate
+      numerically and all raise time to a non-integer power, so none is real-valued before
+      ``0``. The grid also now spans ``max(t)`` rather than ``t[-1]``, so an unsorted request
+      cannot fall outside it.
 
 * Bug Fix
     * ``cum`` could return ``NaN`` under a perfectly finite rate. ``_Ncheck`` falls back to a

@@ -581,10 +581,27 @@ class DeclineCurve(ABC):
         if len(t) == 0:
             return np.array([], dtype=np.float64)
 
+        # Only non-negative times take part in the integration. A negative t merged into the
+        # grid moved the lower limit from 0 to min(t), so the accumulated integral -- and
+        # therefore EVERY value returned, including the positive ones -- picked up the area
+        # over [min(t), 0]. The NaN zeroing below made that area a definite number rather
+        # than a visible failure: PLE(1000, .8, .1, .5).cum([30, 100, 365, 1000]) returns
+        # ~1819, and prepending a single -30.0 turned those same entries into ~16819.
+        #
+        # A negative t gets NaN. Every model that integrates numerically here -- PLE, SE,
+        # Duong, the power-law yields -- raises time to a non-integer power, so none of them
+        # is real-valued before 0. This matches what the yield models already return there.
+        forward = t[t >= 0.0]
+        if len(forward) == 0:
+            return np.full_like(t, np.nan, dtype=np.float64)
+
         eps = 1e-12
-        t_max = float(t[-1]) if t[-1] > 0 else 1.0
+        # max(), not [-1]: identical for the sorted input this is normally given, but a
+        # caller may pass any order, and a grid that stops short of the largest requested
+        # time would put it outside the integration range
+        t_max = float(forward.max()) if forward.max() > 0 else 1.0
         log_grid = np.logspace(np.log10(eps), np.log10(t_max), n_grid)
-        grid = np.unique(np.concatenate([[0.0], log_grid, t]))
+        grid = np.unique(np.concatenate([[0.0], log_grid, forward]))
 
         # evaluate fn on the full grid in one vectorized call
         with np.errstate(over='ignore', under='ignore', invalid='ignore'):
@@ -603,9 +620,10 @@ class DeclineCurve(ABC):
         cum_grid[0] = 0.0
         cum_grid[1:] = cumulative_trapezoid(y, grid)
 
-        # extract values at the requested t values (they are in the grid)
-        t_indices = np.searchsorted(grid, t)
-        return cum_grid[t_indices]
+        # extract values at the requested t values (the non-negative ones are in the grid)
+        out = np.full_like(t, np.nan, dtype=np.float64)
+        out[t >= 0.0] = cum_grid[np.searchsorted(grid, forward)]
+        return out
 
 
 class PrimaryPhase(DeclineCurve):
