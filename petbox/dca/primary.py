@@ -30,7 +30,8 @@ from numpy.typing import NDArray
 from typing import cast
 
 from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
-                   DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON)
+                   DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON,
+                   _validate_segment_times)
 
 NDFloat = NDArray[np.float64]
 
@@ -121,13 +122,15 @@ class MultisegmentHyperbolic(PrimaryPhase):
         inherited: it cannot jump even where rate does.
         """
         for i in range(segments.shape[0] - 1):
-            # the previous segment's full parameter row, evaluated at this segment's start
-            p = [*segments[i], segments[i + 1, self.T_IDX]]
+            # the previous segment's full parameter row, plus this segment's start time --
+            # the argument list every _*check static method takes
+            previous_at_boundary = [*segments[i], segments[i + 1, self.T_IDX]]
+
             if np.isnan(segments[i + 1, self.D_IDX]):
-                segments[i + 1, self.D_IDX] = self._Dcheck(*p).item()
+                segments[i + 1, self.D_IDX] = self._Dcheck(*previous_at_boundary).item()
             if np.isnan(segments[i + 1, self.Q_IDX]):
-                segments[i + 1, self.Q_IDX] = self._qcheck(*p).item()
-            segments[i + 1, self.N_IDX] = self._Ncheck(*p).item()
+                segments[i + 1, self.Q_IDX] = self._qcheck(*previous_at_boundary).item()
+            segments[i + 1, self.N_IDX] = self._Ncheck(*previous_at_boundary).item()
 
         return segments
 
@@ -158,7 +161,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         -------
             segments: NDFloat
         """
-        Dterm_nom = self.nominal_from_tangent(Dterm) / DAYS_PER_YEAR
+        Dterm_nom = self._nominal_per_day_from_tangent(Dterm)
         t_last, D_last, b_last = segments[-1, [self.T_IDX, self.D_IDX, self.B_IDX]]
 
         if Dterm_nom < MIN_EPSILON or D_last < MIN_EPSILON or b_last < MIN_EPSILON:
@@ -329,6 +332,27 @@ class MultisegmentHyperbolic(PrimaryPhase):
         return self._vectorize(self._bcheck, t)
 
     @classmethod
+    def _nominal_per_day_from_secant(cls, D: float, b: float) -> float:
+        """
+        Nominal decline per *day* from a secant effective decline per year.
+
+        The segment arrays store nominal-per-day, while every public parameter -- ``Di``,
+        ``Dterm``, and :attr:`HyperbolicSegment.D` -- is an effective decline per year. The
+        conversion and its ``DAYS_PER_YEAR`` division live here so a caller cannot apply one
+        without the other: omitting the division yields a decline 365.25 times too steep,
+        which is a plausible-looking forecast rather than an error.
+        """
+        return cls.nominal_from_secant(D, b) / DAYS_PER_YEAR
+
+    @classmethod
+    def _nominal_per_day_from_tangent(cls, D: float) -> float:
+        """
+        Nominal decline per *day* from a tangent effective decline per year. See
+        :meth:`_nominal_per_day_from_secant` for why the unit conversion is not inlined.
+        """
+        return cls.nominal_from_tangent(D) / DAYS_PER_YEAR
+
+    @classmethod
     def nominal_from_secant(cls, D: float, b: float) -> float:
         if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
             return cls.nominal_from_tangent(D)
@@ -439,7 +463,7 @@ class MH(MultisegmentHyperbolic):
         """
         Precache the initial conditions of each hyperbolic segment.
         """
-        Di_nom = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
+        Di_nom = self._nominal_per_day_from_secant(self.Di, self.bi)
 
         # `_validate` rejects Di < Dterm, so the terminal time is never clamped here
         return self._append_terminal_segment(
@@ -574,7 +598,7 @@ class THM(MultisegmentHyperbolic):
         bterm = self.bterm
 
         q1 = self.qi
-        D1 = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
+        D1 = self._nominal_per_day_from_secant(self.Di, self.bi)
         N1 = 0.0
 
         if tterm == 0.0 and bterm == 0.0:
@@ -603,11 +627,17 @@ class THM(MultisegmentHyperbolic):
             )
 
         elif tterm == 0.0 and bterm != 0.0:
-            # exponential terminal segment
+            # Exponential terminal segment. This deliberately does NOT use the shared
+            # `_append_terminal_segment`, despite computing the same t4: when the terminal
+            # decline has already been reached by t3, THM *replaces* the bf segment with an
+            # exponential at D3, while the shared helper appends one at D4 and leaves the bf
+            # row inert. Those differ -- for THM(1000, 0.8, 2.0, 0.8, 30.0, 0.9) the tail
+            # declines at D3 = 4.404e-3 here versus D4 = 6.304e-3 there, 43% steeper. The
+            # collapse is part of THM's published behaviour, so it stays.
             D2 = self._Dcheck(t1, q1, D1, b1, 0.0, t2).item()
             q2 = self._qcheck(t1, q1, D1, b1, 0.0, t2).item()
             D3 = self._Dcheck(t2, q2, D2, b2, 0.0, t3).item()
-            D4 = self.nominal_from_tangent(bterm) / DAYS_PER_YEAR
+            D4 = self._nominal_per_day_from_tangent(bterm)
             b4 = 0.0
             if b3 <= 0:
                 t4 = t3
@@ -764,7 +794,7 @@ class THM(MultisegmentHyperbolic):
     def _transqfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         kwargs.setdefault('n', 10)
         qi = self.qi
-        Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
+        Dnom_i = self._nominal_per_day_from_secant(self.Di, self.bi)
         D_dt = Dnom_i - self._integrate_with(self._transDfn, t, **kwargs)
         where_eps = abs(D_dt) > LOG_EPSILON
         result = np.zeros_like(t, dtype=np.float64)
@@ -791,7 +821,7 @@ class THM(MultisegmentHyperbolic):
         if self.Di == 0.0:
             return np.full_like(t, 0.0, dtype=np.float64)
 
-        Dnom_i = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
+        Dnom_i = self._nominal_per_day_from_secant(self.Di, self.bi)
 
         if Dnom_i < MIN_EPSILON:
             # no need to compute transient function
@@ -848,7 +878,7 @@ class THM(MultisegmentHyperbolic):
 
             elif tterm == 0.0:
                 # exponential
-                Dterm = self.nominal_from_tangent(bterm) / DAYS_PER_YEAR
+                Dterm = self._nominal_per_day_from_tangent(bterm)
                 where_term = Dterm >= D
                 D[where_term] = self._Dcheck(tterm, 1.0, Dterm, 0.0, 0.0, t[where_term])
 
@@ -878,7 +908,7 @@ class THM(MultisegmentHyperbolic):
 
             elif tterm == 0.0:
                 # exponential
-                Dterm = self.nominal_from_tangent(bterm) / DAYS_PER_YEAR
+                Dterm = self._nominal_per_day_from_tangent(bterm)
                 D = self._transDfn(t)
                 where_term = Dterm >= D
                 b[where_term] = 0.0
@@ -1128,19 +1158,8 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                               b=None if segment.b is None else float(segment.b))
             for segment in self.segments))
 
-        start_times = np.array([segment.t for segment in self.segments], dtype=np.float64)
-
-        # These are written as `not np.all(<valid>)` rather than `np.any(<invalid>)` on
-        # purpose: every comparison against NaN is False, so `np.any(t <= 0.0)` would
-        # accept a NaN start time, which silently produces an all-NaN forecast. The
-        # positive form rejects NaN, and the explicit isfinite rejects an infinite start
-        # time, which would place a segment that never begins.
-        if not np.all(np.isfinite(start_times) & (start_times > 0.0)):
-            raise ValueError('segments t must be finite and > 0')
-
-        # np.diff of a single element is empty, and np.all of empty is True
-        if not np.all(np.diff(start_times) > 0.0):
-            raise ValueError('segments t not strictly increasing')
+        _validate_segment_times(
+            np.array([segment.t for segment in self.segments], dtype=np.float64))
 
         super()._validate()
 
@@ -1153,7 +1172,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         from the row before it. A terminal exponential row is appended last, unless there is
         no decline left to cap.
         """
-        Di_nom = self.nominal_from_secant(self.Di, self.bi) / DAYS_PER_YEAR
+        Di_nom = self._nominal_per_day_from_secant(self.Di, self.bi)
         rows = [[0.0, self.qi, Di_nom, self.bi, 0.0]]
 
         # `b` must be resolved before `D` is converted: the secant-to-nominal conversion
@@ -1164,7 +1183,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                 b = segment.b
 
             D_nom = (np.nan if segment.D is None
-                     else self.nominal_from_secant(segment.D, b) / DAYS_PER_YEAR)
+                     else self._nominal_per_day_from_secant(segment.D, b))
             q = np.nan if segment.q is None else segment.q
             rows.append([segment.t, q, D_nom, b, np.nan])
 

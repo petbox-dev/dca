@@ -27,7 +27,8 @@ from typing import cast
 
 from .base import (DeclineCurve, PrimaryPhase,
                    AssociatedPhase, SecondaryPhase, WaterPhase, BothAssociatedPhase,
-                   ParamDesc, DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON)
+                   ParamDesc, DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON,
+                   _validate_segment_times)
 
 NDFloat = NDArray[np.float64]
 
@@ -640,19 +641,10 @@ class GeneralizedPLYield(MultisegmentPLYield):
 
         breakpoint_times, slopes, _ = self._segment_arrays()
 
-        # These are written as `not np.all(<valid>)` rather than `np.any(<invalid>)` on
-        # purpose: every comparison against NaN is False, so `np.any(t <= 0.0)` would
-        # accept a NaN time and `np.any(abs(m) > bound)` a NaN slope -- either of which
-        # silently produces an all-NaN yield function. The positive form rejects NaN,
-        # and the explicit isfinite rejects an infinite breakpoint, which would place a
-        # segment that never starts.
-        if not np.all(np.isfinite(breakpoint_times) & (breakpoint_times > 0.0)):
-            raise ValueError('segments t must be finite and > 0')
+        _validate_segment_times(breakpoint_times)
 
-        # np.diff of a single element is empty, and np.all of empty is True
-        if not np.all(np.diff(breakpoint_times) > 0.0):
-            raise ValueError('segments t not strictly increasing')
-
+        # As in `_validate_segment_times`, the positive form is deliberate: `np.any(abs(m) >
+        # bound)` would accept a NaN slope and silently produce an all-NaN yield function.
         if not np.all(np.abs(slopes) <= self.SLOPE_BOUND):
             raise ValueError(
                 f'segments m must be finite and within '

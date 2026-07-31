@@ -56,6 +56,41 @@ _REMOVED_ACCESSORS: Dict[_Phase, Tuple[str, ...]] = {
 }
 
 
+def _validate_segment_times(times: NDFloat) -> None:
+    """
+    Check the segment start-time column shared by every multi-segment model.
+
+    Times must be finite, strictly positive, and strictly increasing. A module-level function
+    rather than a method: ``GeneralizedHyperbolic`` in :mod:`petbox.dca.primary` and
+    ``GeneralizedPLYield`` in :mod:`petbox.dca.associated` both need it and share no base
+    beyond :class:`DeclineCurve`, so keeping it here also keeps the two error messages
+    identical rather than letting a second copy drift.
+
+    The tests are written as ``not np.all(<valid>)`` rather than ``np.any(<invalid>)`` on
+    purpose: every comparison against ``NaN`` is False, so ``np.any(t <= 0.0)`` would accept
+    a ``NaN`` time and silently produce an all-``NaN`` forecast. The positive form rejects it,
+    and the explicit ``isfinite`` rejects an infinite time, which would place a segment that
+    never begins.
+
+    Parameters
+    ----------
+        times: NDFloat
+            Segment start or breakpoint times, in days, in the order given.
+
+    Raises
+    ------
+        ValueError
+            If any time is not finite or not positive, or if they are not strictly
+            increasing.
+    """
+    if not np.all(np.isfinite(times) & (times > 0.0)):
+        raise ValueError('segments t must be finite and > 0')
+
+    # np.diff of a single element is empty, and np.all of empty is True
+    if not np.all(np.diff(times) > 0.0):
+        raise ValueError('segments t not strictly increasing')
+
+
 def _disable_other_phase_accessors(model: 'AssociatedPhase', phase: _Phase) -> None:
     """
     Replace the accessors belonging to the other phase with a stub that raises.
