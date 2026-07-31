@@ -44,6 +44,15 @@ MIN_EPSILON = sys.float_info.min
 
 _Self = TypeVar('_Self', bound='DeclineCurve')
 
+# Accessors that belong to the OTHER phase and must be disabled when a model is attached as
+# one phase or the other: a secondary phase has no water-oil ratio, and vice versa. Read by
+# `PrimaryPhase.add_secondary`/`add_water` and by `AssociatedPhase._adopt_attachment`, so a
+# new accessor is picked up by every site at once rather than needing three edits.
+REMOVED_ACCESSORS: Dict[str, Tuple[str, ...]] = {
+    'secondary': ('wor', 'wgr'),
+    'water': ('gor', 'cgr'),
+}
+
 
 @dataclass(frozen=True)
 class ParamDesc():
@@ -524,6 +533,38 @@ class PrimaryPhase(DeclineCurve):
     def removed_method(t: Union[float, NDFloat], phase: str, method: str) -> NoReturn:
         raise ValueError(f'This instance is a {phase} phase and has no `{method}` method.')
 
+    @staticmethod
+    def _disable_other_phase_accessors(model: 'AssociatedPhase', phase: str) -> None:
+        """
+        Replace the accessors belonging to the other phase with a stub that raises.
+
+        A model attached as ``phase`` must not answer the opposite phase's ratio: a secondary
+        phase has no WOR/WGR and a water phase has no GOR/CGR. The stubs are installed as
+        *instance* attributes, so anything that rebuilds the instance --
+        :func:`dataclasses.replace`, for example -- loses them and must re-apply via
+        :meth:`AssociatedPhase._adopt_attachment`.
+
+        The ``hasattr`` test is genuine polymorphism, not an implicit dependency: a plain
+        :class:`SecondaryPhase` never defines ``wor`` at all, while a
+        :class:`BothAssociatedPhase` defines all four.
+
+        Parameters
+        ----------
+            model: AssociatedPhase
+                The model being attached, whose accessors are replaced in place.
+
+            phase: str
+                Either ``'secondary'`` or ``'water'``; keys :data:`REMOVED_ACCESSORS`.
+
+        Returns
+        -------
+        """
+        for method in REMOVED_ACCESSORS[phase]:
+            if hasattr(model, method):
+                # bypass the "frozen" protection, as the rest of the attach path does
+                object.__setattr__(model, method, partial(
+                    PrimaryPhase.removed_method, phase=phase, method=method))
+
     def _set_defaults(self) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
@@ -545,15 +586,7 @@ class PrimaryPhase(DeclineCurve):
         Returns
         -------
         """
-        # remove WOR if it exists
-        if hasattr(secondary, 'wor'):
-            object.__setattr__(secondary, 'wor', partial(
-                self.removed_method, phase='secondary', method='wor'))
-
-        # remove WGR if it exists
-        if hasattr(secondary, 'wgr'):
-            object.__setattr__(secondary, 'wgr', partial(
-                self.removed_method, phase='secondary', method='wgr'))
+        self._disable_other_phase_accessors(secondary, 'secondary')
 
         # bypass the "frozen" protection to link to the secondary phase
         object.__setattr__(secondary, 'primary', self)
@@ -571,15 +604,7 @@ class PrimaryPhase(DeclineCurve):
         Returns
         -------
         """
-        # remove GOR if it exists
-        if hasattr(water, 'gor'):
-            object.__setattr__(water, 'gor', partial(
-                self.removed_method, phase='water', method='gor'))
-
-        # remove CGR if it exists
-        if hasattr(water, 'cgr'):
-            object.__setattr__(water, 'cgr', partial(
-                self.removed_method, phase='water', method='cgr'))
+        self._disable_other_phase_accessors(water, 'water')
 
         # bypass the "frozen" protection to link to the water phase
         object.__setattr__(water, 'primary', self)
@@ -635,17 +660,14 @@ class AssociatedPhase(DeclineCurve):
         object.__setattr__(self, 'primary', primary)
 
         if getattr(primary, 'secondary', None) is other:
-            removed, phase = ('wor', 'wgr'), 'secondary'
+            phase = 'secondary'
         elif getattr(primary, 'water', None) is other:
-            removed, phase = ('gor', 'cgr'), 'water'
+            phase = 'water'
         else:
             # `other` was never attached, so there is no guard to mirror
             return
 
-        for method in removed:
-            if hasattr(self, method):
-                object.__setattr__(self, method, partial(
-                    PrimaryPhase.removed_method, phase=phase, method=method))
+        PrimaryPhase._disable_other_phase_accessors(self, phase)
 
     @abstractmethod
     def _yieldfn(self, t: NDFloat) -> NDFloat:
