@@ -117,16 +117,21 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if D < MIN_EPSILON:
+        # magnitude test, not a sign test: MIN_EPSILON is a tiny *positive* number, so
+        # ``D < MIN_EPSILON`` would also catch an inclining (negative-D) segment
+        if abs(D) < MIN_EPSILON:
             return np.full_like(t, q, dtype=np.float64)
 
         # Handle overflow for these function
         # q * np.exp(-D * dt)
         # q * np.log(1.0 + D * b * dt) ** (1.0 / b)
-        if b <= MultisegmentHyperbolic.B_EPSILON:
-            D_dt = D * dt
-        else:
-            D_dt = np.log1p(D * b * dt) / b
+        # ``1 + D b dt`` reaches 0 at the pole of a backward extrapolation and goes negative
+        # past it, so log1p legitimately yields -inf then nan: silence both
+        with np.errstate(divide='ignore', invalid='ignore'):
+            if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
+                D_dt = D * dt
+            else:
+                D_dt = np.log1p(D * b * dt) / b
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
@@ -144,20 +149,22 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if q < MIN_EPSILON:
             return cast(NDFloat, np.atleast_1d(N) + np.zeros_like(t, dtype=np.float64))
 
-        if D < MIN_EPSILON or (q / D) == np.inf:
+        if abs(D) < MIN_EPSILON or abs(q / D) == np.inf:
             return np.atleast_1d(N + q * dt)
 
-        if abs(1.0 - b) < MIN_EPSILON:
-            return N + q / D * np.log1p(D * dt)
+        # as in _qcheck, log1p hits its own pole on a backward extrapolation
+        with np.errstate(divide='ignore', invalid='ignore'):
+            if abs(1.0 - b) < MIN_EPSILON:
+                return N + q / D * np.log1p(D * dt)
 
-        # Handle overflow for this function
-        # N + q / ((1.0 - b) * D) * (1.0 - (1.0 + b * D * dt) ** (1.0 - 1.0 / b))
-        if b <= MultisegmentHyperbolic.B_EPSILON:
-            D_dt = -D * dt
-            q_b_D = q / D
-        else:
-            D_dt = (1.0 - 1.0 / b) * np.log1p(b * D * dt)
-            q_b_D = q / ((1.0 - b) * D)
+            # Handle overflow for this function
+            # N + q / ((1.0 - b) * D) * (1.0 - (1.0 + b * D * dt) ** (1.0 - 1.0 / b))
+            if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
+                D_dt = -D * dt
+                q_b_D = q / D
+            else:
+                D_dt = (1.0 - 1.0 / b) * np.log1p(b * D * dt)
+                q_b_D = q / ((1.0 - b) * D)
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
@@ -173,14 +180,18 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if D < MIN_EPSILON:
+        if abs(D) < MIN_EPSILON:
             return np.full_like(t, D, dtype=np.float64)
 
-        if b < MIN_EPSILON:
+        if abs(b) < MIN_EPSILON:
             b = 0.0
 
-        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-            return D / (1.0 + D * b * dt)
+        # the denominator vanishes at the pole of a backward extrapolation, and is negative
+        # beyond it where the segment has no real value. it is also formed as ``inf * 0`` for
+        # an exponential segment carrying an infinite decline, so the multiply is guarded too
+        with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
+            Denom = 1.0 + D * b * dt
+            return np.where(Denom < 0.0, np.nan, D / Denom)
 
     @staticmethod
     def _Dcheck2(t0: float, q: float, D: float, b: float, N: float,
@@ -190,11 +201,26 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         dt = DeclineCurve._validate_ndarray(t - t0)
 
-        if D < MIN_EPSILON:
+        if abs(D) < MIN_EPSILON:
             return np.full_like(t, D, dtype=np.float64)
 
-        Denom = 1.0 + D * b * dt
-        return -b * D * D / (Denom * Denom)
+        # as in _Dcheck: the denominator vanishes at the pole and is negative beyond it
+        with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
+            Denom = 1.0 + D * b * dt
+            return np.where(Denom < 0.0, np.nan, -b * D * D / (Denom * Denom))
+
+    @staticmethod
+    def _bcheck(t0: float, q: float, D: float, b: float, N: float,
+                t: Union[float, NDFloat]) -> NDFloat:
+        """
+        Compute the proper Arps form of b, which is constant within a segment but has no
+        real value beyond the pole of a backward extrapolation
+        """
+        dt = DeclineCurve._validate_ndarray(t - t0)
+        # as in _Dcheck, ``D * b`` is ``inf * 0`` for an exponential segment carrying an
+        # infinite decline; the resulting nan compares False and leaves b untouched
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            return np.where(1.0 + D * b * dt < 0.0, np.nan, b)
 
     def _vectorize(self, fn: Callable[..., NDFloat],
                    t: Union[float, NDFloat]) -> NDFloat:
@@ -206,7 +232,11 @@ class MultisegmentHyperbolic(PrimaryPhase):
         x = np.zeros_like(t, dtype=np.float64)
 
         for i in range(p.shape[0]):
-            where_seg = t >= p[i, self.T_IDX]
+            # the first segment extrapolates backwards: it claims everything below the next
+            # boundary, so a negative ``t`` is evaluated rather than left as a silent zero.
+            # (the row's own start time doubles as ``t0`` in the segment functions, so it
+            # cannot be moved to ``-inf`` the way the yield models' boundary column can.)
+            where_seg = np.ones_like(t, dtype=bool) if i == 0 else t >= p[i, self.T_IDX]
             if i < p.shape[0] - 1:
                 where_seg = where_seg & (t < p[i + 1, self.T_IDX])
 
@@ -230,14 +260,14 @@ class MultisegmentHyperbolic(PrimaryPhase):
         return self._vectorize(self._Dcheck, t) * t
 
     def _bfn(self, t: NDFloat) -> NDFloat:
-        return self._vectorize(lambda *p: p[self.B_IDX], t)
+        return self._vectorize(self._bcheck, t)
 
     @classmethod
     def nominal_from_secant(cls, D: float, b: float) -> float:
-        if b <= MultisegmentHyperbolic.B_EPSILON:
+        if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
             return cls.nominal_from_tangent(D)
 
-        if D < MIN_EPSILON:
+        if abs(D) < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D >= 1.0:
@@ -248,13 +278,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def secant_from_nominal(cls, D: float, b: float) -> float:
-        if b <= MultisegmentHyperbolic.B_EPSILON:
+        if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
             return cls.tangent_from_nominal(D)
 
         # Handle overflow for this function
         # Deff = 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
 
-        if D < MIN_EPSILON:
+        if abs(D) < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         D_b = D * b
@@ -270,7 +300,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
-        if D < MIN_EPSILON:
+        if abs(D) < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D >= 1.0:
@@ -280,7 +310,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @classmethod
     def tangent_from_nominal(cls, D: float) -> float:
-        if D < MIN_EPSILON:
+        if abs(D) < MIN_EPSILON:
             return 0.0 # pragma: no cover
 
         if D > LOG_EPSILON:

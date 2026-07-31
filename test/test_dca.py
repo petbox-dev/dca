@@ -1413,3 +1413,178 @@ def test_yield_nan_is_consistent_across_every_output() -> None:
         # and t >= 0 is untouched
         assert np.all(np.isfinite(y.gor(np.array([1.0, 180.0, 3650.0]))))
         assert np.all(np.isfinite(y.cum(np.array([1.0, 180.0, 3650.0]))))
+
+
+# reference values captured from the pre-change implementation, so the sign-agnostic guard
+# conversion has to reproduce them exactly for every model that cannot supply a negative
+# D or b. t = [1, 30.4, 365.25, 3652.5] days.
+GUARD_REFERENCE_T = np.array([1.0, 30.4, 365.25, 3652.5])
+GUARD_REFERENCE = {
+    'MH(1000,.8,1.5,0)': (
+        dca.MH(1000., .8, 1.5, 0.), {
+            'rate': [981.8396626562013, 664.210599737096, 199.99999999999997,
+                     45.56818012543986],
+            'cum': [990.850493166883, 24433.673590829454, 133042.85527918086,
+                    396584.08517439046],
+            'D': [0.018077636613935855, 0.010058645377762836, 0.0016619799788273027,
+                  0.00018074792519363043],
+            'b': [1.5, 1.5, 1.5, 1.5]}),
+    'MH(1000,.8,1.5,.08)': (
+        dca.MH(1000., .8, 1.5, .08), {
+            'rate': [981.8396626562013, 664.210599737096, 199.99999999999997,
+                     44.680397388876266],
+            'cum': [990.850493166883, 24433.673590829454, 133042.85527918086,
+                    396338.0238722265],
+            'D': [0.018077636613935855, 0.010058645377762836, 0.0016619799788273027,
+                  0.00022828640366612198],
+            'b': [1.5, 1.5, 1.5, 0.0]}),
+    'THM(1000,.8,2,.8,30)': (
+        dca.THM(1000., .8, 2., .8, 30.), {
+            'rate': [968.6810451560933, 577.5875201834856, 152.86137440662728,
+                     13.153037654471326],
+            'cum': [984.0914022507778, 22260.14137274077, 114126.06836052494,
+                    241555.51635911534],
+            'D': [0.030828516377649332, 0.010960405535004797, 0.0023255363661494432,
+                  0.00032681785701511667],
+            'b': [2.0, 2.0, 0.8, 0.8]}),
+    'THM(1000,.8,2,.8,30,.1,20)': (
+        dca.THM(1000., .8, 2., .8, 30., .1, 20.), {
+            'rate': [968.6810451560933, 577.5875201834856, 152.86137440662728,
+                     13.153037654471326],
+            'cum': [984.0914022507778, 22260.14137274077, 114126.06836052494,
+                    241555.51635911534],
+            'D': [0.030828516377649332, 0.010960405535004797, 0.0023255363661494432,
+                  0.00032681785701511667],
+            'b': [2.0, 2.0, 0.8, 0.8]}),
+}
+
+
+def test_guard_conversion_is_invisible_to_valid_models() -> None:
+    """MIN_EPSILON is a tiny *positive* number, so ``D < MIN_EPSILON`` read as "D is zero or
+    negative" where "D is negligible in magnitude" was meant. Converting those to abs() tests
+    is unobservable to MH/THM, whose descriptors forbid a negative D or b -- and abs(x) == x
+    for non-negative x. These are exact equalities, not approximations: the arithmetic is
+    untouched, only the branch predicate changed."""
+    for name, (model, expected) in GUARD_REFERENCE.items():
+        for fn, values in expected.items():
+            actual = getattr(model, fn)(GUARD_REFERENCE_T)
+            assert np.array_equal(actual, np.array(values)), (name, fn, actual)
+
+
+def test_decline_conversions_are_invisible_to_positive_declines() -> None:
+    msh = dca.MultisegmentHyperbolic
+    assert msh.nominal_from_secant(0.8, 1.5) == 6.786893258332634
+    assert msh.nominal_from_tangent(0.08) == 0.08338160893905106
+    assert msh.secant_from_nominal(0.5, 1.5) == 0.3113879245213628
+    assert msh.tangent_from_nominal(0.5) == 0.3934693402873666
+
+
+def test_inclining_segment_math_through_the_base_statics() -> None:
+    """No model exposes a negative D yet -- IncliningHyperbolic is future work -- so the
+    sign-agnostic guards are exercised through the base statics directly. Before the change
+    every one of these returned the D == 0 constant branch."""
+    msh = dca.MultisegmentHyperbolic
+    t = np.array([0.0, 100.0, 365.0, 1000.0])
+    qi, D, b = 100.0, -0.002, -0.5
+
+    # q(t) = qi * (1 + D b t) ** (-1/b), evaluated in log space as the model does
+    expected_q = qi * np.exp(-np.log1p(D * b * t) / b)
+    assert np.allclose(msh._qcheck(0.0, qi, D, b, 0.0, t), expected_q)
+    assert np.allclose(expected_q, [100.0, 121.0, 186.3225, 400.0])
+
+    # an inclining segment grows: this is the whole point of allowing a negative D
+    assert np.all(np.diff(msh._qcheck(0.0, qi, D, b, 0.0, t)) > 0.0)
+
+    # D(t) = D / (1 + D b t), staying negative and shrinking in magnitude
+    assert np.allclose(msh._Dcheck(0.0, qi, D, b, 0.0, t), D / (1.0 + D * b * t))
+    assert np.allclose(msh._Dcheck(0.0, qi, D, b, 0.0, t),
+                       [-0.002, -0.0018181818181818, -0.0014652014652015, -0.001])
+
+    # b is carried through unchanged
+    assert np.all(msh._bcheck(0.0, qi, D, b, 0.0, t) == b)
+
+
+def test_decline_conversions_round_trip_for_negative_declines() -> None:
+    msh = dca.MultisegmentHyperbolic
+    assert msh.nominal_from_secant(-0.2, -0.5) == pytest.approx(-0.19089023)
+    assert msh.secant_from_nominal(msh.nominal_from_secant(-0.2, -0.5), -0.5) \
+        == pytest.approx(-0.2)
+    assert msh.nominal_from_tangent(-0.2) == pytest.approx(-0.18232156)
+    assert msh.tangent_from_nominal(msh.nominal_from_tangent(-0.2)) == pytest.approx(-0.2)
+
+    # b of either sign but negligible magnitude must fall through to the tangent form
+    assert msh.nominal_from_secant(-0.2, -1e-12) == msh.nominal_from_tangent(-0.2)
+    assert msh.secant_from_nominal(-0.2, -1e-12) == msh.tangent_from_nominal(-0.2)
+
+
+def test_hyperbolic_extrapolates_before_zero() -> None:
+    """The first segment now claims every t below the next boundary, so a normalized time
+    that starts too late can be walked backwards. Previously _vectorize masked on
+    ``t >= 0.0`` and the np.zeros_like initial value survived, making rate(-500) a silent 0
+    -- indistinguishable from a dead well."""
+    mh = dca.MH(1000.0, 0.8, 1.5)
+    Di_nom = mh.nominal_from_secant(0.8, 1.5) / dca.base.DAYS_PER_YEAR
+    pole = -1.0 / (Di_nom * 1.5)
+    assert pole == pytest.approx(-35.87797697)
+
+    t = np.array([-35.0, -10.0, -1.0])
+    expected = 1000.0 * np.exp(-np.log1p(Di_nom * 1.5 * t) / 1.5)
+    assert np.allclose(mh.rate(t), expected)
+    assert np.allclose(mh.rate(t), [11863.96570684, 1243.36436565, 1019.02406456])
+
+    # rate grows monotonically backwards and exceeds qi
+    assert np.all(mh.rate(t) > 1000.0)
+    assert np.all(np.diff(mh.rate(t)) < 0.0)
+    assert mh.rate(np.array([0.0]))[0] == 1000.0
+
+    # cum is the signed volume relative to the t = 0 baseline, so it is negative before it
+    assert np.all(mh.cum(t) < 0.0)
+    assert mh.cum(np.array([0.0]))[0] == 0.0
+    assert np.allclose(mh.cum(t), [-76385.06501710, -11106.66765354, -1009.43734298])
+
+    # a terminal segment must not claim negative t -- it starts at 2884.4 days
+    assert dca.MH(1000.0, 0.8, 1.5, 0.08).rate(t)[1] == mh.rate(t)[1]
+
+    # THM extrapolates too, off its own first segment
+    assert dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0).rate(np.array([-10.0]))[0] \
+        == pytest.approx(1707.67902859)
+
+
+def test_hyperbolic_is_nan_beyond_the_pole() -> None:
+    """Backwards of t = -1/(D b) the factor ``1 + D b dt`` is negative and the Arps forms
+    have no real value. Every output must agree: rate and cum get nan from log1p on their
+    own, but D, beta and b are algebraically defined there and would otherwise report a
+    plausible decline for a domain with no rate -- the same failure mode the yield models
+    guard at t < 0."""
+    mh = dca.MH(1000.0, 0.8, 1.5)
+    beyond = np.array([-40.0, -100.0, -1e6])
+    for name in ('rate', 'cum', 'D', 'beta', 'b'):
+        assert np.all(np.isnan(getattr(mh, name)(beyond))), name
+
+    # at the pole itself the divergence is real, and reported as inf rather than nan
+    pole = -1.0 / (mh.nominal_from_secant(0.8, 1.5) / dca.base.DAYS_PER_YEAR * 1.5)
+    assert np.isinf(mh.rate(np.array([pole]))[0])
+
+    # cum converges at the pole for b > 1, where 1 - 1/b > 0 -- this is q / ((1 - b) D)
+    Di_nom = mh.nominal_from_secant(0.8, 1.5) / dca.base.DAYS_PER_YEAR
+    assert mh.cum(np.array([pole]))[0] == pytest.approx(1000.0 / ((1.0 - 1.5) * Di_nom))
+
+    # and diverges for b <= 1
+    assert np.isneginf(dca.MH(1000.0, 0.8, 1.0).cum(np.array(
+        [-1.0 / (dca.MH(1000.0, 0.8, 1.0).nominal_from_secant(0.8, 1.0)
+                 / dca.base.DAYS_PER_YEAR)]))[0])
+
+
+def test_backward_extrapolation_emits_no_warnings() -> None:
+    """log1p reaches -inf at the pole and nan beyond it, and _Dcheck's denominator vanishes.
+    Those are expected outcomes of a valid call, so they must not surface as RuntimeWarnings
+    the way an unguarded np.errstate would let them."""
+    t = np.array([-1e6, -40.0, -35.87797696700799, -35.0, -10.0, 0.0, 100.0, 1e6])
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', RuntimeWarning)
+        for model in (dca.MH(1000.0, 0.8, 1.5), dca.MH(1000.0, 0.8, 1.5, 0.08),
+                      dca.MH(1000.0, 0.8, 1.0), dca.MH(1000.0, 0.5, 0.0),
+                      dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
+                      dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0)):
+            for name in ('rate', 'cum', 'D', 'beta', 'b'):
+                getattr(model, name)(t)
