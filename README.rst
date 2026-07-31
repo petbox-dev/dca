@@ -34,6 +34,7 @@ Analytic functions are implemented wherever possible. When not possible, numeric
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Primary Phase              | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |
 |                            | `Modified Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.MH>`_,                                    |
+|                            | `Generalized Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.GeneralizedHyperbolic>`_,              |
 |                            | `Power-Law Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLE>`_,                                 |
 |                            | `Stretched Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SE>`_,                                  |
 |                            | `Duong <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.Duong>`_                                                |
@@ -165,6 +166,61 @@ This moves the power law's origin, so it is a re-anchoring and not a lossless tr
 ``GeneralizedPLYield`` that holds only within the first segment: later segments re-anchor, and
 a segment that overrides ``c`` re-pins the value outright, so the shift can move late-time
 yield either way. A rigorous correction is a re-fit.
+
+
+A primary phase model may use an arbitrary number of segments too. ``GeneralizedHyperbolic``
+takes the initial conditions plus a list of segments, each of which is by default continuous
+in rate and decline with the one before it. Arity selects what a tuple specifies, with the
+hyperbolic exponent always last: ``(t, b)`` inherits both rate and decline, ``(t, D, b)``
+prescribes the decline, and ``(t, q, D, b)`` sets both.
+
+.. code-block:: python
+
+    >>> gh = dca.GeneralizedHyperbolic.from_segments(
+    ...     1000.0, 0.8, 2.0,
+    ...     [(30.0, 1.2),                 # b only
+    ...      (365.0, 0.3, 0.8),           # D and b
+    ...      (730.0, 250.0, None, 0.5)],  # rate reset, decline inherited
+    ...     Dterm=0.08)
+    >>> gh.rate([1.0, 30.0, 365.0, 730.0, 3650.0])
+    array([968.681, 580.137, 141.317, 250.000, 49.799])
+    >>> gh.b([1.0, 30.0, 365.0, 730.0, 3650.0])
+    array([2.000, 1.200, 0.800, 0.500, 0.500])
+
+The exponent steps at each breakpoint. Rate is continuous at 30 and 365 days, but the third
+segment resets it to 250 — a restimulation, say — while inheriting the decline. Cumulative
+volume is continuous at every breakpoint, including across that reset: production already
+recovered cannot change when the rate does.
+
+Times are in days, and a per-segment ``D`` is a secant effective decline per year, matching
+``Di`` and ``Dterm``. The equivalent form using dataclasses is
+
+.. code-block:: python
+
+    >>> gh = dca.GeneralizedHyperbolic(1000.0, 0.8, 2.0, (
+    ...     dca.HyperbolicSegment(30.0, b=1.2),
+    ...     dca.HyperbolicSegment(365.0, D=0.3, b=0.8),
+    ...     dca.HyperbolicSegment(730.0, q=250.0, b=0.5)), 0.08)
+
+``MH`` is the no-segment case of this model, i.e. ``MH(qi, Di, bi, Dterm)`` and
+``GeneralizedHyperbolic(qi, Di, bi, (), Dterm)`` are equivalent, terminal segment included.
+An exponent that *increases* between segments is permitted: ``THM`` requires
+``bi >= bf >= bterm`` because its segments model one specific transient-to-boundary
+transition, but a restimulation genuinely raises ``b``.
+
+Hyperbolic models also extrapolate backwards, so a forecast fit against a first-production
+date that was a month too late can be evaluated at negative time:
+
+.. code-block:: python
+
+    >>> mh = dca.MH(qi=1000.0, Di=0.8, bi=1.5)
+    >>> mh.rate([-30.0, -10.0, 0.0])
+    array([3339.899, 1243.364, 1000.000])
+
+The first segment is extended backwards, so this is the same curve, not a re-anchoring — the
+distinction from ``PLYield.shift`` above. ``cum`` before ``t = 0`` is negative, being the
+volume back to the ``t = 0`` baseline as a signed offset. Far enough back the model reaches
+the pole at ``t = -1 / (b D)``, where the rate diverges; beyond it every output is ``nan``.
 
 
 Once instantiated, the same functions and process for attaching a secondary phase work for any model.

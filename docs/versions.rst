@@ -21,7 +21,40 @@ Version History
       because every comparison against ``NaN`` is false and the latter form would accept
       a ``NaN`` breakpoint and silently return an all-``NaN`` yield function.
 
-* New Segment Type
+    * ``GeneralizedHyperbolic`` --- an Arps primary-phase model taking an arbitrary number
+      of segments, given as :class:`HyperbolicSegment` instances. Each segment is by default
+      continuous in rate and decline with the one before it; cumulative volume is continuous
+      always. With no segments it is bit-for-bit identical to ``MH``, i.e.
+      ``MH(qi, Di, bi, Dterm) == GeneralizedHyperbolic(qi, Di, bi, (), Dterm)``, terminal
+      segment included. Segment times must be finite, positive, and strictly increasing; a
+      given ``q`` must be finite and positive, a given ``D`` finite within ``[0, 1)``, and a
+      given ``b`` finite within ``[0, 2]``. As above, ``NaN`` is rejected explicitly rather
+      than being read as an inherited slot.
+    * The exponent is deliberately **not** required to be non-increasing between segments.
+      ``THM`` enforces ``bi >= bf >= bterm`` because its segments model one specific
+      transient-to-boundary transition; ``GeneralizedHyperbolic`` makes no such claim, and a
+      restimulation genuinely raises ``b``. The rule for this model is to reject only what is
+      not physically meaningful.
+    * Where ``MH`` raises ``Di < Dterm``, ``GeneralizedHyperbolic`` clamps the terminal
+      segment forward to the last segment's start time --- that segment's decline is not
+      known until the chain is built, so a caller cannot be asked to guarantee it in advance.
+      The equivalence above therefore holds over ``Di >= Dterm``, the only region ``MH`` is
+      constructible in.
+
+* New Segment Types
+    * ``HyperbolicSegment`` --- one segment of a ``GeneralizedHyperbolic``, with keyword-only
+      optional fields where ``None`` means *continuous from the previous segment*: an omitted
+      ``b`` continues the preceding exponent, an omitted ``D`` leaves the decline continuous,
+      and an omitted ``q`` leaves the rate continuous. Supplying ``q`` **steps** the rate at
+      that time, and supplying ``D`` prescribes the decline there. Cumulative volume is never
+      overridable. A per-segment ``D`` is a secant effective decline per year, matching
+      ``Di`` and ``Dterm``; its conversion to nominal-per-day depends on ``b``, so ``b`` is
+      resolved first, including where ``D`` is given and ``b`` inherited. The optional fields
+      are keyword-only because ``HyperbolicSegment(365.0, 0.3)`` would otherwise set ``q``
+      while the equivalent builder tuple ``(365.0, 0.3)`` means ``b``.
+    * ``GeneralizedHyperbolic.from_segments`` builds the same model from plain ``(t, b)``,
+      ``(t, D, b)`` or ``(t, q, D, b)`` tuples, disambiguated by arity: the exponent is
+      always last and short forms omit the level.
     * ``PLYieldSegment`` --- one segment of a ``GeneralizedPLYield``, with keyword-only
       optional fields where ``None`` means *continuous from the previous segment*: an
       omitted ``m`` continues the preceding slope, an omitted ``c`` leaves the yield
@@ -51,7 +84,39 @@ Version History
       convention and ``t > 0`` is unchanged. Use ``shift()`` to model the period before the
       anchor.
 
+* **Breaking:** the hyperbolic models extrapolate backwards instead of returning zero
+    * ``MultisegmentHyperbolic._vectorize`` masked each segment on ``t >= t_start`` with the
+      first segment starting at ``0``, so no segment ever claimed a negative ``t`` and the
+      zero-filled initial value survived: ``MH(1000, 0.8, 1.5).rate(-500)`` returned ``0``,
+      indistinguishable from a dead well. The first segment now claims everything below the
+      next boundary, so a forecast fit against a first-production date that was too late can
+      be walked backwards. ``MH``, ``THM`` and ``GeneralizedHyperbolic`` are affected;
+      results for ``t >= 0`` are bit-for-bit unchanged. Unlike ``PLYield.shift``, this
+      extends the same curve rather than re-anchoring it.
+    * ``cum`` before ``t = 0`` is negative, being the volume back to the ``t = 0`` baseline
+      as a signed offset.
+    * Far enough back, a hyperbolic segment reaches the pole at ``t = -1 / (b D)``, where
+      ``1 + b D t`` vanishes. The rate diverges to ``inf`` there --- and ``cum`` converges to
+      a finite ``q / ((1 - b) D)`` for ``b > 1``, where the integral is convergent. Beyond the
+      pole every output is ``nan``: ``rate`` and ``cum`` already were, but ``D``, ``beta`` and
+      ``b`` remained algebraically defined and reported a plausible decline for a domain with
+      no rate. All five now agree.
+
 * Refactor
+    * ``MultisegmentHyperbolic``'s sign-assuming guards are now magnitude tests.
+      ``MIN_EPSILON`` is ``sys.float_info.min``, a tiny *positive* number, so every
+      ``if D < MIN_EPSILON`` read as "``D`` is zero **or negative**" where "``D`` is
+      negligible in magnitude" was intended --- an inclining segment (``q > 0``, ``D < 0``,
+      ``b < 0``) fell into the ``D == 0`` constant branch and returned a flat rate. The
+      paired ``b <= B_EPSILON`` shape tests changed with them. ``MH`` and ``THM`` declare
+      ``Di`` within ``[0, 1)`` and ``bi`` within ``[0, 2]`` and cannot pass a negative ``D``
+      or ``b`` into the base, so their results are bit-for-bit unchanged. This is the
+      prerequisite for a future inclining-hyperbolic model; no descriptor bounds changed.
+    * ``THM``'s inline segment-chain loop and ``MH``'s hand-computed terminal row are now a
+      shared ``_fill_segment_chain`` and ``_append_terminal_segment`` on
+      ``MultisegmentHyperbolic``, which ``GeneralizedHyperbolic`` also uses. The chain fill
+      is conditional on ``isnan``, so a supplied rate or decline is an override rather than
+      being overwritten. Results are bit-for-bit unchanged.
     * All power-law yield math moved to a new ``MultisegmentPLYield`` base class, which
       caches per-segment anchor conditions and gathers them with ``searchsorted``.
       ``PLYield`` is now a subclass and supplies only its two segments; its results are
@@ -94,6 +159,14 @@ Version History
       ``t_start`` column is sorted for any anchor time. ``_lookup_segment`` binary searches
       that column, and a caller who disabled validation could pass ``t0 < 0`` and leave it
       unsorted, making the search result formally undefined. Selected values are unchanged.
+    * The hyperbolic segment functions no longer emit ``RuntimeWarning``. ``log1p`` reaches
+      ``-inf`` at the pole of a backward extrapolation and ``nan`` beyond it, ``_Dcheck``'s
+      denominator vanishes there, and ``D * b`` is formed as ``inf * 0`` for an exponential
+      segment carrying an infinite decline --- all expected outcomes of a valid call, now
+      wrapped in ``np.errstate``. A terminal-decline division that overflows to ``inf`` for a
+      denormal ``b`` is guarded the same way; that ``inf`` places the terminal row at a time
+      no ``t`` can reach, leaving it inert and the tail uncapped, which is the correct
+      result and was ``MH``'s behaviour before this change. Values are unchanged.
     * The associated-phase ``D``, ``beta``, and ``b`` functions no longer emit
       ``RuntimeWarning`` at ``t = 0``. The division by zero there is the expected limit of
       a power law, and ``b`` additionally divides by ``D`` inside an ``np.where`` that
