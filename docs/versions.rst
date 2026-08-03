@@ -124,8 +124,13 @@ Version History
       pole bounds whichever direction the rate grows in.
     * Where a model mixes inclining and declining segments the rate is not monotonic and a
       given ``q`` may occur several times; the **earliest** is returned, which is what backing a
-      forecast up wants. A rate of zero returns ``inf`` --- reached only in the limit --- and a
-      negative one ``nan``.
+      forecast up wants. A negative rate returns ``nan``. A rate of zero returns ``inf`` for a
+      declining model --- reached only in the limit --- but a finite time for an inclining one,
+      which was at zero in the past rather than the future.
+    * Accuracy degrades approaching the pole, where ``expm1`` saturates and the offset from it
+      loses precision. On ``MH(1000, 0.8, 1.5)`` a rate 9.4e6 times ``qi`` still round-trips to
+      1e-6; with ``bi = 10`` only 14x does, since a larger exponent puts a given rate multiple
+      nearer the pole. Backing a forecast up by a plausible amount is unaffected.
     * ``PLYield.shift(dt)`` and ``GeneralizedPLYield.shift(dt)`` re-anchor a fit made
       against the wrong first-production date, moving the pivot or every breakpoint later
       by ``dt`` days. This re-anchors rather than reproducing the original curve ---
@@ -234,6 +239,22 @@ Version History
       cannot fall outside it.
 
 * Bug Fix
+    * A ``GeneralizedHyperbolic`` or ``IncliningHyperbolic`` built on a saturated
+      secant-to-nominal conversion produced an all-``NaN`` forecast. Now that ``b`` is unbounded,
+      ``b * -log1p(-D)`` can pass ``LOG_EPSILON`` and the conversion returns an infinity; paired
+      with a non-zero exponent that makes ``D * b * dt`` an ``inf * 0`` at the segment's own
+      start, so every output is ``NaN``. At ``Di = 0.9`` one ULP in ``bi`` --- 308.2547155599167
+      against 308.25471555991675 --- separated a plausible forecast from that. It is now rejected
+      at construction, naming the offending segment. Exempt are a row no ``t`` can reach (``THM``
+      produces one when a denormal ``bf`` overflows its terminal time to infinity) and an
+      infinite decline on an *exponential* segment, which is a well-defined instant shut-in.
+    * A ``NaN`` time is now ``NaN`` from a flat or spent segment too. The constant-rate branches
+      of ``_qcheck``, ``_Ncheck`` and ``_Dcheck`` ignore ``t`` entirely, so a single-segment flat
+      model answered ``rate(NaN)`` with its rate and ``cum(NaN)`` with a definite volume while
+      ``b(NaN)`` was ``NaN``. All five outputs now agree for every model shape.
+    * The segment functions no longer warn when a segment's start time is infinite. ``inf - inf``
+      is ``NaN`` and warned from the ``dt`` subtraction, which sits outside every ``errstate``;
+      both an inert terminal row at ``t = inf`` and a query at ``t = inf`` are legitimate.
     * ``THM.transient_rate`` and ``transient_cum`` raised ``ValueError`` for some valid
       parameterizations. ``_transqfn`` assigned a full-length right-hand side into a masked
       left-hand side, so it failed whenever the overflow mask excluded even one element ---

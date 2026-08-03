@@ -1752,6 +1752,76 @@ def test_time_at_rate_returns_the_earliest_time() -> None:
     assert earliest < later
 
 
+def test_a_saturated_decline_is_rejected_rather_than_producing_nan() -> None:
+    """The secant-to-nominal conversion saturates a finite (D, b) pair to an infinity once
+    ``b * -log1p(-D)`` passes LOG_EPSILON. Paired with a non-zero exponent that makes
+    ``D * b * dt`` an ``inf * 0`` at the segment's own start, so the whole forecast is nan --
+    and one ULP in bi is the difference. It is rejected at construction instead.
+
+    Only reachable where |b| is unbounded, i.e. the two models that allow it."""
+    # at Di = 0.9 the threshold sits between these two adjacent doubles
+    below, above = 308.2547155599167, 308.25471555991675
+    assert np.isfinite(dca.GeneralizedHyperbolic(1000.0, 0.9, below, ()).segment_params[
+        0, dca.GeneralizedHyperbolic.D_IDX])
+    assert dca.GeneralizedHyperbolic(1000.0, 0.9, below, ()).rate(
+        np.array([365.25]))[0] == pytest.approx(100.0)
+
+    with pytest.raises(ValueError, match='the initial conditions converts to a non-finite'):
+        dca.GeneralizedHyperbolic(1000.0, 0.9, above, ())
+
+    # the inclining mirror, and via IncliningHyperbolic
+    for Di, bi in ((-0.5, -1e4), (-1e6, -1000.0), (-9.0, -1000.0)):
+        with pytest.raises(ValueError, match='non-finite nominal decline'):
+            dca.GeneralizedHyperbolic(1000.0, Di, bi, ())
+        with pytest.raises(ValueError, match='non-finite nominal decline'):
+            dca.IncliningHyperbolic(1000.0, Di, bi)
+
+    # named by segment index when it is a segment rather than the initial conditions
+    with pytest.raises(ValueError, match='segment 0 converts to a non-finite'):
+        dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.9, 1000.0)])
+
+    # A row that no t can reach is exempt: its parameters never enter a forecast. THM produces
+    # one -- a denormal bf overflows its terminal time to inf, and the chain fill then evaluates
+    # that row's decline as 1 + D*0*inf, i.e. nan. The model works and must still construct.
+    thm = dca.THM(0.0, 0.5, 2.0, 1.1125369292536007e-308, 0.0, 0.125, 0.0)
+    assert thm.segment_params[-1, thm.T_IDX] == np.inf
+    assert np.isnan(thm.segment_params[-1, thm.D_IDX])
+    assert np.all(np.isfinite(thm.rate(dca.get_time())))
+
+    # An infinite decline on an exponential segment is well defined -- _qcheck takes the D * dt
+    # branch, giving a rate of 0 onward, an instant shut-in -- so it is exempt too, while a nan
+    # decline never is. Asserted through the predicate, since no model reaches that combination
+    # in a reachable row today.
+    exempt = dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ())
+    params = exempt.segment_params.copy()
+    for decline, exponent, is_fatal in ((np.inf, 0.0, False), (np.inf, 1.5, True),
+                                        (np.nan, 0.0, True), (np.nan, 1.5, True)):
+        params[0, exempt.D_IDX], params[0, exempt.B_IDX] = decline, exponent
+        reachable = np.isfinite(params[:, exempt.T_IDX])
+        fatal = reachable & (np.isnan(params[:, exempt.D_IDX])
+                             | (np.isinf(params[:, exempt.D_IDX])
+                                & (params[:, exempt.B_IDX] != 0.0)))
+        assert bool(fatal[0]) is is_fatal, (decline, exponent)
+
+
+def test_time_at_rate_on_a_zero_rate_model() -> None:
+    """A qi of 0 is legal -- the descriptor bound is inclusive -- and makes the rate 0 for all
+    time. Inverting it must say so. The ratio q_target / 0 is inf for every positive target,
+    indistinguishable from an infinite target, so without a guard the model reported the pole:
+    MH(0.0, 0.8, 1.5).time_at_rate(1.0) gave -35.878, where the rate is in fact nan."""
+    for model in (dca.MH(0.0, 0.8, 1.5),
+                  dca.MH(0.0, 0.8, 1.5, 0.08),
+                  dca.GeneralizedHyperbolic.from_segments(0.0, 0.8, 2.0, [(30.0, 1.2)])):
+        assert np.all(model.rate(dca.get_time()) == 0.0)
+
+        recovered = model.time_at_rate(np.array([0.0, 1.0, 1000.0, np.inf]))
+        # a rate of zero is attained, at the start; nothing else is attained at all
+        assert recovered[0] == 0.0
+        assert np.all(np.isnan(recovered[1:]))
+        # and the round trip holds, rather than pointing at a time the rate never has
+        assert model.rate(np.array([recovered[0]]))[0] == 0.0
+
+
 def test_time_at_rate_edge_shapes() -> None:
     model = dca.MH(1000.0, 0.8, 1.5, 0.08)
 
@@ -2589,14 +2659,14 @@ def test_decline_conversions_saturate_instead_of_overflowing() -> None:
     assert msh.tangent_from_nominal(-1e10) == -np.inf
     assert msh.secant_from_nominal(-1e10, 0.0) == -np.inf
 
-    # A model built on those parameters constructs rather than raising OverflowError. Its
-    # forecast is the saturated limit, not a finite curve: an infinitely steep decline is
-    # spent immediately and an infinitely steep incline is unbounded. Both are the honest
-    # answer for an infinite nominal decline -- the point is that neither is an exception.
-    t = np.array([1.0, 100.0])
-    assert np.all(dca.GeneralizedHyperbolic(1000.0, 0.9, 1000.0, ()).rate(t) == 0.0)
-    assert np.all(dca.GeneralizedHyperbolic(1000.0, 0.999, 1000.0, ()).rate(t) == 0.0)
-    assert np.all(dca.GeneralizedHyperbolic(1000.0, -9.0, -1000.0, ()).rate(t) == np.inf)
+    # A model built on a saturated conversion is rejected at construction rather than
+    # producing an all-nan forecast -- see
+    # test_a_saturated_decline_is_rejected_rather_than_producing_nan. The point of the
+    # saturation is that the conversion functions themselves stay usable, not that such a
+    # model is constructible.
+    for args in ((1000.0, 0.9, 1000.0), (1000.0, 0.999, 1000.0), (1000.0, -9.0, -1000.0)):
+        with pytest.raises(ValueError, match='non-finite nominal decline'):
+            dca.GeneralizedHyperbolic(*args, ())
 
     # the ordinary range is untouched
     assert msh.nominal_from_secant(0.8, 1.5) == 6.786893258332634

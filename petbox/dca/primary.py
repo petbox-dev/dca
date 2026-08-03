@@ -111,6 +111,40 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # naturally, this should only be called during the __post_init__ process
         object.__setattr__(self, 'segment_params', self._segments())
 
+        # Reject a non-finite *derived* decline paired with a non-zero exponent.
+        # `__post_init__` rejects non-finite inputs for the reason given there -- a silent zero
+        # EUR rather than a visible failure -- but the secant-to-nominal conversion can saturate
+        # a perfectly finite pair to an infinity: at Di = 0.9, a bi above 308.2547155599167 does
+        # it, and one ULP either side of that is the difference between a plausible forecast and
+        # rate/cum of all nan. The nan comes from ``D * b * dt`` being ``inf * 0`` at the
+        # segment's own start.
+        #
+        # Two things narrow it, each from a measured case:
+        #
+        #   - The row must be *reachable*. A row whose own start time is infinite is inert --
+        #     `_segment_window` gives it only t = inf -- so its parameters never reach a
+        #     forecast. THM does produce one: a denormal bf overflows its terminal time to inf,
+        #     and the chain fill then evaluates that row's decline as ``1 + D*0*inf``, i.e. nan.
+        #     Harmless, and rejecting it would break a model that works.
+        #   - An *infinite* decline on an exponential segment is well defined: `_qcheck` takes
+        #     the ``D * dt`` branch, giving a rate of 0 from there onward, an instant shut-in.
+        #     A *nan* decline is never well defined, whatever the exponent.
+        #
+        # Only the decline column is checked. An infinite start time is legitimate on its own --
+        # see `_append_terminal_segment`, where it marks a terminal row no t reaches.
+        params = self.segment_params
+        declines, exponents = params[:, self.D_IDX], params[:, self.B_IDX]
+
+        reachable = np.isfinite(params[:, self.T_IDX])
+        fatal = reachable & (np.isnan(declines)
+                             | (np.isinf(declines) & (exponents != 0.0)))
+        if np.any(fatal):
+            row = int(np.flatnonzero(fatal)[0])
+            where = 'the initial conditions' if row == 0 else f'segment {row - 1}'
+            raise ValueError(
+                f'{where} converts to a non-finite nominal decline; |b| is too large for '
+                f'this D')
+
     def _fill_segment_chain(self, segments: NDFloat) -> NDFloat:
         """
         Seed each segment after the first from the end state of the one before it, so the
@@ -233,12 +267,18 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         Compute the proper Arps form of q
         """
-        dt = DeclineCurve._validate_ndarray(t - t0)
+        # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
+        # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
+        # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
+        with np.errstate(invalid='ignore'):
+            dt = DeclineCurve._validate_ndarray(t - t0)
 
         # magnitude test, not a sign test: MIN_EPSILON is a tiny *positive* number, so
         # ``D < MIN_EPSILON`` would also catch an inclining (negative-D) segment
         if abs(D) < MIN_EPSILON:
-            return np.full_like(t, q, dtype=np.float64)
+            # keyed on dt, not t: a flat segment answers every time with the same rate, so
+            # without this a nan time got a value here while cum and b returned nan
+            return np.where(np.isnan(dt), np.nan, q)
 
         # Handle overflow for these function
         # q * np.exp(-D * dt)
@@ -263,10 +303,17 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         Compute the proper Arps form of N
         """
-        dt = DeclineCurve._validate_ndarray(t - t0)
+        # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
+        # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
+        # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
+        with np.errstate(invalid='ignore'):
+            dt = DeclineCurve._validate_ndarray(t - t0)
 
         if q < MIN_EPSILON:
-            return cast(NDFloat, np.atleast_1d(N) + np.zeros_like(t, dtype=np.float64))
+            # keyed on dt, as the flat branches of _qcheck and _Dcheck are: a spent segment
+            # holds the volume already produced at every time, so without this a nan time got
+            # a definite volume here while rate returned nan
+            return np.where(np.isnan(dt), np.nan, np.atleast_1d(N) + np.zeros_like(dt))
 
         # ``q / D`` overflows for a tiny D, which is precisely what this guard is testing for
         # -- so the test itself has to be shielded. ``abs(D) < MIN_EPSILON`` short-circuits,
@@ -310,10 +357,15 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         Compute the proper Arps form of D
         """
-        dt = DeclineCurve._validate_ndarray(t - t0)
+        # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
+        # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
+        # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
+        with np.errstate(invalid='ignore'):
+            dt = DeclineCurve._validate_ndarray(t - t0)
 
         if abs(D) < MIN_EPSILON:
-            return np.full_like(t, D, dtype=np.float64)
+            # as in _qcheck: a flat segment must still not answer a nan time
+            return np.where(np.isnan(dt), np.nan, D)
 
         if abs(b) < MIN_EPSILON:
             b = 0.0
@@ -331,10 +383,15 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         Compute the derivative of the proper Arps form of D
         """
-        dt = DeclineCurve._validate_ndarray(t - t0)
+        # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
+        # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
+        # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
+        with np.errstate(invalid='ignore'):
+            dt = DeclineCurve._validate_ndarray(t - t0)
 
         if abs(D) < MIN_EPSILON:
-            return np.full_like(t, D, dtype=np.float64)
+            # as in _qcheck: a flat segment must still not answer a nan time
+            return np.where(np.isnan(dt), np.nan, D)
 
         # as in _Dcheck: the denominator vanishes at the pole and is negative beyond it
         with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
@@ -357,6 +414,20 @@ class MultisegmentHyperbolic(PrimaryPhase):
         than a whole row: it is called directly rather than through `_vectorize`, so there is no
         row to splat and no reason to accept a start time and volume it would ignore.
         """
+        # A segment starting at *exactly* zero rate stays there -- `_qcheck` returns
+        # ``q * exp(...)`` -- so it attains ``q_target`` only if that is zero too, and then at
+        # every time rather than one. This has to come before the ratio: ``q_target / 0`` is
+        # ``inf`` for every positive target, indistinguishable from an infinite target, which
+        # would report the pole. `MH(0.0, 0.8, 1.5)` has a rate of 0 everywhere yet claimed to
+        # reach 1.0 at t = -35.878, where the rate is in fact nan.
+        #
+        # The test is ``== 0.0``, not ``abs(q) < MIN_EPSILON``: unlike `_Ncheck`, `_qcheck`
+        # puts no floor on q, so a denormal start rate produces a real denormal forecast.
+        # Treating it as zero reported an attained rate as unattainable -- for
+        # MH(1e-310, 0.8, 1.5), `rate(0)` is 1e-310 but `time_at_rate(1e-310)` gave nan.
+        if q == 0.0:
+            return np.where(np.atleast_1d(q_target) == 0.0, 0.0, np.nan)
+
         with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
             # a rate of 0 gives -inf here and an infinite rate +inf; both carry through to the
             # correct limit below, so neither is special-cased
@@ -382,7 +453,11 @@ class MultisegmentHyperbolic(PrimaryPhase):
         Compute the proper Arps form of b, which is constant within a segment but has no
         real value beyond the pole of a backward extrapolation
         """
-        dt = DeclineCurve._validate_ndarray(t - t0)
+        # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
+        # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
+        # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
+        with np.errstate(invalid='ignore'):
+            dt = DeclineCurve._validate_ndarray(t - t0)
 
         # A nan dt is tested for explicitly. Every comparison against nan is False, so the
         # pole test alone would return b for a nan time -- and a single-segment model has no
@@ -404,12 +479,16 @@ class MultisegmentHyperbolic(PrimaryPhase):
         row's own start time doubles as ``t0`` in the segment functions, so it cannot be moved
         to ``-inf`` the way the yield models' boundary column can.) The last segment runs to
         infinity. Between them the windows are half-open and disjoint, so together they cover
-        every finite ``t`` exactly once.
+        every finite ``t`` exactly once -- **provided the start-time column ascends**, which is
+        every model's contract but is not checked here. ``THM`` with a negative ``telf`` emits a
+        descending column and does double-cover; that model already returns all-``nan`` rates,
+        and ``telf`` carries no bounds.
 
-        Shared by :meth:`_vectorize` and :meth:`time_at_rate`, and it must be: the round trip
-        is exact only because a time `time_at_rate` returns falls in the window of the very
-        segment it inverted, which is the segment `rate` will then evaluate. Two copies of this
-        could drift apart and break that silently.
+        Shared by :meth:`_vectorize` and :meth:`time_at_rate`, and it must be: a time
+        `time_at_rate` returns falls in the window of the very segment it inverted, which is
+        therefore the segment `rate` evaluates. Two copies of this could drift apart and break
+        that silently. Note that this guarantees the same *segment*, not a bit-exact round
+        trip -- inverting and re-evaluating still costs a ULP or two.
 
         Parameters
         ----------
@@ -480,7 +559,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
         infinite-rate limit, so it needs no separate accessor:
 
         - ``MH(1000, 0.8, 1.5).time_at_rate(inf)`` is ``-35.87798``, exactly ``-1 / (b D)``,
-          the earliest evaluable time.
+          the earliest evaluable time -- to within a ULP or two. ``rate`` at the returned pole
+          is sometimes still finite, turning to ``inf`` and then ``nan`` one or two steps
+          earlier.
         - An exponential segment (``b = 0``) gives ``-inf``: it has no pole and can be backed
           up indefinitely.
         - An inclining segment (``D < 0``, ``b < 0``) gives ``+inf``: it has no *backward*
@@ -488,6 +569,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         A ``t_min`` would therefore be a misnomer: the pole bounds whichever direction the rate
         grows in, and this states that without a direction-specific name.
+
+        **Accuracy degrades approaching the pole**, where ``expm1`` saturates and the offset
+        from it loses precision. Recovering a rate 9.4e6 times ``qi`` still round-trips to
+        1e-6 on ``MH(1000, 0.8, 1.5)``, but only 14x does on ``GeneralizedHyperbolic`` with
+        ``bi = 10`` -- the larger the exponent, the nearer the pole a given rate multiple sits.
+        Backing a forecast up by a plausible amount is unaffected; recovering an extreme
+        rate multiple is not a precise operation.
 
         Each segment is inverted only over the times it actually governs, using the same
         bracketing as :meth:`rate`. That matters: on ``MH(1000, 0.8, 1.5, 0.08)``, whose
