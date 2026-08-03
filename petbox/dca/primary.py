@@ -152,7 +152,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         One row of a segment array, placed through the column constants.
 
         Every row in this module used to be written as a bare positional literal --
-        ``[t, q, D, b, N]``, eighteen of them across four models. The order was correct but
+        ``[t, q, D, b, N]``, 19 of them across four models. The order was correct but
         stated nowhere: reordering ``T_IDX``..``N_IDX`` would have left all eighteen silently
         wrong, since nothing tied the literals to the constants. Assembling them here ties the
         two together, and names the fields at each call site as a side benefit.
@@ -201,16 +201,31 @@ class MultisegmentHyperbolic(PrimaryPhase):
         """
         Require ``Di`` to survive the secant-to-nominal conversion as an actual decline.
 
-        The descriptor bound rejects a ``Di`` of exactly zero, but `nominal_from_secant` floors
-        any magnitude below ``MIN_EPSILON`` to zero, so a denormal ``Di`` reaches the same flat
-        forecast by another route -- and ``q(t) = qi`` for all ``t`` is not a hyperbolic model:
-        every use of ``b`` is multiplied by ``D``, leaving the exponent nothing to act on.
+        The descriptor bound rejects a ``Di`` of exactly zero, but that is not enough on its
+        own: ``q(t) = qi`` for all ``t`` is not a hyperbolic model -- every use of ``b`` is
+        multiplied by ``D``, leaving the exponent nothing to act on -- and a ``Di`` too small to
+        survive the conversion reaches that same flat forecast by another route.
+
+        The test is on the *stored* nominal-per-day decline, not the secant it came from. Those
+        differ by ``DAYS_PER_YEAR``, so a secant that converts to a non-zero value can still
+        land below ``MIN_EPSILON`` once divided: ``MH(1000, 1e-307, 1.5)`` stored a decline of
+        2.7e-310 and was exactly flat, while reporting ``b(t) = 1.5``. That is the
+        ``(D == 0, b != 0)`` pair `_fill_segment_chain` zeroes for every row *except* the first.
 
         Called by the two published hyperbolic models. :class:`GeneralizedHyperbolic` does *not*
         call it, since flat segments are part of what that model exists to express, and
         :class:`IncliningHyperbolic` makes the mirror-image check for a rise.
         """
-        if cls._nominal_per_day_from_secant(Di, bi) <= 0.0:
+        nominal = cls._nominal_per_day_from_secant(Di, bi)
+
+        # separate messages: a negative Di is a rise, not a flat forecast, and belongs to a
+        # different model. Only reachable by opting out of the Di bound via `validate_params`.
+        if nominal < 0.0:
+            raise ValueError(
+                'Di is negative, which inclines; use IncliningHyperbolic or '
+                'GeneralizedHyperbolic')
+
+        if abs(nominal) < MIN_EPSILON:
             raise ValueError(
                 'Di converts to a zero nominal decline; a flat forecast is not a '
                 'hyperbolic model')
@@ -857,6 +872,11 @@ class MH(MultisegmentHyperbolic):
             where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \\, q`
             and has units of ``1 / day``.
 
+            **Must be positive**, and large enough that the conversion to ``Dnom`` does not
+            floor to zero. A forecast that does not decline is not a hyperbolic model: use
+            :class:`GeneralizedHyperbolic` for a flat one, or :class:`IncliningHyperbolic` for
+            a rising one.
+
         bi: float
             The (initial) hyperbolic parameter, defined as :math:`\\frac{d}{dt}\\frac{1}{D}`.
             This parameter is dimensionless.
@@ -957,6 +977,11 @@ class THM(MultisegmentHyperbolic):
 
             where ``Dnom`` is defined as :math:`\\frac{d}{dt}\\textrm{ln} \\, q`
             and has units of ``1 / day``.
+
+            **Must be positive**, and large enough that the conversion to ``Dnom`` does not
+            floor to zero. A forecast that does not decline is not a hyperbolic model: use
+            :class:`GeneralizedHyperbolic` for a flat one, or :class:`IncliningHyperbolic` for
+            a rising one.
 
         bi: float
             The initial hyperbolic parameter, defined as :math:`\\frac{d}{dt}\\frac{1}{D}`.
@@ -1068,12 +1093,12 @@ class THM(MultisegmentHyperbolic):
             D4 = self._nominal_per_day_from_tangent(bterm)
             b4 = 0.0
 
-            # A zero D3 or D4 makes the reciprocals below a ZeroDivisionError: a flat forecast
-            # (Di = 0, so q(t) = qi for all t) has no decline for a terminal cap to bind on, and
-            # a bterm that converts to zero is no cap at all. Both collapse the terminal time
-            # onto t3, the same path b3 <= 0 already takes when there is nothing to interpolate.
-            # Tested against exact zero, which is the only value that raises -- a denormal
-            # decline still divides, so nothing that previously worked changes.
+            # A zero D3 or D4 makes the reciprocals below a ZeroDivisionError. D4 is the live
+            # route: a bterm that converts to zero is no terminal cap at all. D3 could only
+            # reach zero through a flat forecast, which `_require_a_real_decline` now rejects
+            # outright, so that half is defensive. Both collapse the terminal time onto t3, the
+            # same path b3 <= 0 already takes when there is nothing to interpolate. Tested
+            # against exact zero, the only value that raises -- a denormal still divides.
             if b3 <= 0 or D3 == 0.0 or D4 == 0.0:
                 t4 = t3
             else:
@@ -1258,9 +1283,6 @@ class THM(MultisegmentHyperbolic):
         telf = self.telf
         bterm = self.bterm
         tterm = self.tterm * DAYS_PER_YEAR
-
-        if self.Di == 0.0:
-            return np.full_like(t, 0.0, dtype=np.float64)
 
         Dnom_i = self._nominal_per_day_from_secant(self.Di, self.bi)
 
@@ -1665,11 +1687,13 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             # row 0 is the model's own Di/bi; every later row is a caller segment
             location = 'initial conditions' if index == 0 else f'segments[{index - 1}]'
 
-            # Effective zero, not exact zero. `nominal_from_secant` returns 0.0 for any
-            # ``abs(D) < MIN_EPSILON``, so a denormal D produces a genuinely flat segment; a
-            # test against exactly 0.0 would let Di = 1e-320 pair with bi = 1.5 and store the
-            # forbidden (D == 0, b != 0) in `segment_params`.
-            if abs(D) < MIN_EPSILON and b != 0.0:
+            # Zero-ness is tested on the *stored* nominal-per-day decline, not on the secant it
+            # came from. Two things floor to zero: `nominal_from_secant` returns 0.0 for any
+            # ``abs(D) < MIN_EPSILON``, and the conversion then divides by DAYS_PER_YEAR, so a
+            # secant that survives can still land below MIN_EPSILON afterwards. Testing the
+            # secant let Di = 1e-307 pair with bi = 1.5 and store the forbidden
+            # (D == 0, b != 0) -- the exact pair `_fill_segment_chain` zeroes on every later row.
+            if abs(self._nominal_per_day_from_secant(D, b)) < MIN_EPSILON and b != 0.0:
                 raise ValueError(f'{location} has D == 0, which requires b == 0')
 
             # Sign tests, not a product: ``D * b`` underflows to -0.0 for a pair like
@@ -1868,13 +1892,17 @@ class IncliningHyperbolic(MultisegmentHyperbolic):
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 3)
 
     def _validate(self) -> None:
-        # The descriptors reject a non-negative Di, but that is not quite enough: a denormal
-        # one converts to a nominal decline of exactly 0.0, since `nominal_from_secant` floors
-        # any magnitude below MIN_EPSILON. That is a flat forecast, not an inclining one.
-        # Requiring the incline to survive the conversion keeps this model always actually
-        # inclining, and keeps it interchangeable with `GeneralizedHyperbolic`, which rejects
-        # the same case through its (D == 0 implies b == 0) rule.
-        if self._nominal_per_day_from_secant(self.Di, self.bi) >= 0.0:
+        # The descriptors reject a non-negative Di, but that is not quite enough: the incline
+        # has to survive the conversion as a *representable* decline. Two things floor it --
+        # `nominal_from_secant` returns 0.0 for any magnitude below MIN_EPSILON, and the
+        # conversion then divides by DAYS_PER_YEAR -- so a Di as large as -8.1e-306 still lands
+        # below MIN_EPSILON once stored, which is a flat forecast rather than an inclining one.
+        #
+        # The threshold mirrors `_require_a_real_decline` and
+        # `GeneralizedHyperbolic._validate_decline_signs`, which is what keeps this model
+        # interchangeable with a segment-free GeneralizedHyperbolic: that one rejects the same
+        # pair through its (D == 0 implies b == 0) rule.
+        if self._nominal_per_day_from_secant(self.Di, self.bi) > -MIN_EPSILON:
             raise ValueError('Di is too small in magnitude to incline')
 
         super()._validate()

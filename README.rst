@@ -204,7 +204,11 @@ Times are in days, and a per-segment ``D`` is a secant effective decline per yea
     ...     dca.HyperbolicSegment(730.0, q=250.0, b=0.5)), 0.08)
 
 ``MH`` is the no-segment case of this model, i.e. ``MH(qi, Di, bi, Dterm)`` and
-``GeneralizedHyperbolic(qi, Di, bi, (), Dterm)`` are equivalent, terminal segment included.
+``GeneralizedHyperbolic(qi, Di, bi, (), Dterm)`` are equivalent wherever ``MH`` is
+constructible, terminal segment included. ``GeneralizedHyperbolic`` accepts strictly more:
+``MH`` and ``THM`` require a ``Di`` that actually declines — a flat forecast is not a
+hyperbolic model — and cap ``b`` at 2, while this model permits a flat or inclining segment,
+an unbounded ``b``, and a ``Dterm`` steeper than the initial decline.
 An exponent that *increases* between segments is permitted: ``THM`` requires
 ``bi >= bf >= bterm`` because its segments model one specific transient-to-boundary
 transition, but a restimulation genuinely raises ``b``.

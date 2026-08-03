@@ -369,9 +369,10 @@ def test_Duong(qi: float, a: float, m: float) -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
-    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
-    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
+    # 1e-300, not 0: MH and THM reject any Di whose *stored* nominal decline lands below
+    # MIN_EPSILON, which is a flat forecast rather than a hyperbolic one. The boundary is
+    # ~8.13e-306, where the conversion's /DAYS_PER_YEAR leaves exactly MIN_EPSILON.
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6)
 )
@@ -392,9 +393,10 @@ def test_THM(qi: float, Di: float, bf: float, telf: float) -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
-    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
-    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
+    # 1e-300, not 0: MH and THM reject any Di whose *stored* nominal decline lands below
+    # MIN_EPSILON, which is a flat forecast rather than a hyperbolic one. The boundary is
+    # ~8.13e-306, where the conversion's /DAYS_PER_YEAR leaves exactly MIN_EPSILON.
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0, 1e4),
     bterm=st.floats(0.0, 1.0),
@@ -416,7 +418,8 @@ def test_THM_terminal(qi: float, Di: float, bf: float, telf: float,
     bterm=st.floats(0.0, 1.0),
     tterm=st.floats(5.0, 30.0),
 )
-def test_THM_zero_Di(qi: float, bf: float, telf: float, bterm: float, tterm: float) -> None:
+def test_THM_rejects_a_zero_Di(qi: float, bf: float, telf: float, bterm: float,
+                               tterm: float) -> None:
     """A Di of 0 is a flat forecast, q(t) = qi for all t, which is not a hyperbolic model --
     every use of b is multiplied by D, so the exponent has nothing to act on. MH and THM now
     reject it; GeneralizedHyperbolic accepts it, since flat segments are part of what that
@@ -438,9 +441,15 @@ def test_THM_zero_Di(qi: float, bf: float, telf: float, bterm: float, tterm: flo
     with pytest.raises(ValueError, match='converts to a zero nominal decline'):
         dca.MH(1000.0, 5e-324, 2.0)
 
-    # MIN_EPSILON itself survives the conversion and is accepted
-    assert dca.MH.nominal_from_secant(dca.base.MIN_EPSILON, 2.0) > 0.0
-    assert np.all(np.isfinite(dca.MH(1000.0, dca.base.MIN_EPSILON, 2.0).rate(dca.get_time())))
+    # The boundary is where the STORED decline reaches MIN_EPSILON, which is ~8.13e-306 for
+    # this bi -- the conversion divides by DAYS_PER_YEAR, so the secant threshold sits about
+    # 2.5 decades higher than MIN_EPSILON itself.
+    with pytest.raises(ValueError, match='converts to a zero nominal decline'):
+        dca.MH(1000.0, dca.base.MIN_EPSILON, 2.0)
+
+    accepted = dca.MH(1000.0, 1e-300, 2.0)
+    assert abs(accepted.segment_params[0, accepted.D_IDX]) >= dca.base.MIN_EPSILON
+    assert np.all(np.isfinite(accepted.rate(dca.get_time())))
 
     # and the generalized model still takes a flat forecast, with its b of 0
     flat = dca.GeneralizedHyperbolic(1000.0, 0.0, 0.0, ())
@@ -449,9 +458,10 @@ def test_THM_zero_Di(qi: float, bf: float, telf: float, bterm: float, tterm: flo
 
 @given(
     qi=st.floats(0.0, 1e6),
-    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
-    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
-    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
+    # 1e-300, not 0: MH and THM reject any Di whose *stored* nominal decline lands below
+    # MIN_EPSILON, which is a flat forecast rather than a hyperbolic one. The boundary is
+    # ~8.13e-306, where the conversion's /DAYS_PER_YEAR leaves exactly MIN_EPSILON.
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
     telf=st.floats(1e-10, 1e4),
     bterm=st.floats(0.0, 0.5),
     tterm=st.floats(5, 30),
@@ -486,9 +496,10 @@ def test_THM_transient_extra() -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
-    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
-    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
+    # 1e-300, not 0: MH and THM reject any Di whose *stored* nominal decline lands below
+    # MIN_EPSILON, which is a flat forecast rather than a hyperbolic one. The boundary is
+    # ~8.13e-306, where the conversion's /DAYS_PER_YEAR leaves exactly MIN_EPSILON.
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6),
     bterm=st.floats(1e-3, 0.3)
@@ -504,9 +515,10 @@ def test_THM_terminal_exp(qi: float, Di: float, bf: float, telf: float, bterm: f
 @pytest.mark.filterwarnings('ignore:Dterm ignored')  # bi = 0 with Dterm > 0 is in range here
 @given(
     qi=st.floats(0.0, 1e6),
-    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
-    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
-    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
+    # 1e-300, not 0: MH and THM reject any Di whose *stored* nominal decline lands below
+    # MIN_EPSILON, which is a flat forecast rather than a hyperbolic one. The boundary is
+    # ~8.13e-306, where the conversion's /DAYS_PER_YEAR leaves exactly MIN_EPSILON.
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
     bi=st.floats(0.0, 2.0),
     Dterm=st.floats(0.0, 1.0, exclude_max=True),
 )
@@ -523,9 +535,10 @@ def test_MH(qi: float, Di: float, bi: float, Dterm: float) -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
-    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
-    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
+    # 1e-300, not 0: MH and THM reject any Di whose *stored* nominal decline lands below
+    # MIN_EPSILON, which is a flat forecast rather than a hyperbolic one. The boundary is
+    # ~8.13e-306, where the conversion's /DAYS_PER_YEAR leaves exactly MIN_EPSILON.
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
     Dterm=st.floats(0.0, 1.0, exclude_max=True),
 )
 def test_MH_harmonic(qi: float, Di: float, Dterm: float) -> None:
@@ -536,9 +549,10 @@ def test_MH_harmonic(qi: float, Di: float, Dterm: float) -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
-    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
-    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
+    # 1e-300, not 0: MH and THM reject any Di whose *stored* nominal decline lands below
+    # MIN_EPSILON, which is a flat forecast rather than a hyperbolic one. The boundary is
+    # ~8.13e-306, where the conversion's /DAYS_PER_YEAR leaves exactly MIN_EPSILON.
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
     Dterm=st.floats(0.0, 1.0, exclude_max=True),
 )
 def test_MH_no_validate(qi: float, Di: float, Dterm: float) -> None:
@@ -720,6 +734,10 @@ def test_examples_literalinclude_markers_resolve() -> None:
         assert source.count(start) == 1, f'{start!r} appears {source.count(start)} times'
         assert source.count(end) == 1, f'{end!r} appears {source.count(end)} times'
         assert source.index(start) < source.index(end), f'{start!r} follows {end!r}'
+        # a pair must name the same region, so a mismatched begin/end cannot slip through on
+        # the ordering assertion alone
+        assert start.replace('begin', '') == end.replace('end', ''), (
+            f'{start!r} is paired with {end!r}')
 
     # the marked regions must be disjoint and in the same order as the document
     spans = [(source.index(s), source.index(e)) for s, e in zip(starts, ends)]
@@ -1995,10 +2013,10 @@ def test_inclining_hyperbolic_equals_generalized_with_no_segments(
     GeneralizedHyperbolic -- bit-for-bit, the mirror of what MH is for a declining forecast.
     Both take the same row 0 through the same conversion.
 
-    A Di below MIN_EPSILON in magnitude is excluded because BOTH models reject it, so there is
-    no pair to compare -- see
+    A Di whose stored decline lands below MIN_EPSILON in magnitude is excluded because BOTH
+    models reject it, so there is no pair to compare -- see
     test_inclining_hyperbolic_requires_an_incline_that_survives_conversion."""
-    assume(abs(Di) >= dca.base.MIN_EPSILON)
+    assume(abs(dca.MH._nominal_per_day_from_secant(Di, bi)) >= dca.base.MIN_EPSILON)
     t = np.concatenate([[0.0], dca.get_time()])
 
     inclining = dca.IncliningHyperbolic(qi, Di, bi)
@@ -2080,7 +2098,7 @@ def test_inclining_hyperbolic_requires_an_incline_that_survives_conversion() -> 
     MIN_EPSILON to exactly 0.0, so a denormal Di yields a flat forecast rather than an
     inclining one -- and GeneralizedHyperbolic rejects that same pair through its
     (D == 0 implies b == 0) rule, so accepting it here would break the equivalence."""
-    for Di in (-1e-320, -1.1125369292536007e-308, -5e-324):
+    for Di in (-1e-320, -1.1125369292536007e-308, -5e-324, -8.0e-306):
         with pytest.raises(ValueError, match='too small in magnitude to incline'):
             dca.IncliningHyperbolic(1000.0, Di, -1.0)
 
@@ -2137,10 +2155,10 @@ def test_generalized_hyperbolic_reduces_to_MH(qi: float, Di: float, bi: float,
     Restricted to Di > 0, the only region MH accepts: a Di of 0 is a flat forecast, which MH
     rejects as not hyperbolic while the generalized model takes it with a matching b of 0. That
     divergence is deliberate -- see test_the_two_models_diverge_only_on_a_flat_forecast. The
-    threshold is the conversion, not the bound: a denormal Di floors to a zero nominal decline,
-    which MH also rejects."""
+    threshold is the stored decline, not the bound: a Di whose nominal-per-day value lands
+    below MIN_EPSILON floors to a flat forecast, which MH also rejects."""
     assume(dca.MH.nominal_from_secant(Di, bi) >= dca.MH.nominal_from_tangent(Dterm))
-    assume(dca.MH.nominal_from_secant(Di, bi) > 0.0)
+    assume(abs(dca.MH._nominal_per_day_from_secant(Di, bi)) >= dca.base.MIN_EPSILON)
     t = np.concatenate([[0.0], dca.get_time()])
 
     mh = dca.MH(qi, Di, bi, Dterm)

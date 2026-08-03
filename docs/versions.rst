@@ -43,7 +43,8 @@ Version History
       by being finite --- ``THM``'s ``[0, 2]`` belongs to its specific transition, not to Arps
       in general. The upper bound on ``D`` stands at 1: a decline of 100% per year consumes the
       whole rate within the year and converts to an infinite nominal decline.
-      ``MH`` and ``THM`` keep their original bounds; only ``GeneralizedHyperbolic`` widens.
+      ``MH`` and ``THM`` keep ``bi`` within ``[0, 2]``; only ``GeneralizedHyperbolic`` widens.
+      Their ``Di`` narrows to ``(0, 1)`` --- see the breaking change below.
     * ``D`` and ``b`` must **agree in sign** within a segment. A segment either declines
       (``D > 0``, ``b >= 0``) or inclines (``D < 0``, ``b <= 0``), and a flat segment
       (``D == 0``) must have ``b == 0``. ``b`` is ``d/dt(1/D)``, so a ``b`` opposing its own
@@ -51,9 +52,11 @@ Version History
       side --- which is why the segment functions return ``nan`` past it --- and a flat segment
       has no decline for a non-zero ``b`` to act on. The check runs against the *resolved*
       exponent, so a segment supplying one of the pair and inheriting the other is caught too.
-    * This is the one place the two models diverge on what they accept: ``MH`` allows
-      ``Di == 0`` with a non-zero ``bi`` and silently ignores the ``bi``, since every use of
-      ``b`` is multiplied by ``D``. ``GeneralizedHyperbolic`` rejects it.
+    * A flat forecast is the sharpest difference between the two: ``GeneralizedHyperbolic``
+      accepts ``Di == 0`` with a matching ``bi`` of 0, while ``MH`` and ``THM`` reject it
+      outright as not hyperbolic (see the breaking change below). Its accept-set is otherwise a
+      superset of ``MH``'s --- it also permits ``Di < Dterm``, an unbounded ``b``, and an
+      inclining or flat segment.
     * Where ``MH`` raises ``Di < Dterm``, ``GeneralizedHyperbolic`` clamps the terminal
       segment forward to the last segment's start time --- that segment's decline is not
       known until the chain is built, so a caller cannot be asked to guarantee it in advance.
@@ -219,9 +222,14 @@ Version History
     * A ``Di`` of 0 gives ``q(t) = qi`` for all ``t``. That is a flat forecast, not a hyperbolic
       model --- every use of ``b`` is multiplied by ``D``, so the exponent has nothing to act on,
       and ``MH`` silently ignored its ``bi`` there. The descriptor bound now excludes zero, and a
-      second check rejects a ``Di`` that *converts* to a zero nominal decline: any magnitude
-      below ``MIN_EPSILON`` is floored to zero, so a denormal reached the same flat forecast by
-      another route.
+      second check rejects a ``Di`` whose *stored* nominal-per-day decline lands below
+      ``MIN_EPSILON``, which is the same flat forecast reached another way. That threshold sits
+      about 2.5 decades above ``MIN_EPSILON`` in secant terms --- around ``8.13e-306`` --- because
+      the conversion divides by ``DAYS_PER_YEAR``. It is the threshold `_fill_segment_chain`
+      already uses when it zeroes the exponent of an underflowed decline, so a model can no
+      longer store the ``(D == 0, b != 0)`` pair that the chain fill removes from every later
+      row. Note this enforces internal consistency, not a visible decline: a stored decline of
+      ``1e-300`` is accepted and still reads flat at double precision.
     * ``GeneralizedHyperbolic`` deliberately still accepts it, with a matching ``b`` of 0 --- flat
       segments are part of what that model exists to express. This is the only place the two
       models disagree on what they accept. ``IncliningHyperbolic`` makes the mirror-image check,
@@ -275,12 +283,12 @@ Version History
     * Bounding ``b`` would not have fixed it: the threshold is set by ``b * -log1p(-Di)``, so it
       slides from ``b = 1024`` at ``Di = 0.5`` to ``b = 19.3`` at ``Di = 1 - 2**-53``, and it
       depends on the evaluation time as well.
-    * ``THM`` raised ``ZeroDivisionError`` for a flat forecast. ``Di = 0`` gives ``q(t) = qi`` for
-      all ``t``, and the terminal-segment branch took the reciprocal of the decline to place the
-      terminal time. A flat forecast has no decline for a terminal cap to bind on, and a
-      ``bterm`` that converts to zero is no cap at all; both now collapse the terminal time onto
-      ``t3``, the path an unusable ``bf`` already took. Tested against exact zero, the only value
-      that raised, so nothing that previously worked changed.
+    * ``THM`` raised ``ZeroDivisionError`` when its terminal-segment branch took the reciprocal
+      of a zero decline. The live route is a ``bterm`` that converts to zero, which is no
+      terminal cap at all; the other route was a flat forecast, now rejected outright by the
+      breaking change below. Both collapse the terminal time onto ``t3``, the path an unusable
+      ``bf`` already took. Tested against exact zero, the only value that raised, so nothing
+      that previously worked changed.
     * A ``NaN`` time is now ``NaN`` from a flat or spent segment too. The constant-rate branches
       of ``_qcheck``, ``_Ncheck`` and ``_Dcheck`` ignore ``t`` entirely, so a single-segment flat
       model answered ``rate(NaN)`` with its rate and ``cum(NaN)`` with a definite volume while
