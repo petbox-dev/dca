@@ -278,7 +278,7 @@ Power-Law GOR/CGR Model
 .. code-block:: python
 
     thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
-    thm.add_secondary(dca.PLYield(c=1000, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10_000))
+    thm.add_secondary(dca.PLYield(c=1.0, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10.0))
 
 
 Secondary Phase Diagnostic Plots
@@ -300,14 +300,14 @@ Numeric calculation provided to verify analytic relationships
 
     # Rate vs Time
     q = thm.rate(t)
-    g = thm.secondary.rate(t) / 1000.0
+    g = thm.secondary.rate(t)
     y = thm.secondary.gor(t)
 
     ax1.plot(t, q, c='C2', label='Oil')
     ax1.plot(t, g, c='C3', label='Gas')
     ax1.plot(t, y, c='C1', label='GOR')
     ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-    ax1.set(ylabel='Rate or GOR, BPD, MCFD, or scf/Bbl', xlabel='Time, Days')
+    ax1.set(ylabel='Rate or GOR, BPD, MCFD, or Mscf/Bbl', xlabel='Time, Days')
 
 
     # Cumulative Volume vs Time
@@ -321,7 +321,7 @@ Numeric calculation provided to verify analytic relationships
     ax2.plot(t, y, c='C1', label='GOR')
     ax2.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e2, 1e7))
     ax2.set(ylabel='Rate, Dimensionless', xlabel='Time, Days')
-    ax2.set(ylabel='Cumulative Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
+    ax2.set(ylabel='Cumulative Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
 
 
     # Time vs Monthly Volume
@@ -335,7 +335,7 @@ Numeric calculation provided to verify analytic relationships
     ax3.plot(t, _g_MN, c='k', ls=':', label='Gas (numeric)')
     ax3.plot(t, y, c='C1', label='GOR')
     ax3.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-    ax3.set(ylabel='Monthly Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
+    ax3.set(ylabel='Monthly Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
 
 
     # Time vs Interval Volume
@@ -348,7 +348,7 @@ Numeric calculation provided to verify analytic relationships
     ax4.plot(t, _g_IN, c='k', ls=':', label='Gas (numeric)')
     ax4.plot(t, y, c='C1', label='GOR')
     ax4.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-    ax4.set(ylabel='$\Delta$Volume or GOR, MBbl, MMcf, or scf/Bbl', xlabel='Time, Days')
+    ax4.set(ylabel='$\Delta$Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
 
     for ax in [ax1, ax2, ax3, ax4]:
         ax.set_aspect(1)
@@ -375,7 +375,7 @@ Diagnostic Function Plots
     # D-parameter vs Time
     q_D = thm.D(t)
     g_D = thm.secondary.D(t)
-    _g_D = -np.gradient(np.log(thm.secondary.rate(t) / 1000.0), t)
+    _g_D = -np.gradient(np.log(thm.secondary.rate(t)), t)
 
     ax1.plot(t, q_D, c='C2', label='Oil')
     ax1.plot(t, g_D, c='C3', label='Gas')
@@ -465,7 +465,7 @@ Numeric calculation provided to verify analytic relationships
     ax2.plot(t, _g_Dn, c='k', ls=':', label='Gas (numeric)')
     ax2.set(xscale='log', yscale='linear', xlim=(1e0, 1e5), ylim=(-.5, 1.025))
     ax2.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(xmax=1))
-    ax2.set(ylabel='Secant Effective Decline, % / Year', xlabel='Time$ Days')
+    ax2.set(ylabel='Secant Effective Decline, % / Year', xlabel='Time, Days')
 
     # Tangent Effective Decline vs Time
     ax3.plot(t, 1 - np.exp(-q_D * dpy), c='C2', label='Oil')
@@ -483,3 +483,109 @@ Numeric calculation provided to verify analytic relationships
 
 
 .. image:: img/sec_decline_diagnostics.png
+
+
+Generalized and Inclining Models
+================================
+
+A ``GeneralizedHyperbolic`` takes an arbitrary number of segments, each continuous in rate and
+decline with the one before it unless it overrides them. ``MH`` is its no-segment case. Segment
+tuples are length-disambiguated: ``(t, b)``, ``(t, D, b)``, or ``(t, q, D, b)``.
+
+An ``IncliningHyperbolic`` requires both ``Di`` and ``bi`` negative, so the rate rises. It
+models one period -- a build-up -- and takes no ``Dterm``, since a rising rate never reaches
+one. For the physical case, incline to a peak and then decline using both signs of segment.
+
+``time_at_rate`` inverts the rate function, bracketing each segment before inverting it, so it
+answers both time-to-economic-limit and how far a forecast can be backed up. The pole is simply
+the infinite-rate limit.
+
+Segment and Rate Inversion Plots
+--------------------------------
+
+.. code-block:: python
+
+    mh_base = dca.MH(qi=725, Di=0.85, bi=0.6, Dterm=0.2)
+
+    # Segment tuples are length-disambiguated: (t, b), (t, D, b), or (t, q, D, b). The third
+    # segment below resets the rate to 120 BPD -- a restimulation -- while inheriting the decline.
+    gh = dca.GeneralizedHyperbolic.from_segments(
+        725, 0.85, 1.8,
+        [(90.0, 1.2),                  # exponent only
+         (730.0, 0.35, 0.8),           # decline and exponent
+         (1825.0, 120.0, None, 0.5)],  # rate reset, decline inherited
+        Dterm=0.06)
+
+    # A flat segment holds the rate; D == 0 requires b == 0.
+    gh_flat = dca.GeneralizedHyperbolic.from_segments(725, 0.85, 1.8, [(730.0, 0.0, 0.0)])
+
+    # `IncliningHyperbolic` requires both Di and bi negative, so the rate rises. It models one
+    # period -- a build-up -- and takes no Dterm, since a rising rate never reaches one.
+    ih = dca.IncliningHyperbolic(qi=300, Di=-0.9, bi=-1.0)
+
+    # For the physical case, incline to a peak and then decline, using both signs of segment.
+    peak = dca.GeneralizedHyperbolic.from_segments(
+        300, -0.9, -1.0, [(365.25, 0.75, 1.2)], Dterm=0.08)
+
+    # `time_at_rate` inverts the rate function, bracketing each segment before inverting it. The
+    # pole is simply the infinite-rate limit, so it needs no separate accessor.
+    econ_limit = 20.0
+    t_econ = gh.time_at_rate(econ_limit)[0]
+    t_pole = gh.time_at_rate(np.inf)[0]
+
+    fig = plt.figure(figsize=(15, 15))
+    ax1 = fig.add_subplot(221)
+    ax2 = fig.add_subplot(222)
+    ax3 = fig.add_subplot(223)
+    ax4 = fig.add_subplot(224)
+
+    # Rate vs Time -- segmented against the MH baseline
+    ax1.plot(data_t, data_q, 'o', mfc='w', label='Data')
+    ax1.plot(t, mh_base.rate(t), c='C0', ls='--', label='MH (no segments)')
+    ax1.plot(t, gh.rate(t), c='C1', label='GeneralizedHyperbolic')
+    ax1.plot(t, gh_flat.rate(t), c='C4', ls='-.', label='flat segment at 730 d')
+    ax1.plot(t_econ, econ_limit, '*', c='k', ms=18, label=f'time_at_rate({econ_limit:.0f})')
+    for t_seg in (90.0, 730.0, 1825.0):
+        ax1.axvline(t_seg, c='k', lw=0.5, alpha=0.4)
+    ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e4), ylim=(1e0, 1e4))
+    ax1.set(ylabel='Rate, BPD', xlabel='Time, Days')
+    ax1.set_aspect(1)
+
+    # The exponent steps at every segment boundary
+    ax2.plot(t, mh_base.b(t), c='C0', ls='--', label='MH (no segments)')
+    ax2.plot(t, gh.b(t), c='C1', label='GeneralizedHyperbolic')
+    ax2.plot(t, gh_flat.b(t), c='C4', ls='-.', label='flat segment at 730 d')
+    for t_seg in (90.0, 730.0, 1825.0):
+        ax2.axvline(t_seg, c='k', lw=0.5, alpha=0.4)
+    ax2.set(xscale='log', yscale='linear', xlim=(1e0, 1e4), ylim=(-0.1, 2.1))
+    ax2.set(ylabel='b Parameter', xlabel='Time, Days')
+
+    # Inclining: the pure build-up, and the physical incline-peak-decline
+    ax3.plot(t, ih.rate(t), c='C2', label='IncliningHyperbolic')
+    ax3.plot(t, peak.rate(t), c='C3', label='incline, peak, then decline')
+    ax3.axvline(365.25, c='k', lw=0.5, alpha=0.4)
+    ax3.set(xscale='log', yscale='log', xlim=(1e0, 1e4), ylim=(1e1, 1e4))
+    ax3.set(ylabel='Rate, BPD', xlabel='Time, Days')
+    ax3.set_aspect(1)
+
+    # A `GeneralizedPLYield` takes arbitrary breakpoints, and a segment may step the yield
+    gh_gor = dca.GeneralizedHyperbolic.from_segments(725, 0.85, 1.8, [(90.0, 1.2)])
+    gh_gor.add_secondary(dca.GeneralizedPLYield(
+        c=1.2, m0=0.0, segments=(
+            dca.PLYieldSegment(180.0, m=0.6),
+            dca.PLYieldSegment(1095.0, c=4.0, m=-0.2)),  # a workover steps the GOR to 4.0
+        max=20.0))
+    ax4.plot(t, gh_gor.secondary.gor(t), c='C3', label='GeneralizedPLYield')
+    for t_seg in (180.0, 1095.0):
+        ax4.axvline(t_seg, c='k', lw=0.5, alpha=0.4)
+    ax4.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e1))
+    ax4.set(ylabel='GOR, Mscf / Bbl', xlabel='Time, Days')
+
+    for ax in [ax1, ax2, ax3, ax4]:
+        ax.grid()
+        ax.legend()
+
+    plt.savefig(img_path / 'generalized_models.png')
+
+
+.. image:: img/generalized_models.png

@@ -142,21 +142,21 @@ def main() -> None:
 
     # Case 1: MH with rising GOR
     mh1 = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)
-    sec1 = dca.PLYield(c=1200.0, m0=0.0, m=0.6, t0=180.0, min=None, max=20_000.0)
+    sec1 = dca.PLYield(c=1.2, m0=0.0, m=0.6, t0=180.0, min=None, max=20.0)
     mh1.add_secondary(sec1)
-    sec_cases.append(('MH (Di=0.8, bi=1.8) + PLYield (c=1200, m=0.6)', mh1))
+    sec_cases.append(('MH (Di=0.8, bi=1.8) + PLYield (c=1.2, m=0.6)', mh1))
 
     # Case 2: MH with moderate GOR
     mh2 = dca.MH(qi=500.0, Di=0.5, bi=1.2, Dterm=0.05)
-    sec2 = dca.PLYield(c=800.0, m0=0.0, m=0.3, t0=90.0, min=None, max=10_000.0)
+    sec2 = dca.PLYield(c=0.8, m0=0.0, m=0.3, t0=90.0, min=None, max=10.0)
     mh2.add_secondary(sec2)
-    sec_cases.append(('MH (Di=0.5, bi=1.2) + PLYield (c=800, m=0.3)', mh2))
+    sec_cases.append(('MH (Di=0.5, bi=1.2) + PLYield (c=0.8, m=0.3)', mh2))
 
     # Case 3: MH with flat early, rising late GOR
     mh3 = dca.MH(qi=2000.0, Di=0.9, bi=2.0, Dterm=0.06)
-    sec3 = dca.PLYield(c=500.0, m0=0.0, m=0.8, t0=365.0, min=None, max=50_000.0)
+    sec3 = dca.PLYield(c=0.5, m0=0.0, m=0.8, t0=365.0, min=None, max=50.0)
     mh3.add_secondary(sec3)
-    sec_cases.append(('MH (Di=0.9, bi=2.0) + PLYield (c=500, m=0.8)', mh3))
+    sec_cases.append(('MH (Di=0.9, bi=2.0) + PLYield (c=0.5, m=0.8)', mh3))
 
     # Case 4: MH with declining yield
     mh4 = dca.MH(qi=800.0, Di=0.6, bi=1.5, Dterm=0.10)

@@ -15,6 +15,8 @@ Primary Phase Models
 
     THM
     MH
+    GeneralizedHyperbolic
+    IncliningHyperbolic
     PLE
     SE
     Duong
@@ -32,6 +34,7 @@ Secondary Phase Models
 .. autosummary::
 
     PLYield
+    GeneralizedPLYield
 
 
 Water Phase Models
@@ -42,6 +45,7 @@ Water Phase Models
 .. autosummary::
 
     PLYield
+    GeneralizedPLYield
 
 
 Model Functions
@@ -97,6 +101,15 @@ Water Phase Models
 .. autosummary::
     wor
     wgr
+
+
+Multisegment Hyperbolic Specific
+--------------------------------
+
+.. currentmodule:: petbox.dca.MultisegmentHyperbolic
+
+.. autosummary::
+    time_at_rate
 
 
 Transient Hyperbolic Specific
@@ -185,6 +198,7 @@ Implementations of primary phase decline curve models
 .. autoclass:: THM
 
     .. automethod:: rate
+    .. automethod:: time_at_rate
     .. automethod:: cum
     .. automethod:: D
     .. automethod:: beta
@@ -199,6 +213,39 @@ Implementations of primary phase decline curve models
 .. autoclass:: MH
 
     .. automethod:: rate
+    .. automethod:: time_at_rate
+    .. automethod:: cum
+    .. automethod:: D
+    .. automethod:: beta
+    .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
+
+
+.. autoclass:: GeneralizedHyperbolic
+
+    .. automethod:: rate
+    .. automethod:: time_at_rate
+    .. automethod:: cum
+    .. automethod:: D
+    .. automethod:: beta
+    .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
+    .. automethod:: from_segments
+
+
+.. autoclass:: HyperbolicSegment
+
+    .. automethod:: from_tuple
+
+
+.. autoclass:: IncliningHyperbolic
+
+    .. automethod:: rate
+    .. automethod:: time_at_rate
     .. automethod:: cum
     .. automethod:: D
     .. automethod:: beta
@@ -258,9 +305,31 @@ Implementations of associated (secondary and water) phase GOR/CGR/WOR/WGR models
     .. automethod:: D
     .. automethod:: beta
     .. automethod:: b
+    .. automethod:: shift
     .. automethod:: get_param_desc
     .. automethod:: get_param_descs
     .. automethod:: from_params
+
+
+.. autoclass:: GeneralizedPLYield
+
+    .. automethod:: gor
+    .. automethod:: cgr
+    .. automethod:: rate
+    .. automethod:: cum
+    .. automethod:: D
+    .. automethod:: beta
+    .. automethod:: b
+    .. automethod:: shift
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
+    .. automethod:: from_segments
+
+
+.. autoclass:: PLYieldSegment
+
+    .. automethod:: from_tuple
 
 
 Utility Functions

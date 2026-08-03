@@ -13,8 +13,9 @@ Created on August 5, 2019
 """
 
 import sys
-from math import exp, expm1, log, log10, log1p, ceil as ceiling, floor
+from math import exp, expm1, isfinite, log, log10, log1p, ceil as ceiling, floor
 from functools import partial
+from itertools import chain, repeat
 import warnings
 
 import dataclasses as dc
@@ -27,7 +28,7 @@ from scipy.special import expi as ei, gammainc  # type: ignore
 from scipy.integrate import cumulative_trapezoid  # type: ignore
 
 from abc import ABC, abstractmethod
-from typing import (TypeVar, Type, List, Dict, Tuple, Any, NoReturn,
+from typing import (TypeVar, Type, List, Dict, Tuple, Any, Literal, NoReturn,
                     Sequence, Iterable, Optional, Callable, ClassVar, Union)
 from numpy.typing import NDArray
 from typing import cast
@@ -42,6 +43,88 @@ MIN_EPSILON = sys.float_info.min
 
 
 _Self = TypeVar('_Self', bound='DeclineCurve')
+
+# Accessors that belong to the OTHER phase and must be disabled when a model is attached as
+# one phase or the other: a secondary phase has no water-oil ratio, and vice versa. Read by
+# `PrimaryPhase.add_secondary`/`add_water` and by `AssociatedPhase._adopt_attachment`, so a
+# new accessor is picked up by every site at once rather than needing three edits.
+_Phase = Literal['secondary', 'water']
+
+_REMOVED_ACCESSORS: Dict[_Phase, Tuple[str, ...]] = {
+    'secondary': ('wor', 'wgr'),
+    'water': ('gor', 'cgr'),
+}
+
+
+def _validate_segment_times(times: NDFloat) -> None:
+    """
+    Check the segment start-time column shared by every multi-segment model.
+
+    Times must be finite, strictly positive, and strictly increasing. A module-level function
+    rather than a method: ``GeneralizedHyperbolic`` in :mod:`petbox.dca.primary` and
+    ``GeneralizedPLYield`` in :mod:`petbox.dca.associated` both need it and share no base
+    beyond :class:`DeclineCurve`, so keeping it here also keeps the two error messages
+    identical rather than letting a second copy drift.
+
+    The tests are written as ``not np.all(<valid>)`` rather than ``np.any(<invalid>)`` on
+    purpose: every comparison against ``NaN`` is False, so ``np.any(t <= 0.0)`` would accept
+    a ``NaN`` time and silently produce an all-``NaN`` forecast. The positive form rejects it,
+    and the explicit ``isfinite`` rejects an infinite time, which would place a segment that
+    never begins.
+
+    Parameters
+    ----------
+        times: NDFloat
+            Segment start or breakpoint times, in days, in the order given.
+
+    Raises
+    ------
+        ValueError
+            If any time is not finite or not positive, or if they are not strictly
+            increasing.
+    """
+    if not np.all(np.isfinite(times) & (times > 0.0)):
+        raise ValueError('segments t must be finite and > 0')
+
+    # np.diff of a single element is empty, and np.all of empty is True
+    if not np.all(np.diff(times) > 0.0):
+        raise ValueError('segments t not strictly increasing')
+
+
+def _disable_other_phase_accessors(model: 'AssociatedPhase', phase: _Phase) -> None:
+    """
+    Replace the accessors belonging to the other phase with a stub that raises.
+
+    A model attached as ``phase`` must not answer the opposite phase's ratio: a secondary
+    phase has no WOR/WGR and a water phase has no GOR/CGR. The stubs are installed as
+    *instance* attributes, so anything that rebuilds the instance --
+    :func:`dataclasses.replace`, for example -- loses them and must re-apply via
+    :meth:`AssociatedPhase._adopt_attachment`.
+
+    A module-level function rather than a method: both :class:`PrimaryPhase` (when attaching)
+    and :class:`AssociatedPhase` (when adopting an attachment) need it, and making it a
+    private method of either would mean the other reaches across a class boundary for it.
+
+    The ``hasattr`` test is genuine polymorphism, not an implicit dependency: a plain
+    :class:`SecondaryPhase` never defines ``wor`` at all, while a
+    :class:`BothAssociatedPhase` defines all four accessors.
+
+    Parameters
+    ----------
+        model: AssociatedPhase
+            The model being attached, whose accessors are replaced in place.
+
+        phase: _Phase
+            Which phase ``model`` is being attached as.
+
+    Returns
+    -------
+    """
+    for method in _REMOVED_ACCESSORS[phase]:
+        if hasattr(model, method):
+            # bypass the "frozen" protection, as the rest of the attach path does
+            object.__setattr__(model, method, partial(
+                PrimaryPhase.removed_method, phase=phase, method=method))
 
 
 @dataclass(frozen=True)
@@ -338,10 +421,41 @@ class DeclineCurve(ABC):
     def __post_init__(self) -> None:
         self._set_defaults()
 
-        for desc, do_validate in zip(self.get_param_descs(), self.validate_params):
+        # Normalize the flags to a tuple before reading them. `validate_params` is annotated
+        # Iterable, so a caller may hand over a list or a generator, and both break:
+        #
+        #   - a list makes the instance unhashable, since a frozen dataclass hashes its field
+        #     tuple and the field holds the list itself. The model constructs fine and only
+        #     fails later, at the first `hash()` -- e.g. on use as a dict key.
+        #   - a generator is consumed here, the only place it is read. `dataclasses.replace`
+        #     re-runs this hook, so anything rebuilding the instance -- `PLYield.shift`, for
+        #     example -- re-reads an exhausted iterator and silently re-enables every check
+        #     the caller had opted out of.
+        #
+        # bypass the "frozen" protection, as `_validate` does for its own caching
+        object.__setattr__(self, 'validate_params', tuple(self.validate_params))
+
+        # pad the flags with True: a model that under-sizes `validate_params` must not
+        # silently skip its remaining bound checks. `zip` still truncates an over-long
+        # flags list -- `zip_longest` would instead yield `desc=True` and blow up on
+        # `desc.name`.
+        for desc, do_validate in zip(self.get_param_descs(),
+                                     chain(self.validate_params, repeat(True))):
             if not do_validate:
                 continue
             param = getattr(self, desc.name)
+
+            # Reject non-finite scalars before the bound checks, which cannot do it: every
+            # comparison against NaN is False, so `param < lower_bound` accepts NaN, and an
+            # unbounded-above parameter accepts inf. The consequence is worse than a NaN
+            # forecast -- `_integrate_with` does `y[np.isnan(y)] = 0.0`, so a NaN parameter
+            # produces NaN rates but a DEFINITE ZERO cumulative, i.e. a silent zero EUR
+            # rather than a visible failure. Sequence-valued parameters (such as
+            # `GeneralizedPLYield.segments`) are skipped here and validate their own
+            # contents; `None` means "unset" for the optional bounds and is also skipped.
+            if isinstance(param, (int, float, np.floating)) and not isfinite(param):
+                raise ValueError(f'{desc.name} is not finite')
+
             if param is not None and desc.lower_bound is not None:
                 if desc.exclude_lower_bound:
                     if param <= desc.lower_bound:
@@ -467,14 +581,46 @@ class DeclineCurve(ABC):
         if len(t) == 0:
             return np.array([], dtype=np.float64)
 
+        # Only finite, non-negative times take part in the integration; anything else gets
+        # NaN. Both exclusions matter, because the grid spans the requested times and a bad
+        # one corrupts EVERY value returned, not just its own:
+        #
+        #   - A negative t moved the lower limit from 0 to min(t), so the accumulated
+        #     integral picked up the area over [min(t), 0]. The NaN zeroing below made that a
+        #     definite number rather than a visible failure:
+        #     PLE(1000, .8, .1, .5).cum([30, 100, 365, 1000]) returns ~1819, and prepending a
+        #     single -30.0 turned those same entries into ~16819.
+        #   - An infinite t makes log10(t_max) infinite, collapsing the whole log-spaced grid
+        #     to [nan, inf, ...]. Every finite time was then integrated over two or three
+        #     points: the same four entries became ~15009, and monthly_vol went negative.
+        #
+        # Every model that integrates numerically here -- PLE, SE, Duong, the power-law
+        # yields -- raises time to a non-integer power, so none is real-valued before 0. An
+        # infinite time is not answerable by quadrature at all: the analytic cumulatives have
+        # a closed-form limit there, this does not, and a silently truncated integral would
+        # read as an EUR.
+        forward = t[np.isfinite(t) & (t >= 0.0)]
+        if len(forward) == 0:
+            return np.full_like(t, np.nan, dtype=np.float64)
+
         eps = 1e-12
-        t_max = float(t[-1]) if t[-1] > 0 else 1.0
+        # max(), not [-1]: identical for the sorted input this is normally given, but a
+        # caller may pass any order, and a grid that stops short of the largest requested
+        # time would put it outside the integration range
+        t_max = float(forward.max()) if forward.max() > 0 else 1.0
         log_grid = np.logspace(np.log10(eps), np.log10(t_max), n_grid)
-        grid = np.unique(np.concatenate([[0.0], log_grid, t]))
+        grid = np.unique(np.concatenate([[0.0], log_grid, forward]))
 
         # evaluate fn on the full grid in one vectorized call
         with np.errstate(over='ignore', under='ignore', invalid='ignore'):
             y = fn(grid)
+
+        # A single NaN would otherwise poison every later trapezoid, so degenerate grid
+        # points (e.g. 0 * inf at t = 0) are zeroed. This is safe only because
+        # `__post_init__` rejects non-finite parameters: without that, a NaN parameter would
+        # give NaN rates but a definite zero cumulative here -- a silent zero EUR. The
+        # associated-phase `_Nfn` re-applies NaN for t < 0 for the same reason, since the
+        # requested `t` is merged into the grid above.
         y[np.isnan(y)] = 0.0
 
         # cumulative integral on the grid
@@ -482,9 +628,12 @@ class DeclineCurve(ABC):
         cum_grid[0] = 0.0
         cum_grid[1:] = cumulative_trapezoid(y, grid)
 
-        # extract values at the requested t values (they are in the grid)
-        t_indices = np.searchsorted(grid, t)
-        return cum_grid[t_indices]
+        # extract values at the requested t values (the finite non-negative ones are in the
+        # grid). The mask must be the same predicate that built `forward`, so that the values
+        # line up positionally with it.
+        out = np.full_like(t, np.nan, dtype=np.float64)
+        out[np.isfinite(t) & (t >= 0.0)] = cum_grid[np.searchsorted(grid, forward)]
+        return out
 
 
 class PrimaryPhase(DeclineCurve):
@@ -520,15 +669,7 @@ class PrimaryPhase(DeclineCurve):
         Returns
         -------
         """
-        # remove WOR if it exists
-        if hasattr(secondary, 'wor'):
-            object.__setattr__(secondary, 'wor', partial(
-                self.removed_method, phase='secondary', method='wor'))
-
-        # remove WGR if it exists
-        if hasattr(secondary, 'wgr'):
-            object.__setattr__(secondary, 'wgr', partial(
-                self.removed_method, phase='secondary', method='wgr'))
+        _disable_other_phase_accessors(secondary, 'secondary')
 
         # bypass the "frozen" protection to link to the secondary phase
         object.__setattr__(secondary, 'primary', self)
@@ -546,15 +687,7 @@ class PrimaryPhase(DeclineCurve):
         Returns
         -------
         """
-        # remove GOR if it exists
-        if hasattr(water, 'gor'):
-            object.__setattr__(water, 'gor', partial(
-                self.removed_method, phase='water', method='gor'))
-
-        # remove CGR if it exists
-        if hasattr(water, 'cgr'):
-            object.__setattr__(water, 'cgr', partial(
-                self.removed_method, phase='water', method='cgr'))
+        _disable_other_phase_accessors(water, 'water')
 
         # bypass the "frozen" protection to link to the water phase
         object.__setattr__(water, 'primary', self)
@@ -577,6 +710,48 @@ class AssociatedPhase(DeclineCurve):
             primary = NullPrimaryPhase()
         object.__setattr__(primary, name, model)
         object.__setattr__(model, 'primary', primary)
+
+    def _adopt_attachment(self, other: 'AssociatedPhase') -> None:
+        """
+        Copy ``other``'s primary-phase attachment onto this instance.
+
+        A derived copy -- anything built with :func:`dataclasses.replace`, such as
+        :meth:`MultisegmentPLYield.shift` -- re-runs ``__post_init__``, and
+        `_set_default` sees no ``primary`` attribute on the new object and installs a
+        :class:`NullPrimaryPhase`. Without this, ``rate`` and ``cum`` on the copy return
+        ``0.0`` with no error, since a null primary produces zero rate.
+
+        The primary is **not** modified: it keeps pointing at ``other``, so the link is
+        one-way. The copy is immediately usable for evaluation; pass it to
+        :meth:`PrimaryPhase.add_secondary` or :meth:`PrimaryPhase.add_water` if it should
+        replace ``other`` on the primary as well.
+
+        The wrong-phase accessor guards that ``add_secondary``/``add_water`` install are
+        instance attributes, so they are re-applied here too -- otherwise a shifted water
+        phase would answer ``gor`` instead of raising.
+
+        Parameters
+        ----------
+            other: AssociatedPhase
+                The instance this one was derived from.
+
+        Returns
+        -------
+        """
+        primary = other.primary
+        # bypass the "frozen" protection, as the add_secondary/add_water path does
+        object.__setattr__(self, 'primary', primary)
+
+        phase: _Phase
+        if getattr(primary, 'secondary', None) is other:
+            phase = 'secondary'
+        elif getattr(primary, 'water', None) is other:
+            phase = 'water'
+        else:
+            # `other` was never attached, so there is no guard to mirror
+            return
+
+        _disable_other_phase_accessors(self, phase)
 
     @abstractmethod
     def _yieldfn(self, t: NDFloat) -> NDFloat:

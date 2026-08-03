@@ -45,14 +45,18 @@ DeclineCurve (ABC)
 │   ├── NullPrimaryPhase
 │   ├── MH (Modified Hyperbolic, extends MultisegmentHyperbolic)
 │   ├── THM (Transient Hyperbolic Model, extends MultisegmentHyperbolic)
+│   ├── GeneralizedHyperbolic (arbitrary segments, HyperbolicSegment)
+│   ├── IncliningHyperbolic (negative D and b, extends MultisegmentHyperbolic)
 │   ├── PLE (Power-Law Exponential)
 │   ├── SE (Stretched Exponential)
 │   └── Duong
 └── AssociatedPhase (ABC)
     ├── SecondaryPhase (GOR/CGR)
     ├── WaterPhase (WOR/WGR)
-    └── PLYield (Power-Law Yield, extends BothAssociatedPhase)
-        └── NullAssociatedPhase
+    ├── NullAssociatedPhase (extends SecondaryPhase, WaterPhase)
+    └── MultisegmentPLYield (extends BothAssociatedPhase)
+        ├── PLYield (Power-Law Yield, 2 segments)
+        └── GeneralizedPLYield (arbitrary segments, PLYieldSegment)
 ```
 
 ### Key files
@@ -81,7 +85,7 @@ DeclineCurve (ABC)
 
 ## Dependencies
 
-Runtime: `numpy >= 1.21.1`, `scipy >= 1.7.1`
+Runtime: `numpy >= 2.1`, `scipy >= 1.13`. Requires Python >= 3.10.
 
 ## Version
 
