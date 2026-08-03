@@ -262,6 +262,38 @@ class MultisegmentHyperbolic(PrimaryPhase):
         ]))
 
     @staticmethod
+    def _log1p_decline_product(D: float, b: float, dt: NDFloat) -> NDFloat:
+        """
+        ``log1p(D b dt)``, recovered in log space wherever the product overflows.
+
+        The product overflows for a large exponent -- at ``Di = 0.9`` from about ``b = 307`` --
+        and ``log1p(inf)`` then discards the value entirely: the rate collapsed to 0 where it
+        should be ~99, and the cumulative went to ``inf``. A *wrong number*, and one that moves
+        with ``dt``, so no bound on ``b`` alone can prevent it.
+
+        Where the product overflows *positively* the three magnitudes simply add, which is exact
+        at that scale since ``log1p(x) == log(x)``. Positive is the only case handled, and it is
+        the only one that needs handling: every legal segment has ``D b >= 0``, so a positive
+        overflow implies ``dt > 0``, while a negative one is the region past the pole, where the
+        resulting ``nan`` is already the right answer.
+
+        Self-contained in its own ``errstate``, rather than relying on the caller to hold one:
+        ``log1p`` legitimately hits its pole, and ``log(dt)`` is evaluated for every element --
+        including the non-overflowing ones, where ``dt`` may be zero or negative -- before those
+        values are discarded.
+        """
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            product = D * b * dt
+            log_product = np.log1p(product)
+
+            overflowed = np.isposinf(product)
+            if np.any(overflowed):
+                recovered = np.log(np.abs(D)) + np.log(np.abs(b)) + np.log(dt)
+                log_product = np.where(overflowed, recovered, log_product)
+
+            return log_product
+
+    @staticmethod
     def _qcheck(t0: float, q: float, D: float, b: float, N: float,
                 t: Union[float, NDFloat]) -> NDFloat:
         """
@@ -290,23 +322,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
             if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
                 D_dt = D * dt
             else:
-                D_b_dt = D * b * dt
-                D_dt = np.log1p(D_b_dt) / b
-
-                # ``D b dt`` overflows for a large exponent -- at Di = 0.9 from about b = 307 --
-                # and log1p(inf) then discards the value, collapsing the rate to 0 where it
-                # should be ~99. It is a *wrong number*, not a nan, and it moves with dt: at
-                # b = 307 the rate is right at 1 and 10 years and wrong at 100.
-                #
-                # Recover it in log space, which is exact at that magnitude: log1p(x) == log(x),
-                # and every legal segment has D b >= 0, so a *positive* overflow means dt > 0
-                # and the three magnitudes simply add. A negative overflow is the region past
-                # the pole, where nan is already correct.
-                overflowed = np.isposinf(D_b_dt)
-                if np.any(overflowed):
-                    D_dt = np.where(
-                        overflowed,
-                        (np.log(np.abs(D)) + np.log(np.abs(b)) + np.log(dt)) / b, D_dt)
+                D_dt = MultisegmentHyperbolic._log1p_decline_product(D, b, dt) / b
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
@@ -350,18 +366,8 @@ class MultisegmentHyperbolic(PrimaryPhase):
                 D_dt = -D * dt
                 q_b_D = q / D
             else:
-                b_D_dt = b * D * dt
-                log_term = np.log1p(b_D_dt)
-
-                # as in _qcheck: the product overflows for a large exponent and log1p then
-                # discards it, sending the cumulative to inf where it is finite
-                overflowed = np.isposinf(b_D_dt)
-                if np.any(overflowed):
-                    log_term = np.where(
-                        overflowed,
-                        np.log(np.abs(b)) + np.log(np.abs(D)) + np.log(dt), log_term)
-
-                D_dt = (1.0 - 1.0 / b) * log_term
+                D_dt = (1.0 - 1.0 / b) * MultisegmentHyperbolic._log1p_decline_product(
+                    D, b, dt)
                 q_b_D = q / ((1.0 - b) * D)
 
         # The coefficient is what overflows, not ``q / D``: the ``1 - b`` factor shrinks the
@@ -382,7 +388,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
             # large. Saturating the exponent first therefore threw away a finite answer --
             # GeneralizedHyperbolic(1000, 0.9, 307, ()) had cum(1e5 days) of inf where it is
             # ~8.6e6. Fold the coefficient into the exponent instead, and keep expm1 for the
-            # ordinary range, where it is what makes small D_dt accurate.
+            # ordinary range, where it is what makes small D_dt accurate. Measured:
+            # GeneralizedHyperbolic(1000, 0.9, 307, ()) had cum(1e5 days) of inf against a
+            # closed-form 9_850_936.13, which it now reproduces exactly.
             saturating = D_dt > LOG_EPSILON
             if np.any(saturating):
                 far = np.sign(q_b_D) * np.exp(np.log(np.abs(q_b_D)) + D_dt)
