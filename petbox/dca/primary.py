@@ -341,6 +341,40 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return np.where(Denom < 0.0, np.nan, -b * D * D / (Denom * Denom))
 
     @staticmethod
+    def _tcheck(q: float, D: float, b: float,
+                q_target: Union[float, NDFloat]) -> NDFloat:
+        """
+        Invert the proper Arps form of q: the time *elapsed within* a segment whose rate starts
+        at ``q``, before it reaches ``q_target``.
+
+        Solving ``q_target = q (1 + b D dt) ** (-1/b)`` for ``dt`` gives
+        ``dt = ((q_target / q) ** -b - 1) / (b D)``, evaluated in log space so an extreme
+        exponent saturates the way `_qcheck` does in the forward direction. The exponential and
+        constant-rate branches are the same limits `_qcheck` takes.
+
+        Unlike the other segment functions this takes only the three parameters it uses, rather
+        than a whole row: it is called directly rather than through `_vectorize`, so there is no
+        row to splat and no reason to accept a start time and volume it would ignore.
+        """
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            # a rate of 0 gives -inf here and an infinite rate +inf; both carry through to the
+            # correct limit below, so neither is special-cased
+            log_ratio = np.log(np.atleast_1d(q_target) / q)
+
+            if abs(D) < MIN_EPSILON:
+                # a constant rate is at q_target for all time, or never
+                return np.where(log_ratio == 0.0, 0.0, np.nan)
+
+            if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
+                return -log_ratio / D
+
+            exponent = -b * log_ratio
+            np.putmask(exponent, mask=exponent > LOG_EPSILON, values=np.inf)  # type: ignore
+            np.putmask(exponent, mask=exponent < -LOG_EPSILON, values=-np.inf)  # type: ignore
+
+            return np.expm1(exponent) / (b * D)
+
+    @staticmethod
     def _bcheck(t0: float, q: float, D: float, b: float, N: float,
                 t: Union[float, NDFloat]) -> NDFloat:
         """
@@ -406,6 +440,69 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     def _bfn(self, t: NDFloat) -> NDFloat:
         return self._vectorize(self._bcheck, t)
+
+    def time_at_rate(self, q: Union[float, NDFloat]) -> NDFloat:
+        """
+        The earliest time at which the forecast rate equals ``q`` -- the inverse of
+        :meth:`rate`.
+
+        This answers the forward question, time to an economic limit, and the backward one,
+        how far a forecast can be extrapolated, with the same call. The pole is simply the
+        infinite-rate limit, so it needs no separate accessor:
+
+        - ``MH(1000, 0.8, 1.5).time_at_rate(inf)`` is ``-35.87798``, exactly ``-1 / (b D)``,
+          the earliest evaluable time.
+        - An exponential segment (``b = 0``) gives ``-inf``: it has no pole and can be backed
+          up indefinitely.
+        - An inclining segment (``D < 0``, ``b < 0``) gives ``+inf``: it has no *backward*
+          pole, since an inclining rate diverges forward instead.
+
+        A ``t_min`` would therefore be a misnomer: the pole bounds whichever direction the rate
+        grows in, and this states that without a direction-specific name.
+
+        Each segment is inverted only over the times it actually governs, using the same
+        bracketing as :meth:`rate`. That matters: on ``MH(1000, 0.8, 1.5, 0.08)``, whose
+        terminal segment begins at 2884 days, ``rate(5000)`` is 32.84892, and inverting that
+        with the *initial* segment's parameters gives 5990 -- wrong by 990 days. A rate above
+        ``qi`` is extrapolated backwards off the first segment, giving a negative time.
+
+        For a model that mixes inclining and declining segments the rate is not monotonic, and
+        a given ``q`` may occur several times. The earliest is returned, which is what backing
+        a forecast up wants.
+
+        Parameters
+        ----------
+            q: Union[float, numpy.NDFloat]
+                An array of rates, in units of ``volume / day``.
+
+        Returns
+        -------
+            time: numpy.NDFloat
+                Days, ``nan`` where no segment attains ``q``.
+        """
+        q = self._validate_ndarray(q)
+        p = self.segment_params
+
+        time = np.full_like(q, np.nan, dtype=np.float64)
+
+        # Segments are walked in time order and a filled entry is never overwritten, so the
+        # first hit is the earliest -- each segment's window is disjoint from the others'.
+        for i in range(p.shape[0]):
+            candidate = p[i, self.T_IDX] + self._tcheck(
+                p[i, self.Q_IDX], p[i, self.D_IDX], p[i, self.B_IDX], q)
+
+            # the same windows `_vectorize` uses, so a time this returns is one at which
+            # `rate` evaluates that very segment: the first extends backwards, the last runs
+            # to infinity
+            within = (np.ones_like(q, dtype=bool) if i == 0
+                      else candidate >= p[i, self.T_IDX])
+            if i < p.shape[0] - 1:
+                within = within & (candidate < p[i + 1, self.T_IDX])
+
+            fill = within & np.isnan(time)
+            time[fill] = candidate[fill]
+
+        return time
 
     @classmethod
     def _nominal_per_day_from_secant(cls, D: float, b: float) -> float:
@@ -1455,6 +1552,13 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
 class IncliningHyperbolic(MultisegmentHyperbolic):
     """
     Inclining Hyperbolic Model
+
+    Arps, J. J. 1945. Analysis of Decline Curves.
+    Transactions of the AIME 160 (1): 228-247. SPE-945228-G.
+    https://doi.org/10.2118/945228-G
+
+    The hyperbolic relation is Arps'; applying it with a negative decline to describe a
+    build-up is an empirical extension, not from that paper.
 
     An Arps hyperbolic run in reverse: the decline and the exponent are both negative, so the
     rate *rises* with time,

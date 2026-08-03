@@ -103,6 +103,15 @@ Water Phase Models
     wgr
 
 
+Multisegment Hyperbolic Specific
+--------------------------------
+
+.. currentmodule:: petbox.dca.MultisegmentHyperbolic
+
+.. autosummary::
+    time_at_rate
+
+
 Transient Hyperbolic Specific
 -----------------------------
 
@@ -189,6 +198,7 @@ Implementations of primary phase decline curve models
 .. autoclass:: THM
 
     .. automethod:: rate
+    .. automethod:: time_at_rate
     .. automethod:: cum
     .. automethod:: D
     .. automethod:: beta
@@ -203,6 +213,7 @@ Implementations of primary phase decline curve models
 .. autoclass:: MH
 
     .. automethod:: rate
+    .. automethod:: time_at_rate
     .. automethod:: cum
     .. automethod:: D
     .. automethod:: beta
@@ -215,6 +226,7 @@ Implementations of primary phase decline curve models
 .. autoclass:: GeneralizedHyperbolic
 
     .. automethod:: rate
+    .. automethod:: time_at_rate
     .. automethod:: cum
     .. automethod:: D
     .. automethod:: beta
@@ -233,6 +245,7 @@ Implementations of primary phase decline curve models
 .. autoclass:: IncliningHyperbolic
 
     .. automethod:: rate
+    .. automethod:: time_at_rate
     .. automethod:: cum
     .. automethod:: D
     .. automethod:: beta

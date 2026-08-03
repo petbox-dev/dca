@@ -1637,6 +1637,142 @@ def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
 
 
 # ---------------------------------------------------------------------------------------
+# time_at_rate
+# ---------------------------------------------------------------------------------------
+
+
+TIME_AT_RATE_MODELS = {
+    'MH': dca.MH(1000.0, 0.8, 1.5),
+    'MH terminal': dca.MH(1000.0, 0.8, 1.5, 0.08),
+    'MH exponential': dca.MH(1000.0, 0.5, 0.0),
+    'MH harmonic': dca.MH(1000.0, 0.8, 1.0),
+    'THM': dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
+    'THM terminal': dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0),
+    'GeneralizedHyperbolic': dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8)], Dterm=0.08),
+    'IncliningHyperbolic': dca.IncliningHyperbolic(1000.0, -0.5, -1.0),
+}
+
+
+def test_time_at_rate_inverts_rate() -> None:
+    """time_at_rate is the inverse of rate, for every hyperbolic model and every segment."""
+    t = np.array([1.0, 30.0, 365.25, 1000.0, 5000.0, 20000.0])
+
+    for name, model in TIME_AT_RATE_MODELS.items():
+        recovered = model.time_at_rate(model.rate(t))
+        assert np.allclose(recovered, t, rtol=1e-9, atol=1e-9), name
+        # and the rate at the recovered time is the rate asked for, exactly
+        assert np.array_equal(model.rate(recovered), model.rate(t)), name
+
+
+def test_time_at_rate_brackets_the_segment() -> None:
+    """Each segment is inverted only over the times it governs. On MH(1000, .8, 1.5, .08) the
+    terminal segment begins at 2884 days, so inverting rate(5000) with the INITIAL segment's
+    parameters lands at 5990 -- wrong by 990 days."""
+    model = dca.MH(1000.0, 0.8, 1.5, 0.08)
+    assert model.segment_params[-1, model.T_IDX] == pytest.approx(2884.43, rel=1e-4)
+
+    q = model.rate(np.array([5000.0]))[0]
+    assert q == pytest.approx(32.84892235377094)
+    assert model.time_at_rate(np.array([q]))[0] == pytest.approx(5000.0)
+
+    # what inverting the wrong segment would have given
+    initial = model.segment_params[0]
+    naive = initial[model.T_IDX] + dca.MultisegmentHyperbolic._tcheck(
+        initial[model.Q_IDX], initial[model.D_IDX], initial[model.B_IDX], np.array([q]))[0]
+    assert naive == pytest.approx(5990.359705696208)
+
+    # every returned time must land in the segment whose rate it inverts, which is what makes
+    # the round trip exact rather than merely close
+    for probe in (np.array([900.0]), np.array([100.0]), np.array([32.84892235377094]),
+                  np.array([1.0])):
+        recovered = model.time_at_rate(probe)
+        assert np.allclose(model.rate(recovered), probe, rtol=1e-12)
+
+
+def test_time_at_rate_subsumes_the_pole() -> None:
+    """The pole is the infinite-rate limit, so it needs no separate accessor -- and it is a
+    bound in whichever direction the rate grows, which is why this is not called t_min."""
+    msh = dca.MultisegmentHyperbolic
+
+    # a declining hyperbolic: the pole is exactly -1 / (b D)
+    model = dca.MH(1000.0, 0.8, 1.5)
+    Di_nom = msh._nominal_per_day_from_secant(0.8, 1.5)
+    assert model.time_at_rate(np.array([np.inf]))[0] == -1.0 / (1.5 * Di_nom)
+    assert model.time_at_rate(np.array([np.inf]))[0] == pytest.approx(-35.87797696700799)
+    # and it is exactly where the outputs turn to nan
+    assert np.all(np.isnan(model.rate(np.array([-35.88]))))
+
+    # an exponential has no pole: it can be backed up indefinitely
+    assert dca.MH(1000.0, 0.5, 0.0).time_at_rate(np.array([np.inf]))[0] == -np.inf
+
+    # an inclining model has no BACKWARD pole; its rate diverges forward instead
+    assert dca.IncliningHyperbolic(1000.0, -0.5, -1.0).time_at_rate(
+        np.array([np.inf]))[0] == np.inf
+
+
+def test_time_at_rate_forward_and_backward() -> None:
+    """The same call answers time-to-economic-limit and how far a forecast can be backed up."""
+    model = dca.MH(1000.0, 0.8, 1.5, 0.08)
+
+    # forward: a declining rate is reached later and later
+    limits = np.array([500.0, 100.0, 50.0, 10.0, 1.0])
+    times = model.time_at_rate(limits)
+    assert np.all(np.diff(times) > 0.0)
+    assert np.all(times > 0.0)
+    assert np.allclose(model.rate(times), limits)
+
+    # backward: a rate above qi extrapolates off the first segment, giving a negative time
+    above = model.time_at_rate(np.array([2000.0, 1500.0, 1000.0]))
+    assert above[0] < above[1] < 0.0
+    assert above[2] == 0.0
+    assert np.allclose(model.rate(above), [2000.0, 1500.0, 1000.0])
+
+    # a rate of zero is only reached in the limit; a negative rate never is
+    assert model.time_at_rate(np.array([0.0]))[0] == np.inf
+    assert np.isnan(model.time_at_rate(np.array([-1.0]))[0])
+
+
+def test_time_at_rate_returns_the_earliest_time() -> None:
+    """A model mixing inclining and declining segments is not monotonic in rate, so a given q
+    can occur more than once. The earliest is returned, which is what backing up wants."""
+    model = dca.GeneralizedHyperbolic.from_segments(1000.0, -0.5, -1.0, [(730.5, 0.3, 0.8)])
+
+    # the rate rises to a peak at the breakpoint, then falls back through the same values
+    assert model.rate(np.array([730.5]))[0] > model.rate(np.array([300.0]))[0]
+    assert model.rate(np.array([2000.0]))[0] < model.rate(np.array([300.0]))[0]
+
+    target = model.rate(np.array([300.0]))[0]
+    earliest = model.time_at_rate(np.array([target]))[0]
+    assert earliest == pytest.approx(300.0)
+
+    # the later crossing exists and is not what was returned
+    later = 1087.2
+    assert model.rate(np.array([later]))[0] == pytest.approx(target, rel=1e-3)
+    assert earliest < later
+
+
+def test_time_at_rate_edge_shapes() -> None:
+    model = dca.MH(1000.0, 0.8, 1.5, 0.08)
+
+    assert model.time_at_rate(100.0).shape == (1,)          # a scalar is accepted
+    assert model.time_at_rate(np.array([])).shape == (0,)   # and an empty array
+    assert np.isnan(model.time_at_rate(np.array([np.nan]))[0])
+
+    # a constant-rate model is at its rate for all time, or never
+    flat = dca.GeneralizedHyperbolic(1000.0, 0.0, 0.0, ())
+    assert flat.time_at_rate(np.array([1000.0]))[0] == 0.0
+    assert np.isnan(flat.time_at_rate(np.array([999.0]))[0])
+
+    # nothing warns, over the whole range including the degenerate ends
+    probe = np.array([np.inf, 1e6, 1000.0, 1.0, 1e-30, 0.0, -1.0, np.nan])
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', RuntimeWarning)
+        for model in TIME_AT_RATE_MODELS.values():
+            model.time_at_rate(probe)
+
+
+# ---------------------------------------------------------------------------------------
 # IncliningHyperbolic
 # ---------------------------------------------------------------------------------------
 

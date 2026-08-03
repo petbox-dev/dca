@@ -108,6 +108,24 @@ Version History
       ``(t, c, m)`` tuples, disambiguated by arity.
 
 * New Methods
+    * ``MultisegmentHyperbolic.time_at_rate(q)`` inverts the rate function, so ``MH``, ``THM``,
+      ``GeneralizedHyperbolic`` and ``IncliningHyperbolic`` all gain it. It answers both the
+      forward question --- time to an economic limit --- and the backward one --- how far a
+      forecast can be extrapolated --- with the same call.
+    * Each segment is inverted only over the times it governs, using the same bracketing as
+      ``rate``. That is not cosmetic: on ``MH(1000, 0.8, 1.5, 0.08)``, whose terminal segment
+      begins at 2884 days, ``rate(5000)`` is 32.84892, and inverting that with the *initial*
+      segment's parameters gives 5990 --- wrong by 990 days. A rate above ``qi`` is
+      extrapolated backwards off the first segment, giving a negative time.
+    * The pole needs no separate accessor: it is ``time_at_rate(inf)``, which is exactly
+      ``-1 / (b D)`` for a declining hyperbolic, ``-inf`` for an exponential (no pole, so it can
+      be backed up indefinitely), and ``+inf`` for an inclining segment (no *backward* pole ---
+      an inclining rate diverges forward instead). A ``t_min`` would be a misnomer, since the
+      pole bounds whichever direction the rate grows in.
+    * Where a model mixes inclining and declining segments the rate is not monotonic and a
+      given ``q`` may occur several times; the **earliest** is returned, which is what backing a
+      forecast up wants. A rate of zero returns ``inf`` --- reached only in the limit --- and a
+      negative one ``nan``.
     * ``PLYield.shift(dt)`` and ``GeneralizedPLYield.shift(dt)`` re-anchor a fit made
       against the wrong first-production date, moving the pivot or every breakpoint later
       by ``dt`` days. This re-anchors rather than reproducing the original curve ---
@@ -265,6 +283,11 @@ Version History
       with ``True``.
 
 * Other changes
+    * ``docs/examples.rst`` gains a "Generalized and Inclining Models" section with a
+      four-panel figure: the segmented rate against its ``MH`` baseline with a rate reset and a
+      flat segment, the exponent stepping at each boundary, the pure build-up beside an
+      incline-peak-decline forecast, and a ``GeneralizedPLYield`` whose second breakpoint steps
+      the GOR. The ``time_at_rate`` economic-limit solution is marked on the rate panel.
     * The first row of ``segment_params`` now starts at ``-inf`` rather than ``0``, so the
       ``t_start`` column is sorted for any anchor time. ``_lookup_segment`` binary searches
       that column, and a caller who disabled validation could pass ``t0 < 0`` and leave it
