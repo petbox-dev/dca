@@ -145,8 +145,10 @@ class MultisegmentHyperbolic(PrimaryPhase):
         time rather than raising -- the last segment's decline is not known until the chain
         is built, so a caller cannot be asked to guarantee it in advance.
 
-        Returns ``segments`` unchanged when there is nothing to cap: no terminal decline, an
-        already-exponential tail, or no decline at all. Appending a degenerate row instead
+        Returns ``segments`` unchanged when there is no cap to apply. That is silent when no
+        terminal decline was asked for, and a ``RuntimeWarning`` when one was but cannot be
+        honoured, i.e. when the last segment is already exponential, flat, or inclining and
+        so has a decline that never reaches ``Dterm``. Appending a degenerate row instead
         would change the row count for a model that has no terminal behaviour.
 
         Parameters
@@ -176,18 +178,22 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # That is worth saying out loud rather than dropping silently. The caller asked for a
         # cap the model will not deliver, and for a flat tail the consequence is a forecast
         # that produces volume forever, i.e. an unbounded EUR.
+        # Order matters. A flat segment is required to carry b == 0, so testing for an
+        # exponential tail first would claim every flat one and leave 'is flat' unreachable.
+        # After the inclining test, a decline below MIN_EPSILON is a non-negative one, i.e.
+        # flat; what remains for the exponential test is a real decline with a zero exponent.
         ignored_because = None
         if D_last < 0.0:
             ignored_because = 'is inclining'
-        elif b_last < MIN_EPSILON:
-            ignored_because = 'is exponential'
         elif D_last < MIN_EPSILON:
             ignored_because = 'is flat'
+        elif b_last < MIN_EPSILON:
+            ignored_because = 'is exponential'
 
         if ignored_because is not None:
             warnings.warn(
                 f'Dterm ignored: the last segment {ignored_because}, '
-                f'so its decline never falls to Dterm',
+                f'so its decline never reaches Dterm',
                 RuntimeWarning, stacklevel=2)
             return segments
 
@@ -1035,11 +1041,14 @@ class HyperbolicSegment:
         D: Optional[float] = None
             The decline at ``t`` in secant effective decline, i.e. annual effective percent
             decline, matching ``Di`` and ``Dterm``. ``None`` leaves the decline continuous.
-            Must be finite and within ``[0, 1)`` when given.
+            Negative to incline, zero for a flat segment. Must be finite and less than 1 when
+            given, and must agree in sign with the segment's resolved ``b``.
 
         b: Optional[float] = None
             The hyperbolic exponent from ``t`` onward. ``None`` continues the previous
-            exponent. Must be finite and within ``[0, 2]`` when given.
+            exponent. Must be finite when given; it is otherwise unbounded. It must agree in
+            sign with the segment's ``D``, and must be zero where that ``D`` is zero --
+            including where either is inherited from the preceding segment.
     """
     t: float
     q: Optional[float] = field(default=None, kw_only=True)
@@ -1103,10 +1112,22 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
     exponential segment. Unlike :class:`MH`, a ``Dterm`` steeper than the last segment's
     decline is clamped rather than rejected -- see the note under ``Dterm``.
 
-    Reject-only-what-is-not-physical: an exponent that *increases* between segments is
-    permitted, because a restimulation genuinely produces one. :class:`THM` enforces
+    The purpose of this model is to let a caller express any series of Arps-style segments
+    that is physically meaningful, so it rejects only what is not:
+
+    - A **negative rate**, which no forecast has.
+    - A **decline of 100% per year or more**, which consumes the whole rate within the year.
+      An arbitrarily steep *incline* is permitted: ``D = -1`` doubles the rate over a year
+      and ``D = -9`` is a tenfold rise, both of which a well can do after a restimulation.
+    - A segment whose ``D`` and ``b`` **disagree in sign**. A segment either declines
+      (``D > 0``, ``b >= 0``) or inclines (``D < 0``, ``b <= 0``), and a flat segment
+      (``D == 0``) must have ``b == 0``. See :meth:`_validate_decline_signs`.
+
+    Everything else is allowed. ``b`` is bounded only by finiteness -- :class:`THM` enforces
     ``bi >= bf >= bterm`` because its segments model one specific transient-to-boundary
-    transition; this model makes no such claim, so monotonicity is the caller's choice.
+    transition, and this model makes no such claim, so neither the magnitude of ``b`` nor its
+    monotonicity between segments is constrained. An exponent that *increases* between
+    segments is a restimulation.
 
     Parameters
     ----------
@@ -1121,9 +1142,12 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
 
                 D_i = 1 - \\frac{q(t=1 \\, year)}{qi}
 
+            Negative to incline, zero for a flat forecast. Must be less than 1.
+
         bi: float
             The initial hyperbolic parameter, defined as
-            :math:`\\frac{d}{dt}\\frac{1}{D}`. This parameter is dimensionless.
+            :math:`\\frac{d}{dt}\\frac{1}{D}`. This parameter is dimensionless. It must agree
+            in sign with ``Di``, and must be zero when ``Di`` is.
 
         segments: Sequence[HyperbolicSegment] = ()
             The segments after the initial one, in strictly increasing time order. Each is
@@ -1206,17 +1230,21 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         # Check the optional fields per field rather than via the segment array: that array
         # uses nan to mean "inherited", so an explicitly-NaN q, D or b would be silently
         # read as an inherit rather than rejected.
+        #
+        # Only the physically impossible is rejected. A rate cannot be negative. A decline of
+        # 100% per year or more consumes the entire rate within the year, and converts to an
+        # infinite nominal decline. Everything else is permitted, including an arbitrarily
+        # steep incline: D = -1 doubles the rate over a year and D = -9 is a tenfold rise,
+        # both of which a well can do after a restimulation. b is bounded only by finiteness.
         for segment in self.segments:
             if segment.q is not None and not (np.isfinite(segment.q) and segment.q > 0.0):
                 raise ValueError('segments q must be finite and > 0')
 
-            if segment.D is not None and not (
-                    np.isfinite(segment.D) and 0.0 <= segment.D < 1.0):
-                raise ValueError('segments D must be finite and within [0, 1)')
+            if segment.D is not None and not (np.isfinite(segment.D) and segment.D < 1.0):
+                raise ValueError('segments D must be finite and < 1')
 
-            if segment.b is not None and not (
-                    np.isfinite(segment.b) and 0.0 <= segment.b <= 2.0):
-                raise ValueError('segments b must be finite and within [0, 2]')
+            if segment.b is not None and not np.isfinite(segment.b):
+                raise ValueError('segments b must be finite')
 
         # normalize every field to float, so the instance stays hashable and its fields
         # match their annotations at runtime even when given ints
@@ -1230,7 +1258,56 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         _validate_segment_times(
             np.array([segment.t for segment in self.segments], dtype=np.float64))
 
+        self._validate_decline_signs()
+
         super()._validate()
+
+    def _validate_decline_signs(self) -> None:
+        """
+        Require the decline and the exponent of every segment to agree in sign.
+
+        A segment either declines (``D > 0``, ``b >= 0``) or inclines (``D < 0``, ``b <= 0``);
+        a flat segment (``D == 0``) must have ``b == 0``. Mixed signs are not a forecast: ``b``
+        is :math:`\\frac{d}{dt}\\frac{1}{D}`, so a ``b`` opposing its own ``D`` drives the
+        decline *through* zero at ``t = -1 / (b D)`` -- the pole -- and out the other side,
+        which is why the segment functions return ``nan`` past it. And a flat segment has no
+        decline for a non-zero ``b`` to act on.
+
+        The check runs against the *resolved* exponent, not the given one, so a segment that
+        supplies ``D`` and inherits ``b`` is caught too.
+        """
+        for index, (D, b) in enumerate(self._resolved_decline_signs()):
+            where = 'initial conditions' if index == 0 else f'segments[{index - 1}]'
+
+            if D == 0.0 and b != 0.0:
+                raise ValueError(f'{where} has D == 0, which requires b == 0')
+
+            if D * b < 0.0:
+                raise ValueError(
+                    f'{where} has D and b of opposing signs; a segment must either decline '
+                    f'(D > 0, b >= 0) or incline (D < 0, b <= 0)')
+
+    def _resolved_decline_signs(self) -> List[Tuple[float, float]]:
+        """
+        The ``(D, b)`` pair of the initial conditions and of every segment, with an inherited
+        ``b`` resolved to the value it inherits and an inherited ``D`` reported as the previous
+        segment's. Secant declines, not nominal: only the signs are of interest, and the
+        secant-to-nominal conversion preserves them.
+
+        Shared by :meth:`_validate_decline_signs` and nothing else, but kept separate so the
+        inheritance walk is stated once and cannot drift from the one in :meth:`_segments`.
+        """
+        resolved = [(self.Di, self.bi)]
+        D, b = self.Di, self.bi
+
+        for segment in self.segments:
+            if segment.b is not None:
+                b = segment.b
+            if segment.D is not None:
+                D = segment.D
+            resolved.append((D, b))
+
+        return resolved
 
     def _segments(self) -> NDFloat:
         """
@@ -1266,14 +1343,21 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                 'qi', 'Initial rate [vol/day]',
                 0.0, None,
                 lambda r, n: r.uniform(1e-10, 1e6, n)),
-            ParamDesc(  # TODO
-                'Di', 'Initial decline [sec. eff. / yr]',
-                0.0, 1.0,
+            ParamDesc(
+                # No lower bound: a negative decline is an incline, which this model
+                # supports. The upper bound stands -- a decline of 100% per year consumes
+                # the whole rate within the year and converts to an infinite nominal
+                # decline. `_validate_decline_signs` additionally requires bi to agree in
+                # sign with Di.
+                'Di', 'Initial decline [sec. eff. / yr], negative to incline',
+                None, 1.0,
                 lambda r, n: r.uniform(0.0, 1.0, n),
                 exclude_upper_bound=True),
             ParamDesc(
-                'bi', 'Hyperbolic exponent',
-                0.0, 2.0,
+                # Unbounded: b is bounded only by finiteness. THM's [0, 2] belongs to its
+                # specific transient-to-boundary transition, not to Arps in general.
+                'bi', 'Hyperbolic exponent, negative to incline',
+                None, None,
                 lambda r, n: r.uniform(0.0, 2.0, n)),
             ParamDesc(
                 # No scalar bounds: this parameter is a sequence, so the generic bound
@@ -1283,7 +1367,8 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                 # `naive_gen` emits sorted (t, D, b) rows. Feed the result through
                 # `from_segments`, which reads each 3-row as (t, D, b); the raw array is
                 # not accepted by the constructor, whose isinstance check requires
-                # HyperbolicSegment.
+                # HyperbolicSegment. D and b share a sign per row, since a mixed-sign
+                # segment is rejected -- so the emitted rows are always constructible.
                 'segments', 'Segment start times, declines and exponents '
                             '[(days, sec. eff. / yr, dimensionless), ...]',
                 None, None,

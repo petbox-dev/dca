@@ -35,6 +35,25 @@ Version History
       transient-to-boundary transition; ``GeneralizedHyperbolic`` makes no such claim, and a
       restimulation genuinely raises ``b``. The rule for this model is to reject only what is
       not physically meaningful.
+    * Segments may **incline** or be **flat**. ``Di`` and a per-segment ``D`` have no lower
+      bound, so a negative value inclines: the secant definition
+      ``D = 1 - q(1 year) / qi`` fixes the meaning exactly, making ``D = -0.5`` a 1.5x rate
+      after a year and ``D = -9`` a tenfold rise, both of which a well can do after a
+      restimulation. ``D = 0`` holds the rate. ``bi`` and a per-segment ``b`` are bounded only
+      by being finite --- ``THM``'s ``[0, 2]`` belongs to its specific transition, not to Arps
+      in general. The upper bound on ``D`` stands at 1: a decline of 100% per year consumes the
+      whole rate within the year and converts to an infinite nominal decline.
+      ``MH`` and ``THM`` keep their original bounds; only ``GeneralizedHyperbolic`` widens.
+    * ``D`` and ``b`` must **agree in sign** within a segment. A segment either declines
+      (``D > 0``, ``b >= 0``) or inclines (``D < 0``, ``b <= 0``), and a flat segment
+      (``D == 0``) must have ``b == 0``. ``b`` is ``d/dt(1/D)``, so a ``b`` opposing its own
+      ``D`` drives the decline through zero at the pole ``t = -1 / (b D)`` and out the other
+      side --- which is why the segment functions return ``nan`` past it --- and a flat segment
+      has no decline for a non-zero ``b`` to act on. The check runs against the *resolved*
+      exponent, so a segment supplying one of the pair and inheriting the other is caught too.
+    * This is the one place the two models diverge on what they accept: ``MH`` allows
+      ``Di == 0`` with a non-zero ``bi`` and silently ignores the ``bi``, since every use of
+      ``b`` is multiplied by ``D``. ``GeneralizedHyperbolic`` rejects it.
     * Where ``MH`` raises ``Di < Dterm``, ``GeneralizedHyperbolic`` clamps the terminal
       segment forward to the last segment's start time --- that segment's decline is not
       known until the chain is built, so a caller cannot be asked to guarantee it in advance.

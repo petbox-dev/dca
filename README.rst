@@ -208,6 +208,37 @@ An exponent that *increases* between segments is permitted: ``THM`` requires
 ``bi >= bf >= bterm`` because its segments model one specific transient-to-boundary
 transition, but a restimulation genuinely raises ``b``.
 
+The point of this model is to express any series of Arps-style segments that is physically
+meaningful, so a segment may also be **flat** or **inclining**. A negative ``D`` inclines —
+the secant definition fixes the meaning exactly, so ``D = -0.5`` is a 1.5x rate after a year
+and ``D = -9`` a tenfold rise — and ``D = 0`` holds the rate.
+
+.. code-block:: python
+
+    >>> gh = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 1.5, [(730.5, -0.3, -0.5)])
+    >>> gh.rate([1.0, 365.25, 730.5, 1095.75, 3652.5])
+    array([981.840, 200.000, 129.894, 168.863, 584.570])
+
+    >>> plateau = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 1.5, [(365.25, 0.0, 0.0)])
+    >>> plateau.rate([1.0, 365.25, 3652.5])
+    array([981.840, 200.000, 200.000])
+
+The first declines for two years, then turns up — a restimulation. The second declines for a
+year, then holds 200 indefinitely.
+
+Only the physically impossible is rejected: a negative rate, a decline of 100% per year or
+more, and a segment whose ``D`` and ``b`` disagree in sign. A segment either declines
+(``D > 0``, ``b >= 0``) or inclines (``D < 0``, ``b <= 0``), and a flat segment must have
+``b = 0`` — ``b`` is the rate of change of ``1/D``, so a ``b`` opposing its own ``D`` drives
+the decline through zero and out the other side, and a flat segment has no decline for a
+non-zero ``b`` to act on. The pair must agree even when one of them is inherited. Otherwise
+``b`` is bounded only by being finite; ``MH`` and ``THM`` keep their ``[0, 2]``.
+
+A terminal decline only caps a *hyperbolic* tail, whose decline falls until it reaches
+``Dterm``. If the last segment is exponential, flat, or inclining, its decline never reaches
+``Dterm``, so the cap is ignored and a ``RuntimeWarning`` says which case applied. For a flat
+tail that means the forecast produces volume forever.
+
 Hyperbolic models also extrapolate backwards, so a forecast fit against a first-production
 date that was a month too late can be evaluated at negative time:
 

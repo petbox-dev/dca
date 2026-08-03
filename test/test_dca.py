@@ -773,7 +773,11 @@ def test_plyield_closed_form_clamped() -> None:
     m=st.floats(-1.0, 1.0),
     t0=st.floats(1e-10, 365.25),
 )
-@settings(deadline=None)  # type: ignore
+# The two assume() calls below reject roughly two draws in three -- 202 invalid against 99
+# passing on a typical run -- so hypothesis intermittently trips filter_too_much. Suppress it
+# as test_yield and test_THM_terminal_exp already do, for the same reason.
+@settings(deadline=None,
+          suppress_health_check=[hypothesis.HealthCheck.filter_too_much])  # type: ignore
 def test_generalized_reduces_to_plyield(qi: float, Di: float, bf: float, telf: float,
                                         bterm: float, tterm: float, c: float, m0: float,
                                         m: float, t0: float) -> None:
@@ -1650,8 +1654,14 @@ def test_generalized_hyperbolic_reduces_to_MH(qi: float, Di: float, bi: float,
     array_equal, not allclose. Row 0 is the same expression and the terminal row goes
     through the same _fill_segment_chain calls at the same derived time. Restricted to
     Di >= Dterm, the only region MH is constructible in: MH raises there while the
-    generalized model clamps."""
+    generalized model clamps.
+
+    Also restricted away from Di == 0 with bi != 0. MH accepts that and silently ignores bi,
+    since every use of b is multiplied by D; the generalized model rejects it, because a flat
+    forecast has no decline for an exponent to act on. That divergence is deliberate --
+    see test_generalized_hyperbolic_rejects_a_meaningless_exponent."""
     assume(dca.MH.nominal_from_secant(Di, bi) >= dca.MH.nominal_from_tangent(Dterm))
+    assume(not (Di == 0.0 and bi != 0.0))
     t = np.concatenate([[0.0], dca.get_time()])
 
     mh = dca.MH(qi, Di, bi, Dterm)
@@ -1807,6 +1817,112 @@ def test_generalized_hyperbolic_noop_segment_is_permitted() -> None:
         assert np.allclose(getattr(noop, name)(t), getattr(base, name)(t), rtol=1e-12), name
 
 
+def test_generalized_hyperbolic_inclines() -> None:
+    """A negative D is an incline. The secant definition D = 1 - q(1yr)/qi fixes the meaning
+    exactly: D = -0.5 is a 1.5x rate after a year and D = -9 is a tenfold rise. There is no
+    lower bound, because a well genuinely can do either after a restimulation."""
+    msh = dca.MultisegmentHyperbolic
+    t = np.array([0.0, 30.0, 182.625, 365.25, 730.5, 3652.5])
+
+    model = dca.GeneralizedHyperbolic(1000.0, -0.5, -1.0, ())
+    assert model.rate(np.array([365.25]))[0] == pytest.approx(1500.0)
+    assert np.all(np.diff(model.rate(t)) > 0.0)      # the rate rises throughout
+    assert np.all(model.D(t) < 0.0)                  # and the decline stays negative
+    assert np.all(model.b(t) == -1.0)
+    assert np.all(np.diff(model.cum(t)) > 0.0)
+
+    # against the closed form, evaluated the way the model does
+    Di_nom = msh._nominal_per_day_from_secant(-0.5, -1.0)
+    assert np.allclose(model.rate(t), 1000.0 * np.exp(-np.log1p(Di_nom * -1.0 * t) / -1.0))
+
+    # an arbitrarily steep incline is permitted
+    assert dca.GeneralizedHyperbolic(100.0, -9.0, -1.0, ()).rate(
+        np.array([365.25]))[0] == pytest.approx(1000.0)
+
+    # a forecast may decline and then incline, which is what a restimulation looks like
+    restimulated = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(730.5, -0.3, -0.5)])
+    assert restimulated.D(np.array([365.25]))[0] > 0.0
+    assert restimulated.D(np.array([1095.75]))[0] < 0.0
+    assert np.all(np.diff(restimulated.cum(t)) >= 0.0)
+    assert np.all(np.isfinite(restimulated.rate(dca.get_time())))
+
+
+def test_generalized_hyperbolic_is_flat_when_D_is_zero() -> None:
+    """D == 0 is a flat forecast, which the model supports outright rather than as a limit."""
+    t = np.array([0.0, 30.0, 365.25, 3652.5, 1e6])
+
+    flat = dca.GeneralizedHyperbolic(1000.0, 0.0, 0.0, ())
+    assert np.all(flat.rate(t) == 1000.0)
+    assert flat.cum(np.array([365.25]))[0] == pytest.approx(365250.0)
+    assert np.all(flat.D(t) == 0.0)
+
+    # a flat segment after a declining one holds the rate it inherits
+    plateau = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.25, 0.0, 0.0)])
+    held = plateau.rate(np.array([365.25]))[0]
+    assert np.allclose(plateau.rate(np.array([365.25, 1e4, 1e6])), held)
+    assert held == pytest.approx(200.0, rel=1e-6)
+
+
+def test_generalized_hyperbolic_requires_D_and_b_to_agree_in_sign() -> None:
+    """A segment either declines (D > 0, b >= 0) or inclines (D < 0, b <= 0), and a flat
+    segment (D == 0) must have b == 0. b is d/dt(1/D), so a b opposing its own D drives the
+    decline through zero at the pole and out the other side; and a flat segment has no decline
+    for a non-zero b to act on. The check runs against the RESOLVED exponent, so a segment
+    that supplies one of the pair and inherits the other is caught too."""
+    GH, HS = dca.GeneralizedHyperbolic, dca.HyperbolicSegment
+
+    for args, message in (
+            ((1000.0, 0.8, -1.0, ()), 'initial conditions has D and b of opposing signs'),
+            ((1000.0, -0.8, 1.0, ()), 'initial conditions has D and b of opposing signs'),
+            ((1000.0, 0.0, 1.5, ()), 'initial conditions has D == 0, which requires b == 0'),
+            ((1000.0, -0.5, 0.0, ()), None),   # an inclining exponential is legal
+            ((1000.0, 0.8, 0.0, ()), None),    # so is a declining one
+    ):
+        if message is None:
+            GH(*args)
+            continue
+        with pytest.raises(ValueError) as e:
+            GH(*args)
+        assert message in str(e.value), args
+
+    # given b, inherited D
+    with pytest.raises(ValueError, match='segments.0. has D and b of opposing signs'):
+        GH.from_segments(1000.0, 0.8, 1.5, [(365.0, -0.5)])
+
+    # given D, inherited b
+    with pytest.raises(ValueError, match='segments.0. has D and b of opposing signs'):
+        GH.from_segments(1000.0, 0.8, 1.5, [(365.0, -0.3, None)])
+
+    # given D == 0, inherited non-zero b
+    with pytest.raises(ValueError, match='segments.0. has D == 0, which requires b == 0'):
+        GH.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.0, None)])
+
+    # the index in the message points at the offending segment, not the initial conditions
+    with pytest.raises(ValueError, match='segments.1. has D and b of opposing signs'):
+        GH.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.3, 0.8), (730.0, -0.2, None)])
+
+    # inheriting a sign-consistent pair is fine, in both directions
+    assert GH.from_segments(1000.0, -0.5, -1.0, [(365.0, -0.2, None)]
+                            ).segment_params.shape[0] == 2
+    assert GH(1000.0, 0.8, 1.5, (HS(365.0, q=500.0),)).segment_params.shape[0] == 2
+    # and a flat segment may inherit b == 0 from an exponential one
+    assert GH.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.3, 0.0), (730.0, 0.0, None)]
+                            ).segment_params.shape[0] == 3
+
+
+def test_generalized_hyperbolic_rejects_a_meaningless_exponent() -> None:
+    """MH accepts Di == 0 with a non-zero bi and silently ignores the bi, since every use of b
+    is multiplied by D. GeneralizedHyperbolic rejects it. This is the one place the two models
+    diverge on what they accept, and it is why the reduction test excludes that combination."""
+    assert dca.MH(1000.0, 0.0, 1.5).segment_params[0, dca.MH.B_IDX] == 1.5
+    assert np.all(dca.MH(1000.0, 0.0, 1.5).rate(dca.get_time()) == 1000.0)
+
+    with pytest.raises(ValueError, match='D == 0, which requires b == 0'):
+        dca.GeneralizedHyperbolic(1000.0, 0.0, 1.5, ())
+
+
 def test_generalized_hyperbolic_permits_increasing_b() -> None:
     """Reject only what is not physically meaningful. THM enforces bi >= bf >= bterm because
     its segments model one specific transient-to-boundary transition; this model makes no
@@ -1848,7 +1964,7 @@ def test_generalized_hyperbolic_skips_the_terminal_row_when_nothing_to_cap() -> 
     # no terminal decline requested
     assert dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ()).segment_params.shape[0] == 1
 
-    # An exponential tail has a constant decline that never falls to Dterm, so the cap is
+    # An exponential tail has a constant decline that never reaches Dterm, so the cap is
     # ignored -- with a warning, asserted in
     # test_terminal_decline_is_ignored_with_a_warning_on_a_constant_decline_tail.
     with pytest.warns(RuntimeWarning):
@@ -1874,20 +1990,24 @@ def test_generalized_hyperbolic_errors() -> None:
             ((HS(100.0, q=-1.0),), 'segments q must be finite and > 0'),
             ((HS(100.0, q=np.nan),), 'segments q must be finite and > 0'),
             ((HS(100.0, q=np.inf),), 'segments q must be finite and > 0'),
-            ((HS(100.0, D=1.0),), 'segments D must be finite and within [0, 1)'),
-            ((HS(100.0, D=-0.1),), 'segments D must be finite and within [0, 1)'),
-            ((HS(100.0, D=np.nan),), 'segments D must be finite and within [0, 1)'),
-            ((HS(100.0, b=2.5),), 'segments b must be finite and within [0, 2]'),
-            ((HS(100.0, b=-0.1),), 'segments b must be finite and within [0, 2]'),
-            ((HS(100.0, b=np.nan),), 'segments b must be finite and within [0, 2]'),
+            ((HS(100.0, D=1.0),), 'segments D must be finite and < 1'),
+            ((HS(100.0, D=np.inf),), 'segments D must be finite and < 1'),
+            ((HS(100.0, D=np.nan),), 'segments D must be finite and < 1'),
+            ((HS(100.0, b=np.nan),), 'segments b must be finite'),
+            ((HS(100.0, b=np.inf),), 'segments b must be finite'),
             (((100.0, 1.0),), 'segments entries must be HyperbolicSegment'),
+            # a negative D or b is legal on its own but not against a declining model: the
+            # inherited counterpart has the opposing sign
+            ((HS(100.0, D=-0.1),), 'D and b of opposing signs'),
+            ((HS(100.0, b=-0.1),), 'D and b of opposing signs'),
+            ((HS(100.0, D=0.0),), 'D == 0, which requires b == 0'),
     ):
         with pytest.raises(ValueError) as e:
             GH(1000.0, 0.8, 1.5, segments)  # type: ignore[arg-type]
         assert message in str(e.value), segments
 
-    # scalar parameters keep MH's bounds
-    for params in ((-1000.0, 0.8, 1.5), (1000.0, 1.0, 1.5), (1000.0, 0.8, 2.5)):
+    # a rate cannot be negative, and a decline cannot reach 100% per year
+    for params in ((-1000.0, 0.8, 1.5), (1000.0, 1.0, 1.5)):
         with pytest.raises(ValueError):
             GH(*params, ())
 
@@ -1896,6 +2016,11 @@ def test_generalized_hyperbolic_errors() -> None:
 
     with pytest.raises(ValueError):
         GH(np.nan, 0.8, 1.5, ())
+
+    # but b is unbounded in magnitude, unlike MH's [0, 2]
+    assert GH(1000.0, 0.8, 5.0, ()).segment_params[0, GH.B_IDX] == 5.0
+    with pytest.raises(ValueError):
+        dca.MH(1000.0, 0.8, 5.0)
 
 
 def test_generalized_hyperbolic_param_descs() -> None:
@@ -2020,7 +2145,9 @@ def test_terminal_decline_is_ignored_with_a_warning_on_a_constant_decline_tail()
     a forecast that produces volume forever."""
     cases = [
         ('is exponential', dca.GeneralizedHyperbolic, (1000.0, 0.8, 0.0, (), 0.08), 1),
-        ('is flat', dca.GeneralizedHyperbolic, (1000.0, 0.0, 1.5, (), 0.08), 1),
+        # a flat model needs b == 0 too: D == 0 leaves no decline for an exponent to act on
+        ('is flat', dca.GeneralizedHyperbolic, (1000.0, 0.0, 0.0, (), 0.08), 1),
+        ('is inclining', dca.GeneralizedHyperbolic, (1000.0, -0.5, -1.0, (), 0.08), 1),
         # MH shares the helper, so it reports the same thing
         ('is exponential', dca.MH, (1000.0, 0.8, 0.0, 0.08), 1),
     ]
@@ -2032,7 +2159,7 @@ def test_terminal_decline_is_ignored_with_a_warning_on_a_constant_decline_tail()
     # a flat *segment* tail, not just a flat model
     with pytest.warns(RuntimeWarning, match='the last segment is flat'):
         flat_segment = dca.GeneralizedHyperbolic.from_segments(
-            1000.0, 0.8, 2.0, [(365.0, 0.0, None)], Dterm=0.08)
+            1000.0, 0.8, 2.0, [(365.0, 0.0, 0.0)], Dterm=0.08)
     assert flat_segment.segment_params.shape[0] == 2
 
     # a hyperbolic tail is capped as normal, and says nothing
@@ -2049,7 +2176,9 @@ def test_terminal_decline_is_ignored_with_a_warning_on_a_constant_decline_tail()
         assert dca.GeneralizedHyperbolic(
             1000.0, 0.8, 1.5, (), 0.0).segment_params.shape[0] == 1
         assert dca.GeneralizedHyperbolic(
-            1000.0, 0.0, 1.5, (), 0.0).segment_params.shape[0] == 1
+            1000.0, 0.0, 0.0, (), 0.0).segment_params.shape[0] == 1
+        assert dca.GeneralizedHyperbolic(
+            1000.0, -0.5, -1.0, (), 0.0).segment_params.shape[0] == 1
 
 
 def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
@@ -2060,8 +2189,9 @@ def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
     perfectly finite rate, which _integrate_with would then read as a definite zero."""
     model = dca.GeneralizedHyperbolic(
         9235.481100137427, 1e-12, 1.0097199755572828,
-        (dca.HyperbolicSegment(18839.180085839886, D=0.0),
-         dca.HyperbolicSegment(92952.86641079251, D=1e-300)), 0.06)
+        # D == 0 requires b == 0; the flat segment is what drives the coefficient infinite
+        (dca.HyperbolicSegment(18839.180085839886, D=0.0, b=0.0),
+         dca.HyperbolicSegment(92952.86641079251, D=1e-300, b=1e-300)), 0.06)
     t = np.array([1e3, 9.2e4, 9.3e4, 1e5, 1e6])
 
     assert np.isfinite(model.segment_params[-1, model.N_IDX])
