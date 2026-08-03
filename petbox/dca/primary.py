@@ -34,6 +34,7 @@ from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
                    _validate_segment_times)
 
 NDFloat = NDArray[np.float64]
+NDBool = NDArray[np.bool_]
 
 
 @dataclass
@@ -394,6 +395,42 @@ class MultisegmentHyperbolic(PrimaryPhase):
         with np.errstate(over='ignore', under='ignore', invalid='ignore'):
             return np.where(np.isnan(dt) | (1.0 + D * b * dt < 0.0), np.nan, b)
 
+    def _segment_window(self, index: int, t: NDFloat) -> NDBool:
+        """
+        Mask of the times that segment ``index`` governs.
+
+        The first segment extrapolates *backwards*: it claims everything below the next
+        boundary, so a negative ``t`` is evaluated rather than left as a silent zero. (The
+        row's own start time doubles as ``t0`` in the segment functions, so it cannot be moved
+        to ``-inf`` the way the yield models' boundary column can.) The last segment runs to
+        infinity. Between them the windows are half-open and disjoint, so together they cover
+        every finite ``t`` exactly once.
+
+        Shared by :meth:`_vectorize` and :meth:`time_at_rate`, and it must be: the round trip
+        is exact only because a time `time_at_rate` returns falls in the window of the very
+        segment it inverted, which is the segment `rate` will then evaluate. Two copies of this
+        could drift apart and break that silently.
+
+        Parameters
+        ----------
+            index: int
+                Row of ``segment_params`` to bound.
+
+            t: NDFloat
+                Times to test.
+
+        Returns
+        -------
+            mask: NDBool
+        """
+        p = self.segment_params
+
+        within = np.ones_like(t, dtype=bool) if index == 0 else t >= p[index, self.T_IDX]
+        if index < p.shape[0] - 1:
+            within = within & (t < p[index + 1, self.T_IDX])
+
+        return within
+
     def _vectorize(self, fn: Callable[..., NDFloat],
                    t: Union[float, NDFloat]) -> NDFloat:
         """
@@ -402,23 +439,15 @@ class MultisegmentHyperbolic(PrimaryPhase):
         t = np.atleast_1d(t)
         p = self.segment_params
 
-        # nan, not zeros: with the first segment claiming everything below the next boundary,
-        # the masks below cover every finite t exactly once, so the initial value survives
-        # only where t is nan -- every comparison against which is False. Zeros there meant a
-        # nan time silently produced a rate and a cumulative volume of 0, the same
-        # silent-zero-EUR failure the non-finite parameter checks exist to prevent, and it
+        # nan, not zeros: the segment windows cover every finite t exactly once, so the initial
+        # value survives only where t is nan -- every comparison against which is False. Zeros
+        # there meant a nan time silently produced a rate and a cumulative volume of 0, the
+        # same silent-zero-EUR failure the non-finite parameter checks exist to prevent, and it
         # disagreed with single-segment models, which have no upper mask and did return nan.
         x = np.full_like(t, np.nan, dtype=np.float64)
 
         for i in range(p.shape[0]):
-            # the first segment extrapolates backwards: it claims everything below the next
-            # boundary, so a negative ``t`` is evaluated rather than left as a silent zero.
-            # (the row's own start time doubles as ``t0`` in the segment functions, so it
-            # cannot be moved to ``-inf`` the way the yield models' boundary column can.)
-            where_seg = np.ones_like(t, dtype=bool) if i == 0 else t >= p[i, self.T_IDX]
-            if i < p.shape[0] - 1:
-                where_seg = where_seg & (t < p[i + 1, self.T_IDX])
-
+            where_seg = self._segment_window(i, t)
             x[where_seg] = fn(*p[i], t[where_seg])
 
         return x
@@ -481,26 +510,21 @@ class MultisegmentHyperbolic(PrimaryPhase):
                 Days, ``nan`` where no segment attains ``q``.
         """
         q = self._validate_ndarray(q)
-        p = self.segment_params
+        params = self.segment_params
 
         time = np.full_like(q, np.nan, dtype=np.float64)
 
         # Segments are walked in time order and a filled entry is never overwritten, so the
         # first hit is the earliest -- each segment's window is disjoint from the others'.
-        for i in range(p.shape[0]):
-            candidate = p[i, self.T_IDX] + self._tcheck(
-                p[i, self.Q_IDX], p[i, self.D_IDX], p[i, self.B_IDX], q)
+        for i in range(params.shape[0]):
+            candidate = params[i, self.T_IDX] + self._tcheck(
+                params[i, self.Q_IDX], params[i, self.D_IDX], params[i, self.B_IDX], q)
 
-            # the same windows `_vectorize` uses, so a time this returns is one at which
-            # `rate` evaluates that very segment: the first extends backwards, the last runs
-            # to infinity
-            within = (np.ones_like(q, dtype=bool) if i == 0
-                      else candidate >= p[i, self.T_IDX])
-            if i < p.shape[0] - 1:
-                within = within & (candidate < p[i + 1, self.T_IDX])
-
-            fill = within & np.isnan(time)
-            time[fill] = candidate[fill]
+            # Keep only a solution that lands in the window the segment actually governs, so
+            # the time returned is one at which `rate` evaluates that very segment -- which is
+            # what makes the round trip exact rather than merely close.
+            accepted = self._segment_window(i, candidate) & np.isnan(time)
+            time[accepted] = candidate[accepted]
 
         return time
 
@@ -1413,21 +1437,22 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         supplies ``D`` and inherits ``b`` is caught too.
         """
         for index, (D, b) in enumerate(self._resolved_declines()):
-            where = 'initial conditions' if index == 0 else f'segments[{index - 1}]'
+            # row 0 is the model's own Di/bi; every later row is a caller segment
+            location = 'initial conditions' if index == 0 else f'segments[{index - 1}]'
 
             # Effective zero, not exact zero. `nominal_from_secant` returns 0.0 for any
             # ``abs(D) < MIN_EPSILON``, so a denormal D produces a genuinely flat segment; a
             # test against exactly 0.0 would let Di = 1e-320 pair with bi = 1.5 and store the
             # forbidden (D == 0, b != 0) in `segment_params`.
             if abs(D) < MIN_EPSILON and b != 0.0:
-                raise ValueError(f'{where} has D == 0, which requires b == 0')
+                raise ValueError(f'{location} has D == 0, which requires b == 0')
 
             # Sign tests, not a product: ``D * b`` underflows to -0.0 for a pair like
             # (-1e-200, 1e-200), and ``-0.0 < 0.0`` is False, so the product form accepted
             # exactly the mixed-sign state this exists to reject.
             if (D > 0.0 and b < 0.0) or (D < 0.0 and b > 0.0):
                 raise ValueError(
-                    f'{where} has D and b of opposing signs; a segment must either decline '
+                    f'{location} has D and b of opposing signs; a segment must either decline '
                     f'(D > 0, b >= 0) or incline (D < 0, b <= 0)')
 
     def _resolved_exponents(self) -> List[float]:
