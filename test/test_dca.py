@@ -1656,12 +1656,14 @@ def test_generalized_hyperbolic_reduces_to_MH(qi: float, Di: float, bi: float,
     Di >= Dterm, the only region MH is constructible in: MH raises there while the
     generalized model clamps.
 
-    Also restricted away from Di == 0 with bi != 0. MH accepts that and silently ignores bi,
-    since every use of b is multiplied by D; the generalized model rejects it, because a flat
-    forecast has no decline for an exponent to act on. That divergence is deliberate --
-    see test_generalized_hyperbolic_rejects_a_meaningless_exponent."""
+    Also restricted away from an effectively-zero Di with a non-zero bi. MH accepts that and
+    silently ignores the bi, since every use of b is multiplied by D; the generalized model
+    rejects it, because a flat forecast has no decline for an exponent to act on. The threshold
+    is MIN_EPSILON rather than exact zero because that is where nominal_from_secant returns
+    0.0, so a denormal Di is flat in fact as well as in intent. That divergence is deliberate
+    -- see test_generalized_hyperbolic_rejects_a_meaningless_exponent."""
     assume(dca.MH.nominal_from_secant(Di, bi) >= dca.MH.nominal_from_tangent(Dterm))
-    assume(not (Di == 0.0 and bi != 0.0))
+    assume(not (abs(Di) < dca.base.MIN_EPSILON and bi != 0.0))
     t = np.concatenate([[0.0], dca.get_time()])
 
     mh = dca.MH(qi, Di, bi, Dterm)
@@ -2187,11 +2189,14 @@ def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
     infinite at a much larger D than the guard catches. An infinite coefficient times the
     zero ``expm1`` of a zero-width boundary is nan: a nan cumulative volume under a
     perfectly finite rate, which _integrate_with would then read as a definite zero."""
-    model = dca.GeneralizedHyperbolic(
-        9235.481100137427, 1e-12, 1.0097199755572828,
-        # D == 0 requires b == 0; the flat segment is what drives the coefficient infinite
-        (dca.HyperbolicSegment(18839.180085839886, D=0.0, b=0.0),
-         dca.HyperbolicSegment(92952.86641079251, D=1e-300, b=1e-300)), 0.06)
+    # The tail's b is below B_EPSILON, so the terminal cap is dropped with a warning -- that
+    # is incidental here, not the subject of the test.
+    with pytest.warns(RuntimeWarning, match='the last segment is exponential'):
+        model = dca.GeneralizedHyperbolic(
+            9235.481100137427, 1e-12, 1.0097199755572828,
+            # D == 0 requires b == 0; the flat segment drives the coefficient infinite
+            (dca.HyperbolicSegment(18839.180085839886, D=0.0, b=0.0),
+             dca.HyperbolicSegment(92952.86641079251, D=1e-300, b=1e-300)), 0.06)
     t = np.array([1e3, 9.2e4, 9.3e4, 1e5, 1e6])
 
     assert np.isfinite(model.segment_params[-1, model.N_IDX])
@@ -2247,6 +2252,132 @@ def test_numerical_integration_isolates_negative_time() -> None:
         warnings.simplefilter('error', RuntimeWarning)
         for model in models:
             model.cum(np.concatenate([[-30.0], positive]))
+
+
+def test_numerical_integration_isolates_infinite_time() -> None:
+    """The integration grid spans the requested times, so an infinite one made
+    log10(t_max) infinite and collapsed the whole log-spaced grid to [nan, inf, ...]. Every
+    FINITE time was then integrated over two or three points -- an 8.25x error, and a negative
+    monthly volume. An infinite time is not answerable by quadrature: the analytic cumulatives
+    have a closed-form limit there, this does not, and a truncated integral would read as an
+    EUR."""
+    positive = np.array([30.0, 100.0, 365.0, 1000.0])
+    ple = dca.PLE(1000.0, 0.8, 0.1, 0.5)
+
+    # PLE has no closed-form cumulative and always integrates; the yields do too. SE at this n
+    # and Duong answer analytically, so they never reach the grid -- they are included to show
+    # the finite entries are unharmed either way.
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0))
+    for model in (ple, dca.SE(1000.0, 100.0, 0.5), dca.Duong(1000.0, 1.5, 1.2),
+                  mh.secondary):
+        baseline = model.cum(positive)
+
+        # an inf in any position, leading or interior, and alongside a negative
+        for probe in (np.concatenate([[np.inf], positive]),
+                      np.array([30.0, np.inf, 100.0, 365.0, 1000.0]),
+                      np.concatenate([[-30.0, np.inf], positive])):
+            usable = np.isfinite(probe) & (probe >= 0.0)
+            result = model.cum(probe)
+            assert np.array_equal(result[usable], baseline), (type(model).__name__, probe)
+
+    # the numerically integrated models return nan at an infinite time
+    for model in (ple, mh.secondary):
+        assert np.all(np.isnan(model.cum(np.array([np.inf]))))
+        # and an all-infinite request is all nan rather than an empty-grid crash
+        assert np.all(np.isnan(model.cum(np.array([np.inf, np.inf]))))
+
+    # the analytic ones keep their closed-form limit there, which is the whole reason the
+    # numeric path must not fabricate one
+    assert np.isfinite(dca.SE(1000.0, 100.0, 0.5).cum(np.array([np.inf]))[0])
+    assert np.isfinite(dca.Duong(1000.0, 1.5, 1.2).cum(np.array([np.inf]))[0])
+
+    # monthly_vol went negative off the corrupted grid
+    volumes = ple.monthly_vol(np.concatenate([[np.inf], positive]))
+    assert np.all(volumes[1:] >= 0.0)
+    assert np.array_equal(volumes[1:], ple.monthly_vol(positive))
+
+    # and none of it warns
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', RuntimeWarning)
+        ple.cum(np.concatenate([[np.inf], positive]))
+
+
+def test_decline_conversions_saturate_instead_of_overflowing() -> None:
+    """b is bounded only by finiteness for GeneralizedHyperbolic, so the exponent inside
+    nominal_from_secant is unbounded and math.expm1 raised OverflowError -- which is not the
+    ValueError the class raises for everything else it rejects. A nominal decline past the
+    representable range is an infinite one, saturating as the LOG_EPSILON putmasks in _qcheck
+    and _Ncheck already do."""
+    msh = dca.MultisegmentHyperbolic
+
+    assert msh.nominal_from_secant(0.9, 1000.0) == np.inf
+    assert msh.nominal_from_secant(-9.0, -1000.0) == -np.inf
+    assert msh.nominal_from_secant(-1e308, -2.0) == -np.inf
+    assert msh.tangent_from_nominal(-710.0) == -np.inf
+    assert msh.tangent_from_nominal(-1e10) == -np.inf
+    assert msh.secant_from_nominal(-1e10, 0.0) == -np.inf
+
+    # A model built on those parameters constructs rather than raising OverflowError. Its
+    # forecast is the saturated limit, not a finite curve: an infinitely steep decline is
+    # spent immediately and an infinitely steep incline is unbounded. Both are the honest
+    # answer for an infinite nominal decline -- the point is that neither is an exception.
+    t = np.array([1.0, 100.0])
+    assert np.all(dca.GeneralizedHyperbolic(1000.0, 0.9, 1000.0, ()).rate(t) == 0.0)
+    assert np.all(dca.GeneralizedHyperbolic(1000.0, 0.999, 1000.0, ()).rate(t) == 0.0)
+    assert np.all(dca.GeneralizedHyperbolic(1000.0, -9.0, -1000.0, ()).rate(t) == np.inf)
+
+    # the ordinary range is untouched
+    assert msh.nominal_from_secant(0.8, 1.5) == 6.786893258332634
+    assert msh.nominal_from_secant(0.999999, 2.0) == pytest.approx(499999999970.74384)
+
+
+def test_terminal_decline_reports_an_exponential_tail_at_the_rate_threshold() -> None:
+    """The exponential test must use B_EPSILON, the threshold at which _qcheck and _Ncheck
+    actually switch to the exponential form. MIN_EPSILON left a ~300-decade window where the
+    math was exponential but the terminal logic called it hyperbolic, so it placed an inert
+    row at t ~ 1e14 days and said nothing -- the same discarded cap, invisible."""
+    reference = None
+    for bi in (0.0, 1e-300, 1e-11, 1e-10):
+        with pytest.warns(RuntimeWarning, match='the last segment is exponential'):
+            model = dca.GeneralizedHyperbolic(1000.0, 0.6, bi, (), 0.08)
+        assert model.segment_params.shape[0] == 1, bi
+
+        # every one of them is the same forecast
+        volume = model.cum(np.array([3.65e6]))[0]
+        if reference is None:
+            reference = volume
+        assert volume == reference, bi
+
+    # just above the threshold it is genuinely hyperbolic, and the cap applies silently
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', RuntimeWarning)
+        assert dca.GeneralizedHyperbolic(
+            1000.0, 0.6, 1e-9, (), 0.08).segment_params.shape[0] == 2
+
+
+def test_decline_sign_check_uses_sign_tests_and_effective_zero() -> None:
+    """Two ways the sign rule was evadable. The product ``D * b`` underflows to -0.0 for a
+    pair like (-1e-200, 1e-200), and ``-0.0 < 0.0`` is False. And nominal_from_secant returns
+    0.0 for any ``abs(D) < MIN_EPSILON``, so a denormal D is genuinely flat -- testing against
+    exactly 0.0 let Di = 1e-320 pair with bi = 1.5 and store the forbidden (D == 0, b != 0)."""
+    GH = dca.GeneralizedHyperbolic
+
+    # the product underflows but the signs still oppose
+    for Di, bi in ((-1e-200, 1e-200), (1e-200, -1e-200)):
+        assert Di * bi == 0.0                      # the product form saw nothing wrong
+        with pytest.raises(ValueError, match='D and b of opposing signs'):
+            GH(1000.0, Di, bi, ())
+
+    # a denormal Di is effectively zero, so it needs a zero bi
+    for Di in (1e-320, -1e-320, 5e-324):
+        with pytest.raises(ValueError, match='D == 0, which requires b == 0'):
+            GH(1000.0, Di, 1.5, ())
+        assert GH(1000.0, Di, 0.0, ()).segment_params[0, GH.D_IDX] == 0.0
+
+    # and the same on a segment rather than the initial conditions
+    with pytest.raises(ValueError, match=r'segments\[0\] has D == 0'):
+        GH(1000.0, 0.8, 1.5, (dca.HyperbolicSegment(365.0, D=1e-320, b=1.5),))
 
 
 def test_nan_time_propagates_for_any_segment_count() -> None:

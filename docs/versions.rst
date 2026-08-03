@@ -177,11 +177,16 @@ Version History
       validate their own contents.
 
 * **Breaking:** an ignored ``Dterm`` now warns, and numerical integration rejects ``t < 0``
-    * ``MH``, ``THM`` and ``GeneralizedHyperbolic`` discard ``Dterm`` when the last segment is
-      already exponential, flat, or inclining, since a decline that is constant or rising
-      never falls to ``Dterm``. That was silent; it now raises a ``RuntimeWarning`` naming the
+    * ``MH`` and ``GeneralizedHyperbolic`` discard ``Dterm`` when the last segment is already
+      exponential, flat, or inclining, since a decline that is constant or rising never
+      reaches ``Dterm``. That was silent; it now raises a ``RuntimeWarning`` naming the
       reason. Forecast values are unchanged. It matters most for a flat tail, where the
-      discarded cap means the forecast produces volume forever.
+      discarded cap means the forecast produces volume forever. ``THM`` is unaffected: it
+      builds its own terminal row rather than going through the shared helper, and its
+      ``bterm``/``tterm`` pair has different semantics.
+    * Standard warning filters apply, so a batch of models tripping the same case reports it
+      once per process rather than once per model. Use
+      ``warnings.simplefilter('always', RuntimeWarning)`` to see every occurrence.
     * ``_integrate_with`` returns ``NaN`` for ``t < 0`` instead of corrupting the result at
       every *other* time. It merged the requested times into its own grid, so a single
       negative entry moved the lower limit of integration from ``0`` to ``min(t)`` and every

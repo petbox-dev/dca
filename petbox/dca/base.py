@@ -581,17 +581,25 @@ class DeclineCurve(ABC):
         if len(t) == 0:
             return np.array([], dtype=np.float64)
 
-        # Only non-negative times take part in the integration. A negative t merged into the
-        # grid moved the lower limit from 0 to min(t), so the accumulated integral -- and
-        # therefore EVERY value returned, including the positive ones -- picked up the area
-        # over [min(t), 0]. The NaN zeroing below made that area a definite number rather
-        # than a visible failure: PLE(1000, .8, .1, .5).cum([30, 100, 365, 1000]) returns
-        # ~1819, and prepending a single -30.0 turned those same entries into ~16819.
+        # Only finite, non-negative times take part in the integration; anything else gets
+        # NaN. Both exclusions matter, because the grid spans the requested times and a bad
+        # one corrupts EVERY value returned, not just its own:
         #
-        # A negative t gets NaN. Every model that integrates numerically here -- PLE, SE,
-        # Duong, the power-law yields -- raises time to a non-integer power, so none of them
-        # is real-valued before 0. This matches what the yield models already return there.
-        forward = t[t >= 0.0]
+        #   - A negative t moved the lower limit from 0 to min(t), so the accumulated
+        #     integral picked up the area over [min(t), 0]. The NaN zeroing below made that a
+        #     definite number rather than a visible failure:
+        #     PLE(1000, .8, .1, .5).cum([30, 100, 365, 1000]) returns ~1819, and prepending a
+        #     single -30.0 turned those same entries into ~16819.
+        #   - An infinite t makes log10(t_max) infinite, collapsing the whole log-spaced grid
+        #     to [nan, inf, ...]. Every finite time was then integrated over two or three
+        #     points: the same four entries became ~15009, and monthly_vol went negative.
+        #
+        # Every model that integrates numerically here -- PLE, SE, Duong, the power-law
+        # yields -- raises time to a non-integer power, so none is real-valued before 0. An
+        # infinite time is not answerable by quadrature at all: the analytic cumulatives have
+        # a closed-form limit there, this does not, and a silently truncated integral would
+        # read as an EUR.
+        forward = t[np.isfinite(t) & (t >= 0.0)]
         if len(forward) == 0:
             return np.full_like(t, np.nan, dtype=np.float64)
 
@@ -620,9 +628,11 @@ class DeclineCurve(ABC):
         cum_grid[0] = 0.0
         cum_grid[1:] = cumulative_trapezoid(y, grid)
 
-        # extract values at the requested t values (the non-negative ones are in the grid)
+        # extract values at the requested t values (the finite non-negative ones are in the
+        # grid). The mask must be the same predicate that built `forward`, so that the values
+        # line up positionally with it.
         out = np.full_like(t, np.nan, dtype=np.float64)
-        out[t >= 0.0] = cum_grid[np.searchsorted(grid, forward)]
+        out[np.isfinite(t) & (t >= 0.0)] = cum_grid[np.searchsorted(grid, forward)]
         return out
 
 

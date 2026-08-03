@@ -251,7 +251,9 @@ date that was a month too late can be evaluated at negative time:
 The first segment is extended backwards, so this is the same curve, not a re-anchoring — the
 distinction from ``PLYield.shift`` above. ``cum`` before ``t = 0`` is negative, being the
 volume back to the ``t = 0`` baseline as a signed offset. Far enough back the model reaches
-the pole at ``t = -1 / (b D)``, where the rate diverges; beyond it every output is ``nan``.
+the pole at ``t = -1 / (b D)``; beyond it every output is ``nan``. At the pole itself a
+declining segment diverges to ``inf`` and an inclining one goes to ``0``, since the exponent
+``-1/b`` changes sign with ``b``.
 
 
 Once instantiated, the same functions and process for attaching a secondary phase work for any model.

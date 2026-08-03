@@ -182,12 +182,18 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # exponential tail first would claim every flat one and leave 'is flat' unreachable.
         # After the inclining test, a decline below MIN_EPSILON is a non-negative one, i.e.
         # flat; what remains for the exponential test is a real decline with a zero exponent.
+        #
+        # The exponential test is B_EPSILON, not MIN_EPSILON, because that is the threshold
+        # at which _qcheck and _Ncheck actually switch to the exponential form. Using the
+        # smaller one left a ~300-decade window where the math was exponential but this test
+        # called it hyperbolic, so the cap was dropped -- placing an inert terminal row at
+        # t ~ 1e14 days -- without saying so.
         ignored_because = None
         if D_last < 0.0:
             ignored_because = 'is inclining'
         elif D_last < MIN_EPSILON:
             ignored_because = 'is flat'
-        elif b_last < MIN_EPSILON:
+        elif abs(b_last) <= MultisegmentHyperbolic.B_EPSILON:
             ignored_because = 'is exponential'
 
         if ignored_because is not None:
@@ -423,8 +429,15 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if D >= 1.0:
             return np.inf # pragma: no cover
 
-        # D < 1 per validation, so this should never overflow
-        return expm1(b * -log1p(-D)) / b
+        # Saturate rather than let math.expm1 raise OverflowError. b is bounded only by
+        # finiteness for GeneralizedHyperbolic, so the exponent below is unbounded -- and a
+        # nominal decline past the representable range is an infinite one, carrying the sign
+        # of b, exactly as the LOG_EPSILON putmasks in _qcheck and _Ncheck saturate.
+        exponent = b * -log1p(-D)
+        if exponent > LOG_EPSILON:
+            return np.inf if b > 0.0 else -np.inf
+
+        return expm1(exponent) / b
 
     @classmethod
     def secant_from_nominal(cls, D: float, b: float) -> float:
@@ -446,6 +459,11 @@ class MultisegmentHyperbolic(PrimaryPhase):
             # >= 100% decline is not possible
             return 1.0 # pragma: no cover
 
+        # the mirror of the guard above: an unboundedly negative exponent is an unboundedly
+        # steep incline, and would otherwise raise OverflowError out of math.expm1
+        if D_dt < -LOG_EPSILON:
+            return -np.inf
+
         return -expm1(-D_dt)
 
     @classmethod
@@ -466,6 +484,11 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if D > LOG_EPSILON:
             # >= 100% decline is not possible
             return 1.0 # pragma: no cover
+
+        # the mirror of the guard above: an unboundedly negative nominal decline is an
+        # unboundedly steep incline, and would otherwise raise OverflowError out of expm1
+        if D < -LOG_EPSILON:
+            return -np.inf
 
         return -expm1(-D)
 
@@ -1276,36 +1299,64 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         The check runs against the *resolved* exponent, not the given one, so a segment that
         supplies ``D`` and inherits ``b`` is caught too.
         """
-        for index, (D, b) in enumerate(self._resolved_decline_signs()):
+        for index, (D, b) in enumerate(self._resolved_declines()):
             where = 'initial conditions' if index == 0 else f'segments[{index - 1}]'
 
-            if D == 0.0 and b != 0.0:
+            # Effective zero, not exact zero. `nominal_from_secant` returns 0.0 for any
+            # ``abs(D) < MIN_EPSILON``, so a denormal D produces a genuinely flat segment; a
+            # test against exactly 0.0 would let Di = 1e-320 pair with bi = 1.5 and store the
+            # forbidden (D == 0, b != 0) in `segment_params`.
+            if abs(D) < MIN_EPSILON and b != 0.0:
                 raise ValueError(f'{where} has D == 0, which requires b == 0')
 
-            if D * b < 0.0:
+            # Sign tests, not a product: ``D * b`` underflows to -0.0 for a pair like
+            # (-1e-200, 1e-200), and ``-0.0 < 0.0`` is False, so the product form accepted
+            # exactly the mixed-sign state this exists to reject.
+            if (D > 0.0 and b < 0.0) or (D < 0.0 and b > 0.0):
                 raise ValueError(
                     f'{where} has D and b of opposing signs; a segment must either decline '
                     f'(D > 0, b >= 0) or incline (D < 0, b <= 0)')
 
-    def _resolved_decline_signs(self) -> List[Tuple[float, float]]:
+    def _resolved_exponents(self) -> List[float]:
         """
-        The ``(D, b)`` pair of the initial conditions and of every segment, with an inherited
-        ``b`` resolved to the value it inherits and an inherited ``D`` reported as the previous
-        segment's. Secant declines, not nominal: only the signs are of interest, and the
-        secant-to-nominal conversion preserves them.
+        The hyperbolic exponent in force for the initial conditions and for each segment, with
+        an inherited one resolved to the value it inherits.
 
-        Shared by :meth:`_validate_decline_signs` and nothing else, but kept separate so the
-        inheritance walk is stated once and cannot drift from the one in :meth:`_segments`.
+        The walk lives here because both :meth:`_validate_decline_signs` and :meth:`_segments`
+        need it and must agree: the secant-to-nominal conversion of a segment's ``D`` depends
+        on the exponent in force at that segment, so a validator working from a different
+        resolution than the builder would police a model the builder never constructs.
         """
-        resolved = [(self.Di, self.bi)]
-        D, b = self.Di, self.bi
+        resolved = [self.bi]
+        b = self.bi
 
         for segment in self.segments:
             if segment.b is not None:
                 b = segment.b
+            resolved.append(b)
+
+        return resolved
+
+    def _resolved_declines(self) -> List[Tuple[float, float]]:
+        """
+        The ``(D, b)`` pair in force for the initial conditions and for each segment, as
+        *secant* declines rather than nominal.
+
+        An inherited ``D`` is reported as the previous segment's. That is not the value the
+        chain will actually store -- which is ``D / (1 + D b dt)``, the decline carried to this
+        segment's start -- but it has the same sign, since every legal pair has ``D b >= 0`` and
+        so ``1 + D b dt >= 1`` for the forward ``dt`` the chain uses. Signs are all
+        :meth:`_validate_decline_signs` reads, and the secant-to-nominal conversion preserves
+        them too.
+        """
+        exponents = self._resolved_exponents()
+        resolved = [(self.Di, exponents[0])]
+        D = self.Di
+
+        for index, segment in enumerate(self.segments, start=1):
             if segment.D is not None:
                 D = segment.D
-            resolved.append((D, b))
+            resolved.append((D, exponents[index]))
 
         return resolved
 
@@ -1318,16 +1369,16 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         from the row before it. A terminal exponential row is appended last, unless there is
         no decline left to cap.
         """
-        Di_nom = self._nominal_per_day_from_secant(self.Di, self.bi)
-        rows = [[0.0, self.qi, Di_nom, self.bi, 0.0]]
+        # `b` must be resolved before `D` is converted -- the secant-to-nominal conversion
+        # depends on the exponent, including where `D` is given and `b` is inherited -- so the
+        # exponents come from the same walk the sign validation reads.
+        exponents = self._resolved_exponents()
 
-        # `b` must be resolved before `D` is converted: the secant-to-nominal conversion
-        # depends on the exponent, including where `D` is given and `b` is inherited.
-        b = self.bi
-        for segment in self.segments:
-            if segment.b is not None:
-                b = segment.b
+        rows = [[0.0, self.qi, self._nominal_per_day_from_secant(self.Di, exponents[0]),
+                 exponents[0], 0.0]]
 
+        for index, segment in enumerate(self.segments, start=1):
+            b = exponents[index]
             D_nom = (np.nan if segment.D is None
                      else self._nominal_per_day_from_secant(segment.D, b))
             q = np.nan if segment.q is None else segment.q
