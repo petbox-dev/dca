@@ -215,6 +215,21 @@ Version History
       parameter. Sequence-valued parameters (``GeneralizedPLYield.segments``) continue to
       validate their own contents.
 
+* **Breaking:** ``MH`` and ``THM`` reject a ``Di`` that does not decline
+    * A ``Di`` of 0 gives ``q(t) = qi`` for all ``t``. That is a flat forecast, not a hyperbolic
+      model --- every use of ``b`` is multiplied by ``D``, so the exponent has nothing to act on,
+      and ``MH`` silently ignored its ``bi`` there. The descriptor bound now excludes zero, and a
+      second check rejects a ``Di`` that *converts* to a zero nominal decline: any magnitude
+      below ``MIN_EPSILON`` is floored to zero, so a denormal reached the same flat forecast by
+      another route.
+    * ``GeneralizedHyperbolic`` deliberately still accepts it, with a matching ``b`` of 0 --- flat
+      segments are part of what that model exists to express. This is the only place the two
+      models disagree on what they accept. ``IncliningHyperbolic`` makes the mirror-image check,
+      requiring a rise that survives the conversion.
+    * It also closed one route to a pre-existing ``ZeroDivisionError`` in ``THM``, whose
+      terminal-segment branch takes the reciprocal of the decline; the other route, a ``bterm``
+      that converts to zero, is guarded directly.
+
 * **Breaking:** an ignored ``Dterm`` now warns, and numerical integration rejects ``t < 0``
     * ``MH`` and ``GeneralizedHyperbolic`` discard ``Dterm`` when the last segment is already
       exponential, flat, or inclining, since a decline that is constant or rising never
@@ -322,6 +337,16 @@ Version History
       with ``True``.
 
 * Other changes
+    * ``docs/examples.rst`` no longer duplicates ``test/doc_examples.py``. The examples were
+      maintained twice --- once as the script that generates the figures, once as hand-copied
+      ``code-block`` directives --- with nothing keeping them in step, which is how the GOR
+      examples drifted by a factor of 1000 before. Fifteen of the seventeen blocks are now
+      ``literalinclude`` directives reading marked regions of the script; the two exceptions are
+      ``%timeit`` output, which is not source. The rendered code is byte-identical to before.
+    * Segment array rows are assembled through :meth:`_segment_row` rather than written as bare
+      positional literals. Eighteen of those literals stated the column order nowhere, so
+      reordering ``T_IDX``..``N_IDX`` would have left every one of them silently wrong. The
+      order is now stated once.
     * ``docs/examples.rst`` gains a "Generalized and Inclining Models" section with a
       four-panel figure: the segmented rate against its ``MH`` baseline with a rate reset and a
       flat segment, the exponent stepping at each boundary, the pure build-up beside an

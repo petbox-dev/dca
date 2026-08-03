@@ -145,6 +145,76 @@ class MultisegmentHyperbolic(PrimaryPhase):
                 f'{where} converts to a non-finite nominal decline; |b| is too large for '
                 f'this D')
 
+    @classmethod
+    def _segment_row(cls, t: float, b: float, q: Optional[float] = None,
+                     D: Optional[float] = None, N: Optional[float] = None) -> List[float]:
+        """
+        One row of a segment array, placed through the column constants.
+
+        Every row in this module used to be written as a bare positional literal --
+        ``[t, q, D, b, N]``, eighteen of them across four models. The order was correct but
+        stated nowhere: reordering ``T_IDX``..``N_IDX`` would have left all eighteen silently
+        wrong, since nothing tied the literals to the constants. Assembling them here ties the
+        two together, and names the fields at each call site as a side benefit.
+
+        Parameters
+        ----------
+            t: float
+                Segment start time [days]. Always given -- there is nothing to inherit it from.
+
+            b: float
+                Hyperbolic exponent from ``t`` onward. Always given, since it is the one
+                parameter :meth:`_fill_segment_chain` cannot derive.
+
+            q: Optional[float] = None
+                Rate at ``t`` [volume/day]. ``None`` leaves it to be inherited.
+
+            D: Optional[float] = None
+                Nominal decline per day at ``t`` -- already converted, not a secant. ``None``
+                leaves it to be inherited.
+
+            N: Optional[float] = None
+                Cumulative volume at ``t``. ``None`` leaves it to be inherited, which is the
+                usual case: only the first row of a model knows its own.
+
+        Returns
+        -------
+            row: List[float]
+                Five floats, with ``nan`` wherever a value was omitted -- which is what
+                :meth:`_fill_segment_chain` reads as "inherit".
+        """
+        row = [np.nan] * 5
+        row[cls.T_IDX] = t
+        row[cls.B_IDX] = b
+
+        if q is not None:
+            row[cls.Q_IDX] = q
+        if D is not None:
+            row[cls.D_IDX] = D
+        if N is not None:
+            row[cls.N_IDX] = N
+
+        return row
+
+    @classmethod
+    def _require_a_real_decline(cls, Di: float, bi: float) -> None:
+        """
+        Require ``Di`` to survive the secant-to-nominal conversion as an actual decline.
+
+        The descriptor bound rejects a ``Di`` of exactly zero, but `nominal_from_secant` floors
+        any magnitude below ``MIN_EPSILON`` to zero, so a denormal ``Di`` reaches the same flat
+        forecast by another route -- and ``q(t) = qi`` for all ``t`` is not a hyperbolic model:
+        every use of ``b`` is multiplied by ``D``, leaving the exponent nothing to act on.
+
+        Called by the two published hyperbolic models. :class:`GeneralizedHyperbolic` does *not*
+        call it, since flat segments are part of what that model exists to express, and
+        :class:`IncliningHyperbolic` makes the mirror-image check for a rise.
+        """
+        if cls._nominal_per_day_from_secant(Di, bi) <= 0.0:
+            raise ValueError(
+                'Di converts to a zero nominal decline; a flat forecast is not a '
+                'hyperbolic model')
+
     def _fill_segment_chain(self, segments: NDFloat) -> NDFloat:
         """
         Seed each segment after the first from the end state of the one before it, so the
@@ -258,7 +328,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         return self._fill_segment_chain(np.vstack([
             segments,
-            [t_term, np.nan, Dterm_nom, 0.0, np.nan]
+            self._segment_row(t=t_term, b=0.0, D=Dterm_nom)
         ]))
 
     @staticmethod
@@ -804,6 +874,8 @@ class MH(MultisegmentHyperbolic):
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 4)
 
     def _validate(self) -> None:
+        self._require_a_real_decline(self.Di, self.bi)
+
         if self.nominal_from_secant(self.Di, self.bi) < self.nominal_from_tangent(self.Dterm):
             raise ValueError('Di < Dterm')
         super()._validate()
@@ -816,7 +888,8 @@ class MH(MultisegmentHyperbolic):
 
         # `_validate` rejects Di < Dterm, so the terminal time is never clamped here
         return self._append_terminal_segment(
-            np.array([[0.0, self.qi, Di_nom, self.bi, 0.0]], dtype=np.float64), self.Dterm)
+            np.array([self._segment_row(t=0.0, b=self.bi, q=self.qi, D=Di_nom, N=0.0)],
+                     dtype=np.float64), self.Dterm)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -826,10 +899,14 @@ class MH(MultisegmentHyperbolic):
                 0.0, None,
                 lambda r, n: r.uniform(1e-10, 1e6, n)),
             ParamDesc(  # TODO
+                # Strictly positive: a Di of 0 is a flat forecast, q(t) = qi for all t,
+                # which is not a hyperbolic model. `GeneralizedHyperbolic` accepts it -- flat
+                # segments are part of what that model exists to express -- and
+                # `IncliningHyperbolic` requires a strictly negative Di.
                 'Di', 'Initial decline [sec. eff. / yr]',
                 0.0, 1.0,
-                lambda r, n: r.uniform(0.0, 1.0, n),
-                exclude_upper_bound=True),
+                lambda r, n: r.uniform(1e-10, 1.0, n),
+                exclude_lower_bound=True, exclude_upper_bound=True),
             ParamDesc(
                 'bi', 'Hyperbolic exponent',
                 0.0, 2.0,
@@ -925,6 +1002,8 @@ class THM(MultisegmentHyperbolic):
     EXP_1: ClassVar[float] = exp(1.0)
 
     def _validate(self) -> None:
+        self._require_a_real_decline(self.Di, self.bi)
+
         # TODO: do we want to deal with optional params at all?
         if self.bi < self.bf:
             raise ValueError('bi < bf')
@@ -954,9 +1033,9 @@ class THM(MultisegmentHyperbolic):
             # no terminal segment
             segments = np.array(
                 [
-                    [t1, q1, D1, b1, N1],
-                    [t2, None, None, b2, None],
-                    [t3, None, None, b3, None]
+                    self._segment_row(t=t1, b=b1, q=q1, D=D1, N=N1),
+                    self._segment_row(t=t2, b=b2),
+                    self._segment_row(t=t3, b=b3),
                 ],
                 dtype=np.float64
             )
@@ -967,10 +1046,10 @@ class THM(MultisegmentHyperbolic):
             b4 = min(bterm, b3)
             segments = np.array(
                 [
-                    [t1, q1, D1, b1, N1],
-                    [t2, None, None, b2, None],
-                    [t3, None, None, b3, None],
-                    [t4, None, None, b4, None],
+                    self._segment_row(t=t1, b=b1, q=q1, D=D1, N=N1),
+                    self._segment_row(t=t2, b=b2),
+                    self._segment_row(t=t3, b=b3),
+                    self._segment_row(t=t4, b=b4),
                 ],
                 dtype=np.float64
             )
@@ -1003,19 +1082,19 @@ class THM(MultisegmentHyperbolic):
             if t4 == t3:
                 segments = np.array(
                     [
-                        [t1, q1, D1, b1, N1],
-                        [t2, None, None, b2, None],
-                        [t4, None, None, b4, None],
+                        self._segment_row(t=t1, b=b1, q=q1, D=D1, N=N1),
+                        self._segment_row(t=t2, b=b2),
+                        self._segment_row(t=t4, b=b4),
                     ],
                     dtype=np.float64
                 )
             else:
                 segments = np.array(
                     [
-                        [t1, q1, D1, b1, N1],
-                        [t2, None, None, b2, None],
-                        [t3, None, None, b3, None],
-                        [t4, None, None, b4, None],
+                        self._segment_row(t=t1, b=b1, q=q1, D=D1, N=N1),
+                        self._segment_row(t=t2, b=b2),
+                        self._segment_row(t=t3, b=b3),
+                        self._segment_row(t=t4, b=b4),
                     ],
                     dtype=np.float64
                 )
@@ -1285,10 +1364,14 @@ class THM(MultisegmentHyperbolic):
                 0.0, None,
                 lambda r, n: r.uniform(1.0, 2e4, n)),
             ParamDesc(  # TODO
+                # Strictly positive: a Di of 0 is a flat forecast, q(t) = qi for all t,
+                # which is not a hyperbolic model. `GeneralizedHyperbolic` accepts it -- flat
+                # segments are part of what that model exists to express -- and
+                # `IncliningHyperbolic` requires a strictly negative Di.
                 'Di', 'Initial decline [sec. eff. / yr]',
                 0.0, 1.0,
-                lambda r, n: r.uniform(0.0, 1.0, n),
-                exclude_upper_bound=True),
+                lambda r, n: r.uniform(1e-10, 1.0, n),
+                exclude_lower_bound=True, exclude_upper_bound=True),
             ParamDesc(
                 'bi', 'Initial hyperbolic exponent',
                 0.0, 2.0,
@@ -1654,15 +1737,16 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         # exponents come from the same walk the sign validation reads.
         exponents = self._resolved_exponents()
 
-        rows = [[0.0, self.qi, self._nominal_per_day_from_secant(self.Di, exponents[0]),
-                 exponents[0], 0.0]]
+        rows = [self._segment_row(
+            t=0.0, b=exponents[0], q=self.qi, N=0.0,
+            D=self._nominal_per_day_from_secant(self.Di, exponents[0]))]
 
         for index, segment in enumerate(self.segments, start=1):
             b = exponents[index]
-            D_nom = (np.nan if segment.D is None
-                     else self._nominal_per_day_from_secant(segment.D, b))
-            q = np.nan if segment.q is None else segment.q
-            rows.append([segment.t, q, D_nom, b, np.nan])
+            rows.append(self._segment_row(
+                t=segment.t, b=b, q=segment.q,
+                D=(None if segment.D is None
+                   else self._nominal_per_day_from_secant(segment.D, b))))
 
         return self._append_terminal_segment(
             self._fill_segment_chain(np.array(rows, dtype=np.float64)), self.Dterm)
@@ -1802,9 +1886,9 @@ class IncliningHyperbolic(MultisegmentHyperbolic):
         There is no terminal row: a rising rate never reaches a terminal decline, so
         :meth:`_append_terminal_segment` has nothing to append and is not called.
         """
-        return np.array([
-            [0.0, self.qi, self._nominal_per_day_from_secant(self.Di, self.bi), self.bi, 0.0]
-        ], dtype=np.float64)
+        return np.array([self._segment_row(
+            t=0.0, b=self.bi, q=self.qi, N=0.0,
+            D=self._nominal_per_day_from_secant(self.Di, self.bi))], dtype=np.float64)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:

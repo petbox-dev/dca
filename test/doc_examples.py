@@ -8,6 +8,7 @@
 
 from pathlib import Path
 
+# [begin example-00]
 from petbox import dca
 from data import rate as data_q, time as data_t
 import numpy as np
@@ -16,11 +17,13 @@ import matplotlib as mpl
 
 plt.style.use('seaborn-v0_8-white')
 plt.rcParams['font.size'] = 16
+# [end example-00]
 
 
 img_path = Path(__file__).parent.parent / 'docs/img'
 
 
+# [begin example-01]
 # Setup time series for Forecasts and calculate cumulative production of data
 
 # We have this function handy
@@ -33,6 +36,7 @@ data_N = np.cumsum(data_q * np.r_[data_t[0], np.diff(data_t)])
 data_D = -dca.bourdet(data_q, data_t, L=0.35, xlog=False, ylog=True)
 data_beta = data_D * data_t
 data_b = dca.bourdet(1 / data_D, data_t, L=0.25, xlog=False, ylog=False)
+# [end example-01]
 
 
 # Primary Phase Decline Curve Models
@@ -45,6 +49,7 @@ print('Primary Phase Decline Curve Models...')
 # Robertson, S. 1988. Generalized Hyperbolic Equation. Available from SPE, Richardson, Texas, USA.
 # SPE-18731-MS.
 
+# [begin example-02]
 mh = dca.MH(qi=725, Di=0.85, bi=0.6, Dterm=0.2)
 q_mh = mh.rate(t)
 N_mh = mh.cum(t)
@@ -52,6 +57,7 @@ D_mh = mh.D(t)
 b_mh = mh.b(t)
 beta_mh = mh.beta(t)
 N_mh *= data_N[-1] / mh.cum(data_t[-1])
+# [end example-02]
 
 
 # Transient Hyperbolic Model
@@ -62,6 +68,7 @@ N_mh *= data_N[-1] / mh.cum(data_t[-1])
 # – Canada in Calgary, Alberta, Canda, 5–7 November. SPE-167242-MS.
 # https://doi.org/10.2118/167242-MS.
 
+# [begin example-03]
 thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
 q_trans = thm.transient_rate(t)
 N_trans = thm.transient_cum(t)
@@ -69,6 +76,7 @@ D_trans = thm.transient_D(t)
 b_trans = thm.transient_b(t)
 beta_trans = thm.transient_beta(t)
 N_trans *= data_N[-1] / thm.transient_cum(data_t[-1])
+# [end example-03]
 
 
 # Transient Hyperbolic Model Analytic Approximation
@@ -78,12 +86,14 @@ N_trans *= data_N[-1] / thm.transient_cum(data_t[-1])
 # Unconventional Wells. Presented at Unconventional Resources Conference in Houston,
 # Texas, USA, 23–25 July. URTeC-2903036. https://doi.org/10.15530/urtec-2018-2903036.
 
+# [begin example-04]
 q_thm = thm.rate(t)
 N_thm = thm.cum(t)
 D_thm = thm.D(t)
 b_thm = thm.b(t)
 beta_thm = thm.beta(t)
 N_thm *= data_N[-1] / thm.cum(data_t[-1])
+# [end example-04]
 
 
 # Power-Law Exponential Model
@@ -100,6 +110,7 @@ N_thm *= data_N[-1] / thm.cum(data_t[-1])
 # Conference and Exhibition in New Orleands, Louisiana, USA, 4–7 October.
 # SPE-125031-MS. https://doi.org/10.2118/125031-MS.
 
+# [begin example-07]
 ple = dca.PLE(qi=750, Di=.1, Dinf=.00001, n=.5)
 q_ple = ple.rate(t)
 N_ple = ple.cum(t)
@@ -107,6 +118,7 @@ D_ple = ple.D(t)
 b_ple = ple.b(t)
 beta_ple = ple.beta(t)
 N_ple *= data_N[-1] / ple.cum(data_t[-1])
+# [end example-07]
 
 
 # Stretched Exponential
@@ -117,6 +129,7 @@ N_ple *= data_N[-1] / ple.cum(data_t[-1])
 # Presented at SPE Hydraulic Fracturing Technology Conference in College Station,
 # Texas, USA, 19–21 January. SPE-119369-MS. https://doi.org/10.2118/119369-MS.
 
+# [begin example-08]
 se = dca.SE(qi=715, tau=90.0, n=.5)
 q_se = se.rate(t)
 N_se = se.cum(t)
@@ -124,6 +137,7 @@ D_se = se.D(t)
 b_se = se.b(t)
 beta_se = se.beta(t)
 N_se *= data_N[-1] / se.cum(data_t[-1])
+# [end example-08]
 
 
 # Duong Model
@@ -132,6 +146,7 @@ N_se *= data_N[-1] / se.cum(data_t[-1])
 # Duong, A. N. 2001. Rate-Decline Analysis for Fracture-Dominated Shale Reservoirs.
 # SPE Res Eval & Eng 14 (3): 377–387. SPE-137748-PA. https://doi.org/10.2118/137748-PA.
 
+# [begin example-09]
 dg = dca.Duong(qi=715, a=2.8, m=1.4)
 q_dg = dg.rate(t)
 N_dg = dg.cum(t)
@@ -139,6 +154,7 @@ D_dg = dg.D(t)
 b_dg = dg.b(t)
 beta_dg = dg.beta(t)
 N_dg *= data_N[-1] / dg.cum(data_t[-1])
+# [end example-09]
 
 
 # Primary Phase Diagnostic Plots
@@ -148,6 +164,7 @@ print('Primary Phase Model Plots...')
 # Rate and Cumulative Production Plots
 # ------------------------------------
 
+# [begin example-10]
 # Rate vs Time
 fig = plt.figure(figsize=(15, 7.5))
 ax1 = fig.add_subplot(121)
@@ -183,11 +200,13 @@ ax2.grid()
 ax2.legend()
 
 plt.savefig(img_path / 'model.png')
+# [end example-10]
 
 # Diagnostic Function Plots
 # -------------------------
 print('Primary Phase Diagnostic Function Plots...')
 
+# [begin example-11]
 fig = plt.figure(figsize=(15, 15))
 ax1 = fig.add_subplot(221)
 ax2 = fig.add_subplot(222)
@@ -248,6 +267,7 @@ for ax in [ax1, ax2, ax3, ax4]:
 
 
 plt.savefig(img_path / 'diagnostics.png')
+# [end example-11]
 
 
 # Secondary Phase Decline Curve Models
@@ -262,8 +282,10 @@ print('Secondary Phase Decline Curve Models...')
 # Houston, Texas, USA, 23–25 July. URTeC-2903036.
 # https://doi.org/10.15530/urtec-2018-2903036.
 
+# [begin example-12]
 thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
 thm.add_secondary(dca.PLYield(c=1.0, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10.0))
+# [end example-12]
 
 
 # Secondary Phase Diagnostic Plots
@@ -275,6 +297,7 @@ print('Secondary Phase Model Plots...')
 
 # Numeric calculation provided to verify analytic relationships
 
+# [begin example-13]
 fig = plt.figure(figsize=(15, 15))
 ax1 = fig.add_subplot(221)
 ax2 = fig.add_subplot(222)
@@ -340,12 +363,14 @@ for ax in [ax1, ax2, ax3, ax4]:
     ax.legend()
 
 plt.savefig(img_path / 'secondary_model.png')
+# [end example-13]
 
 
 # Diagnostic Function Plots
 # ------------------------
 print('Secondary Model Diagnostic Function Plots...')
 
+# [begin example-14]
 fig = plt.figure(figsize=(15, 15))
 ax1 = fig.add_subplot(221)
 ax2 = fig.add_subplot(222)
@@ -403,6 +428,7 @@ for ax in [ax1, ax2, ax3, ax4]:
     ax.legend()
 
 plt.savefig(img_path / 'sec_diagnostic_funs.png')
+# [end example-14]
 
 
 # Additional Diagnostic Plots
@@ -412,6 +438,7 @@ print('Additional Diagnostic Plots...')
 # Numeric calculation provided to verify analytic relationships
 
 
+# [begin example-15]
 fig = plt.figure(figsize=(15, 15))
 ax1 = fig.add_subplot(221)
 ax2 = fig.add_subplot(222)
@@ -456,6 +483,7 @@ for ax in [ax1, ax2, ax3]:
     ax.legend()
 
 plt.savefig(img_path / 'sec_decline_diagnostics.png')
+# [end example-15]
 
 
 # Generalized and Inclining Models
@@ -465,6 +493,7 @@ print('Generalized and Inclining Model Plots...')
 # A `GeneralizedHyperbolic` takes an arbitrary number of segments, each continuous in rate and
 # decline with the one before it unless it overrides them. `MH` is its no-segment case.
 
+# [begin example-16]
 mh_base = dca.MH(qi=725, Di=0.85, bi=0.6, Dterm=0.2)
 
 # Segment tuples are length-disambiguated: (t, b), (t, D, b), or (t, q, D, b). The third
@@ -492,9 +521,6 @@ peak = dca.GeneralizedHyperbolic.from_segments(
 econ_limit = 20.0
 t_econ = gh.time_at_rate(econ_limit)[0]
 t_pole = gh.time_at_rate(np.inf)[0]
-
-print(f'  GeneralizedHyperbolic reaches {econ_limit:.0f} BPD at {t_econ:,.1f} days')
-print(f'  its pole -- the earliest evaluable time -- is {t_pole:,.4f} days')
 
 fig = plt.figure(figsize=(15, 15))
 ax1 = fig.add_subplot(221)
@@ -549,3 +575,9 @@ for ax in [ax1, ax2, ax3, ax4]:
     ax.legend()
 
 plt.savefig(img_path / 'generalized_models.png')
+# [end example-16]
+
+# Progress output, deliberately outside the marker above: it is scaffolding for running this
+# script, not part of the example the documentation shows.
+print(f'  GeneralizedHyperbolic reaches {econ_limit:.0f} BPD at {t_econ:,.1f} days')
+print(f'  its pole -- the earliest evaluable time -- is {t_pole:,.4f} days')

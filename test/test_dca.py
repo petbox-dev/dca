@@ -367,7 +367,9 @@ def test_Duong(qi: float, a: float, m: float) -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
+    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
+    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6)
 )
@@ -388,7 +390,9 @@ def test_THM(qi: float, Di: float, bf: float, telf: float) -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
+    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
+    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0, 1e4),
     bterm=st.floats(0.0, 1.0),
@@ -411,16 +415,41 @@ def test_THM_terminal(qi: float, Di: float, bf: float, telf: float,
     tterm=st.floats(5.0, 30.0),
 )
 def test_THM_zero_Di(qi: float, bf: float, telf: float, bterm: float, tterm: float) -> None:
+    """A Di of 0 is a flat forecast, q(t) = qi for all t, which is not a hyperbolic model --
+    every use of b is multiplied by D, so the exponent has nothing to act on. MH and THM now
+    reject it; GeneralizedHyperbolic accepts it, since flat segments are part of what that
+    model exists to express."""
     assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
-    thm = dca.THM(qi, 0.0, 2.0, bf, telf, bterm, tterm)
-    check_model(thm, qi)
-    check_transient_model(thm)
+
+    with pytest.raises(ValueError) as e:
+        dca.THM(qi, 0.0, 2.0, bf, telf, bterm, tterm)
+    assert 'Di <= 0.0' in str(e.value)
+
+    with pytest.raises(ValueError) as e:
+        dca.MH(qi, 0.0, 2.0)
+    assert 'Di <= 0.0' in str(e.value)
+
+    # A denormal Di reaches the same flat forecast by another route -- nominal_from_secant
+    # floors any magnitude below MIN_EPSILON to zero -- so it is rejected too, with the
+    # conversion named rather than the bound.
+    with pytest.raises(ValueError, match='converts to a zero nominal decline'):
+        dca.MH(1000.0, 5e-324, 2.0)
+
+    # MIN_EPSILON itself survives the conversion and is accepted
+    assert dca.MH.nominal_from_secant(dca.base.MIN_EPSILON, 2.0) > 0.0
+    assert np.all(np.isfinite(dca.MH(1000.0, dca.base.MIN_EPSILON, 2.0).rate(dca.get_time())))
+
+    # and the generalized model still takes a flat forecast, with its b of 0
+    flat = dca.GeneralizedHyperbolic(1000.0, 0.0, 0.0, ())
+    assert np.all(flat.rate(dca.get_time()) == 1000.0)
 
 
 @given(
     qi=st.floats(0.0, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
+    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
+    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
     telf=st.floats(1e-10, 1e4),
     bterm=st.floats(0.0, 0.5),
     tterm=st.floats(5, 30),
@@ -455,7 +484,9 @@ def test_THM_transient_extra() -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
+    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
+    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6),
     bterm=st.floats(1e-3, 0.3)
@@ -471,7 +502,9 @@ def test_THM_terminal_exp(qi: float, Di: float, bf: float, telf: float, bterm: f
 @pytest.mark.filterwarnings('ignore:Dterm ignored')  # bi = 0 with Dterm > 0 is in range here
 @given(
     qi=st.floats(0.0, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
+    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
+    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
     bi=st.floats(0.0, 2.0),
     Dterm=st.floats(0.0, 1.0, exclude_max=True),
 )
@@ -480,13 +513,17 @@ def test_MH(qi: float, Di: float, bi: float, Dterm: float) -> None:
     mh = dca.MH(qi, Di, bi, Dterm)
     check_model(mh, qi)
 
-    mh = dca.MH(qi, 0.0, bi, 0.0)
-    check_model(mh, qi)
+    # a Di of 0 is a flat forecast, not a hyperbolic one -- see test_THM_zero_Di
+    with pytest.raises(ValueError) as e:
+        dca.MH(qi, 0.0, bi, 0.0)
+    assert 'Di <= 0.0' in str(e.value)
 
 
 @given(
     qi=st.floats(0.0, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
+    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
+    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
     Dterm=st.floats(0.0, 1.0, exclude_max=True),
 )
 def test_MH_harmonic(qi: float, Di: float, Dterm: float) -> None:
@@ -497,7 +534,9 @@ def test_MH_harmonic(qi: float, Di: float, Dterm: float) -> None:
 
 @given(
     qi=st.floats(0.0, 1e6),
-    Di=st.floats(0.0, 1.0, exclude_max=True),
+    # MIN_EPSILON, not 0: below it `nominal_from_secant` floors to a zero nominal
+    # decline, which MH and THM reject as a flat forecast rather than a hyperbolic one
+    Di=st.floats(dca.base.MIN_EPSILON, 1.0, exclude_max=True),
     Dterm=st.floats(0.0, 1.0, exclude_max=True),
 )
 def test_MH_no_validate(qi: float, Di: float, Dterm: float) -> None:
@@ -1791,22 +1830,23 @@ def test_large_exponents_do_not_overflow_the_forward_product() -> None:
     assert 709.78 / -math.log1p(-(1 - 2 ** -53)) == pytest.approx(19.32, rel=1e-3)
 
 
-def test_thm_accepts_a_flat_forecast() -> None:
-    """Di = 0 is a flat forecast, q(t) = qi for all t. THM's terminal-segment branch took the
-    reciprocal of the decline to place the terminal time, so a flat forecast raised
-    ZeroDivisionError. A flat forecast has no decline for a terminal cap to bind on, and a
-    bterm that converts to zero is no cap at all; both collapse the terminal time onto t3."""
-    # the case that raised: Di = 0 with a denormal bterm
-    thm = dca.THM(0.0, 0.0, 2.0, 1.0, 1.0, 1.1125369292536007e-308, 0.0)
+def test_thm_terminal_time_survives_a_zero_decline() -> None:
+    """THM's terminal-segment branch takes the reciprocal of the decline to place the terminal
+    time, so a zero decline raised ZeroDivisionError. Di = 0 was one route and is now rejected
+    outright -- a flat forecast is not hyperbolic -- but a bterm that converts to zero is
+    another, and that is legal. Both collapse the terminal time onto t3, the path an unusable
+    bf already took."""
+    # a denormal bterm converts to a terminal decline of exactly zero: no cap at all
+    thm = dca.THM(1000.0, 0.8, 2.0, 1.0, 30.0, 1.1125369292536007e-308, 0.0)
+    assert dca.THM.nominal_from_tangent(1.1125369292536007e-308) == 0.0
     assert np.all(np.isfinite(thm.rate(dca.get_time())))
+    assert np.all(np.diff(thm.cum(dca.get_time())) >= 0.0)
 
-    # and a useful flat forecast: the rate holds at qi and the volume is linear
-    flat = dca.THM(1000.0, 0.0, 2.0, 1.0, 30.0, 0.08, 0.0)
-    assert np.all(flat.rate(dca.get_time()) == 1000.0)
-    assert flat.cum(np.array([365.25]))[0] == pytest.approx(365250.0)
-    assert flat.cum(np.array([730.5]))[0] == pytest.approx(730500.0)
+    # the Di = 0 route is closed
+    with pytest.raises(ValueError, match='Di <= 0.0'):
+        dca.THM(0.0, 0.0, 2.0, 1.0, 1.0, 1.1125369292536007e-308, 0.0)
 
-    # a denormal decline still divides, so nothing that previously worked changed
+    # a denormal but non-zero decline still divides, so nothing that worked before changed
     assert np.all(np.isfinite(dca.THM(1000.0, 1e-300, 2.0, 1.0, 30.0, 0.08, 0.0).rate(
         dca.get_time())))
 
@@ -2056,14 +2096,13 @@ def test_generalized_hyperbolic_reduces_to_MH(qi: float, Di: float, bi: float,
     Di >= Dterm, the only region MH is constructible in: MH raises there while the
     generalized model clamps.
 
-    Also restricted away from an effectively-zero Di with a non-zero bi. MH accepts that and
-    silently ignores the bi, since every use of b is multiplied by D; the generalized model
-    rejects it, because a flat forecast has no decline for an exponent to act on. The threshold
-    is MIN_EPSILON rather than exact zero because that is where nominal_from_secant returns
-    0.0, so a denormal Di is flat in fact as well as in intent. That divergence is deliberate
-    -- see test_generalized_hyperbolic_rejects_a_meaningless_exponent."""
+    Restricted to Di > 0, the only region MH accepts: a Di of 0 is a flat forecast, which MH
+    rejects as not hyperbolic while the generalized model takes it with a matching b of 0. That
+    divergence is deliberate -- see test_the_two_models_diverge_only_on_a_flat_forecast. The
+    threshold is the conversion, not the bound: a denormal Di floors to a zero nominal decline,
+    which MH also rejects."""
     assume(dca.MH.nominal_from_secant(Di, bi) >= dca.MH.nominal_from_tangent(Dterm))
-    assume(not (abs(Di) < dca.base.MIN_EPSILON and bi != 0.0))
+    assume(dca.MH.nominal_from_secant(Di, bi) > 0.0)
     t = np.concatenate([[0.0], dca.get_time()])
 
     mh = dca.MH(qi, Di, bi, Dterm)
@@ -2314,12 +2353,22 @@ def test_generalized_hyperbolic_requires_D_and_b_to_agree_in_sign() -> None:
                             ).segment_params.shape[0] == 3
 
 
-def test_generalized_hyperbolic_rejects_a_meaningless_exponent() -> None:
-    """MH accepts Di == 0 with a non-zero bi and silently ignores the bi, since every use of b
-    is multiplied by D. GeneralizedHyperbolic rejects it. This is the one place the two models
-    diverge on what they accept, and it is why the reduction test excludes that combination."""
-    assert dca.MH(1000.0, 0.0, 1.5).segment_params[0, dca.MH.B_IDX] == 1.5
-    assert np.all(dca.MH(1000.0, 0.0, 1.5).rate(dca.get_time()) == 1000.0)
+def test_the_two_models_diverge_only_on_a_flat_forecast() -> None:
+    """The one place MH and GeneralizedHyperbolic disagree on what they accept. A Di of 0 is a
+    flat forecast, and MH rejects it outright -- it is not a hyperbolic model. The generalized
+    model accepts it, because flat segments are part of what it exists to express, but only with
+    a matching b of 0: an exponent has nothing to act on when the decline is zero.
+
+    This is why the reduction test restricts itself to Di > 0."""
+    with pytest.raises(ValueError, match='Di <= 0.0'):
+        dca.MH(1000.0, 0.0, 1.5)
+    with pytest.raises(ValueError, match='Di <= 0.0'):
+        dca.MH(1000.0, 0.0, 0.0)
+
+    # the generalized model takes it with a zero exponent, and only then
+    flat = dca.GeneralizedHyperbolic(1000.0, 0.0, 0.0, ())
+    assert np.all(flat.rate(dca.get_time()) == 1000.0)
+    assert flat.cum(np.array([365.25]))[0] == pytest.approx(365250.0)
 
     with pytest.raises(ValueError, match='D == 0, which requires b == 0'):
         dca.GeneralizedHyperbolic(1000.0, 0.0, 1.5, ())
