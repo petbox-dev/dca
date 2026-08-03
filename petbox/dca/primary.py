@@ -132,6 +132,16 @@ class MultisegmentHyperbolic(PrimaryPhase):
                 segments[i + 1, self.Q_IDX] = self._qcheck(*previous_at_boundary).item()
             segments[i + 1, self.N_IDX] = self._Ncheck(*previous_at_boundary).item()
 
+            # An inherited decline can underflow to exactly zero, when ``1 + D b dt``
+            # overflows over a long enough span. That segment is flat from its start, and
+            # every use of b is multiplied by D -- so a non-zero exponent beside it changes
+            # neither rate nor volume, but `b(t)` would still report it, contradicting the
+            # (D == 0 implies b == 0) rule the constructor enforces on its inputs. Normalize
+            # so the stored row cannot disagree with itself. Unreachable for MH and THM,
+            # whose declines and exponents are both bounded.
+            if abs(segments[i + 1, self.D_IDX]) < MIN_EPSILON:
+                segments[i + 1, self.B_IDX] = 0.0
+
         return segments
 
     def _append_terminal_segment(self, segments: NDFloat, Dterm: float) -> NDFloat:
@@ -879,11 +889,17 @@ class THM(MultisegmentHyperbolic):
         qi = self.qi
         Dnom_i = self._nominal_per_day_from_secant(self.Di, self.bi)
         D_dt = Dnom_i - self._integrate_with(self._transDfn, t, **kwargs)
-        where_eps = abs(D_dt) > LOG_EPSILON
-        result = np.zeros_like(t, dtype=np.float64)
-        result[where_eps] = 0.0
-        result[~where_eps] = qi * np.exp(D_dt)
-        return result
+
+        # Saturate the exponent the way _qcheck does, rather than masking the output. The
+        # previous form assigned a full-length right-hand side into a masked left-hand side --
+        # `result[~where_eps] = qi * np.exp(D_dt)` -- which raised ValueError for any input
+        # where the mask excluded even one element, and it reported an *overflowing* exponent
+        # as a rate of zero rather than infinity.
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
+
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            return qi * np.exp(D_dt)
 
     def _transDfn(self, t: NDFloat) -> NDFloat:
         try:

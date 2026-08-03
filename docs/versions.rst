@@ -200,6 +200,20 @@ Version History
       cannot fall outside it.
 
 * Bug Fix
+    * ``THM.transient_rate`` and ``transient_cum`` raised ``ValueError`` for some valid
+      parameterizations. ``_transqfn`` assigned a full-length right-hand side into a masked
+      left-hand side, so it failed whenever the overflow mask excluded even one element ---
+      "cannot assign 255 input values to the 228 output values where the mask is true" --- and
+      it reported an *overflowing* exponent as a rate of zero rather than infinity. The
+      exponent is now saturated as ``_qcheck`` does it. Pre-existing, and unreachable from the
+      segmented functions.
+    * A ``GeneralizedHyperbolic`` segment whose inherited decline underflowed to exactly zero
+      kept its non-zero exponent, so ``b(t)`` reported a value beside a zero ``D`` --- the pair
+      the constructor rejects on its inputs. It happens when ``1 + D b dt`` overflows across a
+      long span, which needs the large ``b`` this release made legal. The exponent is now
+      zeroed with the decline. Rate and volume are unchanged, since every use of ``b`` is
+      multiplied by ``D``. Unreachable for ``MH`` and ``THM``, whose declines and exponents are
+      both bounded.
     * ``cum`` could return ``NaN`` under a perfectly finite rate. ``_Ncheck`` falls back to a
       linear form when its volume coefficient overflows, but guarded on ``q / D`` while
       actually using ``q / ((1 - b) D)`` --- the ``1 - b`` factor shrinks the denominator

@@ -2380,6 +2380,61 @@ def test_decline_sign_check_uses_sign_tests_and_effective_zero() -> None:
         GH(1000.0, 0.8, 1.5, (dca.HyperbolicSegment(365.0, D=1e-320, b=1.5),))
 
 
+def test_transient_rate_saturates_instead_of_crashing() -> None:
+    """`_transqfn` assigned a full-length right-hand side into a masked left-hand side, so it
+    raised ValueError for any input where the overflow mask excluded even one element -- and
+    it reported an overflowing exponent as a rate of zero rather than infinity. The exponent
+    is now saturated the way _qcheck does it."""
+    t = dca.get_time()
+
+    # this parameterization raised
+    # "cannot assign 255 input values to the 228 output values where the mask is true"
+    thm = dca.THM(76520.64380248457, 0.23561519442070544, 0.238060355116956,
+                  0.002107455621978992, 77.03798026204845, 0.9, 0.0)
+    rate = thm.transient_rate(t)
+    assert np.all(np.isfinite(rate)) and np.all(rate >= 0.0)
+    assert np.all(np.isfinite(thm.transient_cum(t)))
+
+    # and so did a degenerate one, from the hypothesis suite
+    degenerate = dca.THM(0.0, 0.5999999999995234, 2.0, 0.0, 0.0, 0.29999999999999993, 0.0)
+    assert np.all(degenerate.transient_rate(t) == 0.0)
+    assert np.all(degenerate.transient_cum(t) == 0.0)
+
+    # the ordinary case still produces a finite, non-increasing forecast. It is deliberately
+    # NOT compared against `rate`: the transient functions are the full definition and the
+    # segmented ones an analytic approximation to it, so they differ by a few percent by
+    # construction -- 1001.03 against 968.68 at t = 1 for this model.
+    ordinary = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0)
+    transient = ordinary.transient_rate(t)
+    assert np.all(np.isfinite(transient)) and np.all(transient >= 0.0)
+    assert np.all(np.diff(transient) <= 0.0)
+
+
+def test_an_underflowed_decline_zeroes_its_exponent() -> None:
+    """An inherited decline can underflow to exactly zero when ``1 + D b dt`` overflows over a
+    long enough span. That segment is flat, and every use of b is multiplied by D -- so a
+    non-zero exponent beside it changes neither rate nor volume, but `b(t)` would still report
+    it, contradicting the (D == 0 implies b == 0) rule the constructor enforces on inputs."""
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        model = dca.GeneralizedHyperbolic(
+            1000.0, 0.5, 1000.0, (dca.HyperbolicSegment(1e10, b=1.0),), 0.08)
+
+    params = model.segment_params
+    assert params[1, model.D_IDX] == 0.0        # the decline underflowed
+    assert params[1, model.B_IDX] == 0.0        # so its exponent was normalized from 1.0
+    assert model.b(np.array([2e10]))[0] == 0.0
+    assert model.D(np.array([2e10]))[0] == 0.0
+
+    # no row may hold a zero decline beside a non-zero exponent
+    for row in params:
+        if abs(row[model.D_IDX]) < dca.base.MIN_EPSILON:
+            assert row[model.B_IDX] == 0.0
+
+    # the forecast before the underflow is untouched
+    assert model.rate(np.array([100.0]))[0] == pytest.approx(500.6481256365065)
+
+
 def test_nan_time_propagates_for_any_segment_count() -> None:
     """`_vectorize` masks the first segment from below and every segment from above, and
     every comparison against nan is False -- so a nan time was claimed by no segment and fell
