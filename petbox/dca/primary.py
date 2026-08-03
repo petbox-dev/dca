@@ -1452,6 +1452,114 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
 
 
 @dataclass(frozen=True)
+class IncliningHyperbolic(MultisegmentHyperbolic):
+    """
+    Inclining Hyperbolic Model
+
+    An Arps hyperbolic run in reverse: the decline and the exponent are both negative, so the
+    rate *rises* with time,
+
+    .. math::
+
+        q(t) = q_i \\, (1 + b_i \\, D_i \\, t) ^ \\frac{-1}{b_i}
+
+    With ``D_i < 0`` and ``b_i < 0`` the product ``b_i D_i`` is positive and the exponent
+    ``-1/b_i`` is positive, so the base grows and the power is taken in the same direction --
+    a power-law build-up rather than a decay. It models a period of increasing rate: a well
+    cleaning up after completion, ramping onto compression, or recovering after an offset frac
+    hit.
+
+    This model is the pure build-up and has **no terminal decline**. A rising rate never
+    reaches a terminal decline, so there is nothing for a ``Dterm`` to cap. Consequently both
+    the rate and the cumulative volume are unbounded as ``t`` grows: it is a model of one
+    period, not of a whole well's life, and it has no EUR on its own. To incline and then
+    decline -- the physical case -- use :class:`GeneralizedHyperbolic`, whose segments accept
+    both signs::
+
+        GeneralizedHyperbolic.from_segments(qi, Di, bi, [(t_peak, D_decline, b_decline)])
+
+    ``IncliningHyperbolic(qi, Di, bi)`` is exactly
+    ``GeneralizedHyperbolic(qi, Di, bi, ())`` -- this model is the named, bound-checked case
+    of it, the mirror of what :class:`MH` is for a declining forecast.
+
+    Parameters
+    ----------
+        qi: float
+            The initial production rate in units of ``volume / day``.
+
+        Di: float
+            The initial decline rate in secant effective decline aka annual effective percent
+            decline, i.e.
+
+            .. math::
+
+                D_i = 1 - \\frac{q(t=1 \\, year)}{qi}
+
+            **Must be negative**, which is what makes the rate rise: ``Di = -0.5`` is a 1.5x
+            rate after one year and ``Di = -9`` a tenfold rise. There is no lower bound.
+
+        bi: float
+            The hyperbolic parameter, defined as :math:`\\frac{d}{dt}\\frac{1}{D}`. This
+            parameter is dimensionless. **Must be negative**, matching ``Di``; a mixed pair
+            would drive the decline through zero rather than describing a build-up. It is
+            otherwise unbounded.
+    """
+    qi: float
+    Di: float
+    bi: float
+
+    # a tuple, not a list: a list default makes a frozen dataclass unhashable,
+    # since the generated __hash__ hashes the field tuple
+    validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 3)
+
+    def _validate(self) -> None:
+        # The descriptors reject a non-negative Di, but that is not quite enough: a denormal
+        # one converts to a nominal decline of exactly 0.0, since `nominal_from_secant` floors
+        # any magnitude below MIN_EPSILON. That is a flat forecast, not an inclining one.
+        # Requiring the incline to survive the conversion keeps this model always actually
+        # inclining, and keeps it interchangeable with `GeneralizedHyperbolic`, which rejects
+        # the same case through its (D == 0 implies b == 0) rule.
+        if self._nominal_per_day_from_secant(self.Di, self.bi) >= 0.0:
+            raise ValueError('Di is too small in magnitude to incline')
+
+        super()._validate()
+
+    def _segments(self) -> NDFloat:
+        """
+        Precache the initial conditions of the single inclining segment.
+
+        There is no terminal row: a rising rate never reaches a terminal decline, so
+        :meth:`_append_terminal_segment` has nothing to append and is not called.
+        """
+        return np.array([
+            [0.0, self.qi, self._nominal_per_day_from_secant(self.Di, self.bi), self.bi, 0.0]
+        ], dtype=np.float64)
+
+    @classmethod
+    def get_param_descs(cls) -> List[ParamDesc]:
+        return [
+            ParamDesc(
+                'qi', 'Initial rate [vol/day]',
+                0.0, None,
+                lambda r, n: r.uniform(1e-10, 1e6, n)),
+            ParamDesc(
+                # Strictly negative: an inclining model that does not incline is a declining
+                # one, and belongs to MH. No lower bound -- a decline of -900% per year is a
+                # tenfold rise, which a well can do.
+                'Di', 'Initial decline [sec. eff. / yr], negative',
+                None, 0.0,
+                lambda r, n: r.uniform(-1.0, -1e-10, n),
+                exclude_upper_bound=True),
+            ParamDesc(
+                # Strictly negative and otherwise unbounded, matching Di's sign.
+                'bi', 'Hyperbolic exponent, negative',
+                None, 0.0,
+                lambda r, n: r.uniform(-2.0, -1e-10, n),
+                exclude_upper_bound=True),
+        ]
+
+
+@dataclass(frozen=True)
 class PLE(PrimaryPhase):
     """
     Power-Law Exponential Model

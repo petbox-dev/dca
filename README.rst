@@ -35,6 +35,7 @@ Analytic functions are implemented wherever possible. When not possible, numeric
 | Primary Phase              | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |
 |                            | `Modified Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.MH>`_,                                    |
 |                            | `Generalized Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.GeneralizedHyperbolic>`_,              |
+|                            | `Inclining Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.IncliningHyperbolic>`_,                  |
 |                            | `Power-Law Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLE>`_,                                 |
 |                            | `Stretched Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.SE>`_,                                  |
 |                            | `Duong <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.Duong>`_                                                |
@@ -238,6 +239,29 @@ A terminal decline only caps a *hyperbolic* tail, whose decline falls until it r
 ``Dterm``. If the last segment is exponential, flat, or inclining, its decline never reaches
 ``Dterm``, so the cap is ignored and a ``RuntimeWarning`` says which case applied. For a flat
 tail that means the forecast produces volume forever.
+
+
+``IncliningHyperbolic`` is the named case of a build-up: an Arps hyperbolic with both ``Di``
+and ``bi`` negative, so the rate rises. It models one period — a well cleaning up after
+completion, ramping onto compression, or recovering from an offset frac hit.
+
+.. code-block:: python
+
+    >>> ih = dca.IncliningHyperbolic(qi=1000.0, Di=-0.5, bi=-1.0)
+    >>> ih.rate([0.0, 182.625, 365.25, 730.5])
+    array([1000.000, 1250.000, 1500.000, 2000.000])
+
+It takes no ``Dterm``: a rising rate never reaches a terminal decline, so there is nothing to
+cap, and both rate and cumulative volume are therefore unbounded — it has no EUR on its own.
+``IncliningHyperbolic(qi, Di, bi)`` is exactly ``GeneralizedHyperbolic(qi, Di, bi, ())``, so
+for the physical case — incline, peak, then decline — add a declining segment:
+
+.. code-block:: python
+
+    >>> peak = dca.GeneralizedHyperbolic.from_segments(
+    ...     1000.0, -0.5, -1.0, [(730.5, 0.3, 0.8)], Dterm=0.08)
+    >>> peak.rate([0.0, 365.25, 730.5, 1095.75, 3652.5])
+    array([1000.000, 1500.000, 2000.000, 1400.000, 397.556])
 
 Hyperbolic models also extrapolate backwards, so a forecast fit against a first-production
 date that was a month too late can be evaluated at negative time:

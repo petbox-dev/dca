@@ -46,6 +46,7 @@ DeclineCurve (ABC)
 │   ├── MH (Modified Hyperbolic, extends MultisegmentHyperbolic)
 │   ├── THM (Transient Hyperbolic Model, extends MultisegmentHyperbolic)
 │   ├── GeneralizedHyperbolic (arbitrary segments, HyperbolicSegment)
+│   ├── IncliningHyperbolic (negative D and b, extends MultisegmentHyperbolic)
 │   ├── PLE (Power-Law Exponential)
 │   ├── SE (Stretched Exponential)
 │   └── Duong

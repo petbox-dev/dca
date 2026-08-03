@@ -1637,6 +1637,141 @@ def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
 
 
 # ---------------------------------------------------------------------------------------
+# IncliningHyperbolic
+# ---------------------------------------------------------------------------------------
+
+
+@given(
+    qi=st.floats(1e-10, 1e6),
+    Di=st.floats(-10.0, 0.0, exclude_max=True),
+    bi=st.floats(-2.0, 0.0, exclude_max=True),
+)
+def test_inclining_hyperbolic_equals_generalized_with_no_segments(
+        qi: float, Di: float, bi: float) -> None:
+    """IncliningHyperbolic is the named, bound-checked case of a segment-free
+    GeneralizedHyperbolic -- bit-for-bit, the mirror of what MH is for a declining forecast.
+    Both take the same row 0 through the same conversion.
+
+    A Di below MIN_EPSILON in magnitude is excluded because BOTH models reject it, so there is
+    no pair to compare -- see
+    test_inclining_hyperbolic_requires_an_incline_that_survives_conversion."""
+    assume(abs(Di) >= dca.base.MIN_EPSILON)
+    t = np.concatenate([[0.0], dca.get_time()])
+
+    inclining = dca.IncliningHyperbolic(qi, Di, bi)
+    generalized = dca.GeneralizedHyperbolic(qi, Di, bi, ())
+
+    assert np.array_equal(inclining.segment_params, generalized.segment_params, equal_nan=True)
+    for name in ('rate', 'cum', 'D', 'beta', 'b'):
+        assert np.array_equal(getattr(inclining, name)(t), getattr(generalized, name)(t),
+                              equal_nan=True), name
+
+
+def test_inclining_hyperbolic_rises() -> None:
+    """The secant definition fixes the meaning: Di = -0.5 is a 1.5x rate after one year."""
+    t = np.array([0.0, 30.0, 182.625, 365.25, 730.5, 3652.5])
+    model = dca.IncliningHyperbolic(1000.0, -0.5, -1.0)
+
+    assert model.rate(np.array([0.0]))[0] == 1000.0
+    assert model.rate(np.array([365.25]))[0] == pytest.approx(1500.0)
+    assert np.all(np.diff(model.rate(t)) > 0.0)      # the rate rises throughout
+    assert np.all(np.diff(model.cum(t)) > 0.0)
+    assert np.all(model.D(t) < 0.0)                  # the decline stays negative
+    assert np.all(model.b(t) == -1.0)
+
+    # against the closed form, evaluated the way the model does
+    Di_nom = dca.MultisegmentHyperbolic._nominal_per_day_from_secant(-0.5, -1.0)
+    assert np.allclose(model.rate(t), 1000.0 * np.exp(-np.log1p(Di_nom * -1.0 * t) / -1.0))
+
+    # an arbitrarily steep incline: Di = -9 is a tenfold rise
+    assert dca.IncliningHyperbolic(100.0, -9.0, -1.0).rate(
+        np.array([365.25]))[0] == pytest.approx(1000.0)
+
+    assert check_model(model, 1000.0)
+
+
+def test_inclining_hyperbolic_has_no_terminal_decline() -> None:
+    """A rising rate never reaches a terminal decline, so there is nothing to cap: the model
+    takes no Dterm at all and its single segment is the whole forecast. Both rate and volume
+    are therefore unbounded -- it models one period, not a whole well."""
+    model = dca.IncliningHyperbolic(1000.0, -0.5, -1.0)
+    assert model.segment_params.shape[0] == 1
+    assert [desc.name for desc in dca.IncliningHyperbolic.get_param_descs()] \
+        == ['qi', 'Di', 'bi']
+
+    with pytest.raises(TypeError):
+        dca.IncliningHyperbolic(1000.0, -0.5, -1.0, 0.08)  # type: ignore[call-arg]
+
+    # unbounded, and it says so by growing without limit rather than by returning inf early
+    far = model.rate(np.array([1e6, 1e9]))
+    assert np.all(np.isfinite(far)) and far[1] > far[0]
+
+    # to incline and then decline, GeneralizedHyperbolic takes both signs
+    both = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, -0.5, -1.0, [(730.5, 0.3, 0.8)], Dterm=0.08)
+    assert both.D(np.array([365.25]))[0] < 0.0
+    assert both.D(np.array([1095.75]))[0] > 0.0
+    assert np.all(np.diff(both.cum(dca.get_time())) >= 0.0)
+
+
+def test_inclining_hyperbolic_requires_both_negative() -> None:
+    """An inclining model that does not incline is a declining one, and belongs to MH. A mixed
+    pair would drive the decline through zero rather than describing a build-up."""
+    for args, message in (((1000.0, 0.5, -1.0), 'Di >= 0.0'),
+                          ((1000.0, 0.0, -1.0), 'Di >= 0.0'),
+                          ((1000.0, -0.5, 1.0), 'bi >= 0.0'),
+                          ((1000.0, -0.5, 0.0), 'bi >= 0.0'),
+                          ((-1000.0, -0.5, -1.0), 'qi < 0.0'),
+                          ((1000.0, np.nan, -1.0), 'Di is not finite'),
+                          ((1000.0, -0.5, np.inf), 'bi is not finite')):
+        with pytest.raises(ValueError) as e:
+            dca.IncliningHyperbolic(*args)
+        assert message in str(e.value), args
+
+    # there is no lower bound on either: a tenfold annual rise is legal
+    assert dca.IncliningHyperbolic(1000.0, -9.0, -50.0).segment_params.shape[0] == 1
+
+
+def test_inclining_hyperbolic_requires_an_incline_that_survives_conversion() -> None:
+    """A negative Di is not sufficient. nominal_from_secant floors any magnitude below
+    MIN_EPSILON to exactly 0.0, so a denormal Di yields a flat forecast rather than an
+    inclining one -- and GeneralizedHyperbolic rejects that same pair through its
+    (D == 0 implies b == 0) rule, so accepting it here would break the equivalence."""
+    for Di in (-1e-320, -1.1125369292536007e-308, -5e-324):
+        with pytest.raises(ValueError, match='too small in magnitude to incline'):
+            dca.IncliningHyperbolic(1000.0, Di, -1.0)
+
+        # the generalized model rejects the same parameters, for the same underlying reason
+        with pytest.raises(ValueError, match='D == 0, which requires b == 0'):
+            dca.GeneralizedHyperbolic(1000.0, Di, -1.0, ())
+
+    # a Di just above the threshold is accepted and does incline
+    just_above = dca.IncliningHyperbolic(1000.0, -1e-300, -1.0)
+    assert just_above.segment_params[0, just_above.D_IDX] < 0.0
+
+
+def test_inclining_hyperbolic_param_descs_and_phases() -> None:
+    # naive_gen must emit values the constructor accepts -- both strictly negative
+    rng = np.random.default_rng(20260803)
+    generated = [desc.naive_gen(rng, 6)
+                 for desc in dca.IncliningHyperbolic.get_param_descs()]
+    assert np.all(generated[1] < 0.0) and np.all(generated[2] < 0.0)
+    for params in zip(*generated):
+        model = dca.IncliningHyperbolic(*params)
+        assert np.all(np.isfinite(model.rate(dca.get_time())))
+
+    # it is a PrimaryPhase like any other
+    model = dca.IncliningHyperbolic(1000.0, -0.5, -1.0)
+    assert isinstance(hash(model), int)
+    model.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=-0.2, t0=180.0))
+    model.add_water(dca.PLYield(c=0.5, m0=0.1, m=0.1, t0=180.0))
+    t = dca.get_time()
+    assert np.all(np.isfinite(model.secondary.gor(t)))
+    assert np.all(np.isfinite(model.water.wor(t)))
+    assert np.all(np.isfinite(model.secondary.rate(t)))
+
+
+# ---------------------------------------------------------------------------------------
 # GeneralizedHyperbolic
 # ---------------------------------------------------------------------------------------
 

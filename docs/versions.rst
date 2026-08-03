@@ -27,9 +27,9 @@ Version History
       always. With no segments it is bit-for-bit identical to ``MH``, i.e.
       ``MH(qi, Di, bi, Dterm) == GeneralizedHyperbolic(qi, Di, bi, (), Dterm)``, terminal
       segment included. Segment times must be finite, positive, and strictly increasing; a
-      given ``q`` must be finite and positive, a given ``D`` finite within ``[0, 1)``, and a
-      given ``b`` finite within ``[0, 2]``. As above, ``NaN`` is rejected explicitly rather
-      than being read as an inherited slot.
+      given ``q`` must be finite and positive, a given ``D`` finite and less than 1, and a
+      given ``b`` finite --- see the bounds and sign rules below. As above, ``NaN`` is rejected
+      explicitly rather than being read as an inherited slot.
     * The exponent is deliberately **not** required to be non-increasing between segments.
       ``THM`` enforces ``bi >= bf >= bterm`` because its segments model one specific
       transient-to-boundary transition; ``GeneralizedHyperbolic`` makes no such claim, and a
@@ -64,6 +64,22 @@ Version History
       such crossing --- its decline is constant or rising --- so ``Dterm`` cannot be applied
       and is ignored. Note that for a flat tail this means the forecast produces volume
       forever.
+
+    * ``IncliningHyperbolic`` --- an Arps hyperbolic run in reverse, with ``Di`` and ``bi``
+      both **required negative**, so the rate rises. It models a period of increasing rate: a
+      well cleaning up after completion, ramping onto compression, or recovering from an
+      offset frac hit. ``IncliningHyperbolic(qi, Di, bi)`` is bit-for-bit
+      ``GeneralizedHyperbolic(qi, Di, bi, ())`` --- the named, bound-checked case of it, the
+      mirror of what ``MH`` is for a declining forecast.
+    * It takes **no** ``Dterm``: a rising rate never reaches a terminal decline, so there is
+      nothing to cap. Both the rate and the cumulative volume are therefore unbounded --- it
+      models one period, not a whole well, and has no EUR on its own. Use
+      ``GeneralizedHyperbolic`` to incline and then decline.
+    * A negative ``Di`` alone is not sufficient: ``nominal_from_secant`` floors any magnitude
+      below ``MIN_EPSILON`` to exactly zero, so a denormal ``Di`` would give a *flat* forecast.
+      The incline is required to survive the conversion, which also keeps the model
+      interchangeable with ``GeneralizedHyperbolic``, whose
+      ``D == 0 implies b == 0`` rule rejects the same pair.
 
 * New Segment Types
     * ``HyperbolicSegment`` --- one segment of a ``GeneralizedHyperbolic``, with keyword-only

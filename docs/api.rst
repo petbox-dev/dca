@@ -16,6 +16,7 @@ Primary Phase Models
     THM
     MH
     GeneralizedHyperbolic
+    IncliningHyperbolic
     PLE
     SE
     Duong
@@ -227,6 +228,18 @@ Implementations of primary phase decline curve models
 .. autoclass:: HyperbolicSegment
 
     .. automethod:: from_tuple
+
+
+.. autoclass:: IncliningHyperbolic
+
+    .. automethod:: rate
+    .. automethod:: cum
+    .. automethod:: D
+    .. automethod:: beta
+    .. automethod:: b
+    .. automethod:: get_param_desc
+    .. automethod:: get_param_descs
+    .. automethod:: from_params
 
 
 .. autoclass:: PLE

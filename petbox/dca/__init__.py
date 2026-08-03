@@ -8,7 +8,8 @@ from .base import (get_time, get_time_monthly_vol,
                    SecondaryPhase, WaterPhase,
                    DAYS_PER_MONTH, DAYS_PER_YEAR)
 from .primary import (NullPrimaryPhase, MultisegmentHyperbolic, MH, THM,
-                      HyperbolicSegment, GeneralizedHyperbolic, PLE, SE, Duong)
+                      HyperbolicSegment, GeneralizedHyperbolic, IncliningHyperbolic,
+                      PLE, SE, Duong)
 from .associated import (NullAssociatedPhase, MultisegmentPLYield,
                          PLYield, PLYieldSegment, GeneralizedPLYield)
 from .bourdet import bourdet
