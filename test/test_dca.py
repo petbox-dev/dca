@@ -1752,6 +1752,65 @@ def test_time_at_rate_returns_the_earliest_time() -> None:
     assert earliest < later
 
 
+def test_large_exponents_do_not_overflow_the_forward_product() -> None:
+    """``D b dt`` overflows for a large exponent -- at Di = 0.9 from about b = 307 -- and
+    log1p(inf) then discards the value, collapsing the rate to 0 where it should be ~99. It is a
+    wrong number, not a nan, and it moves with dt: at b = 307 the rate is right at 1 and 10
+    years and wrong at 100. Separately, ``expm1`` overflows above LOG_EPSILON while the product
+    with q / ((1 - b) D) is still representable, which sent cum to inf.
+
+    A bound on |b| cannot fix either: the threshold is set by ``b * -log1p(-Di)``, so it slides
+    from b = 1024 at Di = 0.5 to b = 19.3 at Di = 1 - 2**-53, and it also depends on dt."""
+    t = np.array([365.25, 3652.5, 36525.0, 365250.0, 1e6])
+
+    for bi in (300.0, 307.0, 308.0, 308.2547155599167):
+        model = dca.GeneralizedHyperbolic(1000.0, 0.9, bi, ())
+        decline = model.segment_params[0, model.D_IDX]
+        assert np.isfinite(decline)
+
+        # log(1 + b D t) == log(b D t) at this magnitude, so the closed forms are evaluated
+        # in log space -- computing them directly overflows the reference itself
+        log_term = np.log(bi) + np.log(decline) + np.log(t)
+        rate = 1000.0 * np.exp(-log_term / bi)
+        coefficient = 1000.0 / ((1.0 - bi) * decline)
+        volume = coefficient - np.sign(coefficient) * np.exp(
+            np.log(abs(coefficient)) + (1.0 - 1.0 / bi) * log_term)
+
+        assert np.allclose(model.rate(t), rate, rtol=1e-12), bi
+        assert np.all(np.isfinite(model.cum(t))), bi
+        assert np.allclose(model.cum(t), volume, rtol=1e-9), bi
+
+        # and the forecast stays well formed across the whole grid
+        dense = dca.get_time(1e-8, 1e6, 401)
+        assert np.all(np.diff(model.cum(dense)) >= -1e-6), bi
+        assert np.all(model.rate(dense) >= 0.0), bi
+
+    # the threshold slides with Di, which is why bounding b cannot close it
+    import math
+    assert 709.78 / -math.log1p(-0.5) == pytest.approx(1024.0, rel=1e-3)
+    assert 709.78 / -math.log1p(-(1 - 2 ** -53)) == pytest.approx(19.32, rel=1e-3)
+
+
+def test_thm_accepts_a_flat_forecast() -> None:
+    """Di = 0 is a flat forecast, q(t) = qi for all t. THM's terminal-segment branch took the
+    reciprocal of the decline to place the terminal time, so a flat forecast raised
+    ZeroDivisionError. A flat forecast has no decline for a terminal cap to bind on, and a
+    bterm that converts to zero is no cap at all; both collapse the terminal time onto t3."""
+    # the case that raised: Di = 0 with a denormal bterm
+    thm = dca.THM(0.0, 0.0, 2.0, 1.0, 1.0, 1.1125369292536007e-308, 0.0)
+    assert np.all(np.isfinite(thm.rate(dca.get_time())))
+
+    # and a useful flat forecast: the rate holds at qi and the volume is linear
+    flat = dca.THM(1000.0, 0.0, 2.0, 1.0, 30.0, 0.08, 0.0)
+    assert np.all(flat.rate(dca.get_time()) == 1000.0)
+    assert flat.cum(np.array([365.25]))[0] == pytest.approx(365250.0)
+    assert flat.cum(np.array([730.5]))[0] == pytest.approx(730500.0)
+
+    # a denormal decline still divides, so nothing that previously worked changed
+    assert np.all(np.isfinite(dca.THM(1000.0, 1e-300, 2.0, 1.0, 30.0, 0.08, 0.0).rate(
+        dca.get_time())))
+
+
 def test_a_saturated_decline_is_rejected_rather_than_producing_nan() -> None:
     """The secant-to-nominal conversion saturates a finite (D, b) pair to an infinity once
     ``b * -log1p(-D)`` passes LOG_EPSILON. Paired with a non-zero exponent that makes

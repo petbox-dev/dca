@@ -290,7 +290,23 @@ class MultisegmentHyperbolic(PrimaryPhase):
             if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
                 D_dt = D * dt
             else:
-                D_dt = np.log1p(D * b * dt) / b
+                D_b_dt = D * b * dt
+                D_dt = np.log1p(D_b_dt) / b
+
+                # ``D b dt`` overflows for a large exponent -- at Di = 0.9 from about b = 307 --
+                # and log1p(inf) then discards the value, collapsing the rate to 0 where it
+                # should be ~99. It is a *wrong number*, not a nan, and it moves with dt: at
+                # b = 307 the rate is right at 1 and 10 years and wrong at 100.
+                #
+                # Recover it in log space, which is exact at that magnitude: log1p(x) == log(x),
+                # and every legal segment has D b >= 0, so a *positive* overflow means dt > 0
+                # and the three magnitudes simply add. A negative overflow is the region past
+                # the pole, where nan is already correct.
+                overflowed = np.isposinf(D_b_dt)
+                if np.any(overflowed):
+                    D_dt = np.where(
+                        overflowed,
+                        (np.log(np.abs(D)) + np.log(np.abs(b)) + np.log(dt)) / b, D_dt)
 
         np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
@@ -334,7 +350,18 @@ class MultisegmentHyperbolic(PrimaryPhase):
                 D_dt = -D * dt
                 q_b_D = q / D
             else:
-                D_dt = (1.0 - 1.0 / b) * np.log1p(b * D * dt)
+                b_D_dt = b * D * dt
+                log_term = np.log1p(b_D_dt)
+
+                # as in _qcheck: the product overflows for a large exponent and log1p then
+                # discards it, sending the cumulative to inf where it is finite
+                overflowed = np.isposinf(b_D_dt)
+                if np.any(overflowed):
+                    log_term = np.where(
+                        overflowed,
+                        np.log(np.abs(b)) + np.log(np.abs(D)) + np.log(dt), log_term)
+
+                D_dt = (1.0 - 1.0 / b) * log_term
                 q_b_D = q / ((1.0 - b) * D)
 
         # The coefficient is what overflows, not ``q / D``: the ``1 - b`` factor shrinks the
@@ -345,11 +372,23 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if not isfinite(q_b_D):
             return np.atleast_1d(N + q * dt)
 
-        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
         np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
 
         with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-            return N - q_b_D * np.expm1(D_dt)
+            volume = q_b_D * np.expm1(D_dt)
+
+            # `expm1` overflows above LOG_EPSILON while the *product* is often still
+            # representable: q_b_D is q / ((1 - b) D), so it is tiny exactly when D_dt is
+            # large. Saturating the exponent first therefore threw away a finite answer --
+            # GeneralizedHyperbolic(1000, 0.9, 307, ()) had cum(1e5 days) of inf where it is
+            # ~8.6e6. Fold the coefficient into the exponent instead, and keep expm1 for the
+            # ordinary range, where it is what makes small D_dt accurate.
+            saturating = D_dt > LOG_EPSILON
+            if np.any(saturating):
+                far = np.sign(q_b_D) * np.exp(np.log(np.abs(q_b_D)) + D_dt)
+                volume = np.where(saturating, far, volume)
+
+            return N - volume
 
     @staticmethod
     def _Dcheck(t0: float, q: float, D: float, b: float, N: float,
@@ -941,7 +980,14 @@ class THM(MultisegmentHyperbolic):
             D3 = self._Dcheck(t2, q2, D2, b2, 0.0, t3).item()
             D4 = self._nominal_per_day_from_tangent(bterm)
             b4 = 0.0
-            if b3 <= 0:
+
+            # A zero D3 or D4 makes the reciprocals below a ZeroDivisionError: a flat forecast
+            # (Di = 0, so q(t) = qi for all t) has no decline for a terminal cap to bind on, and
+            # a bterm that converts to zero is no cap at all. Both collapse the terminal time
+            # onto t3, the same path b3 <= 0 already takes when there is nothing to interpolate.
+            # Tested against exact zero, which is the only value that raises -- a denormal
+            # decline still divides, so nothing that previously worked changes.
+            if b3 <= 0 or D3 == 0.0 or D4 == 0.0:
                 t4 = t3
             else:
                 t4 = max(t3, t3 + (1.0 / D4 - 1.0 / D3) / b3)

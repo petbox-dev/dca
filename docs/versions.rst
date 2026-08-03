@@ -248,6 +248,24 @@ Version History
       at construction, naming the offending segment. Exempt are a row no ``t`` can reach (``THM``
       produces one when a denormal ``bf`` overflows its terminal time to infinity) and an
       infinite decline on an *exponential* segment, which is a well-defined instant shut-in.
+    * A large exponent overflowed the forward product ``D b dt``, and ``log1p(inf)`` then
+      discarded the value: ``GeneralizedHyperbolic(1000, 0.9, 308, ())`` reported a rate of 0 at
+      10 years where it is 99.26, and a cumulative of ``inf``. A *wrong number*, and it moved
+      with the evaluation time --- at ``b = 307`` the rate was right at 1 and 10 years and wrong
+      at 100. Both are now recovered in log space, exact at that magnitude since
+      ``log1p(x) == log(x)``. Separately, ``expm1`` overflows above ``LOG_EPSILON`` while its
+      product with ``q / ((1 - b) D)`` is often still representable --- that coefficient is tiny
+      exactly when the exponent is large --- so the coefficient is folded into the exponent
+      rather than the exponent saturated first.
+    * Bounding ``b`` would not have fixed it: the threshold is set by ``b * -log1p(-Di)``, so it
+      slides from ``b = 1024`` at ``Di = 0.5`` to ``b = 19.3`` at ``Di = 1 - 2**-53``, and it
+      depends on the evaluation time as well.
+    * ``THM`` raised ``ZeroDivisionError`` for a flat forecast. ``Di = 0`` gives ``q(t) = qi`` for
+      all ``t``, and the terminal-segment branch took the reciprocal of the decline to place the
+      terminal time. A flat forecast has no decline for a terminal cap to bind on, and a
+      ``bterm`` that converts to zero is no cap at all; both now collapse the terminal time onto
+      ``t3``, the path an unusable ``bf`` already took. Tested against exact zero, the only value
+      that raised, so nothing that previously worked changed.
     * A ``NaN`` time is now ``NaN`` from a flat or spent segment too. The constant-rate branches
       of ``_qcheck``, ``_Ncheck`` and ``_Dcheck`` ignore ``t`` entirely, so a single-segment flat
       model answered ``rate(NaN)`` with its rate and ``cum(NaN)`` with a definite volume while
