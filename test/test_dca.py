@@ -12,9 +12,11 @@ Notes
 -----
 Created on August 5, 2019
 """
+import re
 import sys
 import warnings
 from datetime import timedelta
+from pathlib import Path
 import pytest # type: ignore
 import hypothesis
 from hypothesis import assume, given, settings, note, strategies as st
@@ -692,6 +694,42 @@ def test_yield_errors() -> None:
     with pytest.raises(ValueError) as e:
         # invalid parameter sequence length
         thm = dca.THM.from_params([1000, 0.5, 2.0, 0.5])
+
+
+def test_examples_literalinclude_markers_resolve() -> None:
+    """`docs/examples.rst` reads its code out of `test/doc_examples.py` through marker comments,
+    rather than duplicating it -- the examples used to be maintained twice, which is how the GOR
+    figures drifted by a factor of 1000.
+
+    A broken marker is only a Sphinx *warning*, and the build still succeeds, so the affected
+    block would silently lose its code. CI does not build the docs at all. This asserts every
+    marker the documentation references actually exists, exactly once, in the right order."""
+    docs = Path(__file__).parent.parent / 'docs' / 'examples.rst'
+    script = Path(__file__).parent / 'doc_examples.py'
+    rst, source = docs.read_text(encoding='utf-8'), script.read_text(encoding='utf-8')
+
+    starts = re.findall(r':start-after: (.+)', rst)
+    ends = re.findall(r':end-before: (.+)', rst)
+    includes = re.findall(r'\.\. literalinclude:: (.+)', rst)
+
+    assert len(includes) == len(starts) == len(ends) > 0
+    # every include must point at the script this test checks
+    assert set(includes) == {'../test/doc_examples.py'}
+
+    for start, end in zip(starts, ends):
+        assert source.count(start) == 1, f'{start!r} appears {source.count(start)} times'
+        assert source.count(end) == 1, f'{end!r} appears {source.count(end)} times'
+        assert source.index(start) < source.index(end), f'{start!r} follows {end!r}'
+
+    # the marked regions must be disjoint and in the same order as the document
+    spans = [(source.index(s), source.index(e)) for s, e in zip(starts, ends)]
+    for (_, previous_end), (next_start, _) in zip(spans, spans[1:]):
+        assert previous_end < next_start, 'marked regions overlap or are out of order'
+
+    # and every marker in the script must be referenced, so none is left orphaned
+    for marker in re.findall(r'^# \[(?:begin|end) example-\d+\]$', source, re.M):
+        assert marker in rst, f'{marker!r} is not referenced by examples.rst'
+
 
 @given(
     L=st.floats(0.0, 2.0),
