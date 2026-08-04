@@ -34,6 +34,7 @@ Analytic functions are implemented wherever possible. When not possible, numeric
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Primary Phase              | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |
 |                            | `Modified Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.MH>`_,                                    |
+|                            | `Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.Hyperbolic>`_,                                     |
 |                            | `Generalized Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.GeneralizedHyperbolic>`_,              |
 |                            | `Inclining Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.IncliningHyperbolic>`_,                  |
 |                            | `Power-Law Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLE>`_,                                 |
@@ -243,6 +244,24 @@ A terminal decline only caps a *hyperbolic* tail, whose decline falls until it r
 ``Dterm``. If the last segment is exponential, flat, or inclining, its decline never reaches
 ``Dterm``, so the cap is ignored and a ``RuntimeWarning`` says which case applied. For a flat
 tail that means the forecast produces volume forever.
+
+
+``Hyperbolic`` is the plain single-segment Arps hyperbolic — ``qi``, ``Di``, ``bi``, and
+nothing else. The other models in the family can all express it, but only by omitting an
+argument; this one says so in its type.
+
+.. code-block:: python
+
+    >>> hyp = dca.Hyperbolic(qi=1000.0, Di=0.8, bi=1.5)
+    >>> hyp.rate([0.0, 365.25, 730.5, 3652.5])
+    array([1000.000, 200.000, 129.894, 45.568])
+
+It takes no ``Dterm``, which is the whole difference from ``MH``: the decline falls forever
+rather than flattening onto a terminal exponential, so ``Hyperbolic(qi, Di, bi)`` is
+bit-for-bit ``MH(qi, Di, bi)``. Because the tail is never capped, the model produces volume
+forever and has no EUR — over 30 years the forecast above recovers 617,999 against 555,128
+for ``MH(1000, 0.8, 1.5, 0.08)``, and the gap keeps widening. Use it for the segment you are
+actually fitting, and ``MH`` when the tail has to terminate.
 
 
 ``IncliningHyperbolic`` is the named case of a build-up: an Arps hyperbolic with both ``Di``

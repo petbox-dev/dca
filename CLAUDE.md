@@ -43,10 +43,12 @@ Before committing, always update README.rst and any relevant docs in `./docs/` t
 DeclineCurve (ABC)
 ├── PrimaryPhase (ABC)
 │   ├── NullPrimaryPhase
-│   ├── MH (Modified Hyperbolic, extends MultisegmentHyperbolic)
-│   ├── THM (Transient Hyperbolic Model, extends MultisegmentHyperbolic)
-│   ├── GeneralizedHyperbolic (arbitrary segments, HyperbolicSegment)
-│   ├── IncliningHyperbolic (negative D and b, extends MultisegmentHyperbolic)
+│   ├── MultisegmentHyperbolic (shared segment math, time_at_rate)
+│   │   ├── Hyperbolic (single segment: qi, Di, bi -- no Dterm)
+│   │   ├── MH (Modified Hyperbolic, adds a terminal exponential)
+│   │   ├── THM (Transient Hyperbolic Model, 3-4 fitted segments)
+│   │   ├── GeneralizedHyperbolic (arbitrary segments, HyperbolicSegment)
+│   │   └── IncliningHyperbolic (negative D and b -- a build-up)
 │   ├── PLE (Power-Law Exponential)
 │   ├── SE (Stretched Exponential)
 │   └── Duong

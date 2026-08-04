@@ -1998,6 +1998,102 @@ def test_time_at_rate_edge_shapes() -> None:
 
 
 # ---------------------------------------------------------------------------------------
+# Hyperbolic
+# ---------------------------------------------------------------------------------------
+
+
+@given(
+    qi=st.floats(1e-10, 1e6),
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
+    bi=st.floats(0.0, 2.0),
+)
+def test_hyperbolic_equals_MH_without_a_terminal_decline(qi: float, Di: float,
+                                                        bi: float) -> None:
+    """A plain hyperbolic is what MH already produces when given no terminal decline, so the two
+    must be bit-for-bit identical. Hyperbolic exists to say that in its type rather than leave it
+    implied by an omitted argument."""
+    t = np.concatenate([[0.0], dca.get_time()])
+
+    hyperbolic = dca.Hyperbolic(qi, Di, bi)
+    modified = dca.MH(qi, Di, bi)
+
+    assert np.array_equal(hyperbolic.segment_params, modified.segment_params, equal_nan=True)
+    for name in ('rate', 'cum', 'D', 'beta', 'b', 'time_at_rate'):
+        assert np.array_equal(getattr(hyperbolic, name)(t), getattr(modified, name)(t),
+                              equal_nan=True), name
+
+    # explicitly passing Dterm = 0 is the same thing
+    assert np.array_equal(hyperbolic.segment_params,
+                          dca.MH(qi, Di, bi, 0.0).segment_params, equal_nan=True)
+
+
+def test_hyperbolic_is_a_single_segment() -> None:
+    """One row, no terminal segment, declining for all time."""
+    model = dca.Hyperbolic(1000.0, 0.8, 1.5)
+    assert model.segment_params.shape[0] == 1
+    assert [desc.name for desc in dca.Hyperbolic.get_param_descs()] == ['qi', 'Di', 'bi']
+
+    # the secant definition, exactly: Di = 0.8 leaves a fifth of the rate after a year
+    assert model.rate(np.array([0.0]))[0] == 1000.0
+    assert model.rate(np.array([365.25]))[0] == pytest.approx(200.0)
+
+    t = dca.get_time()
+    assert np.all(np.diff(model.rate(t)) < 0.0)
+    assert np.all(model.D(t) > 0.0)
+    assert np.all(model.b(t) == 1.5)
+
+    # against the closed form, evaluated the way the model does
+    Di_nom = dca.MultisegmentHyperbolic._nominal_per_day_from_secant(0.8, 1.5)
+    assert np.allclose(model.rate(t), 1000.0 * np.exp(-np.log1p(Di_nom * 1.5 * t) / 1.5))
+
+    assert check_model(model, 1000.0)
+
+    # there is no Dterm to give it -- a fourth positional argument is validate_params
+    with pytest.raises(TypeError):
+        dca.Hyperbolic(1000.0, 0.8, 1.5, 0.08)  # type: ignore[arg-type]
+
+
+def test_hyperbolic_rejects_what_MH_rejects() -> None:
+    """The bounds are MH's, minus Dterm: a rate cannot be negative, a decline cannot reach 100%
+    per year or fail to decline at all, and the exponent stays within [0, 2] as it does for the
+    other two published hyperbolic models."""
+    for args, message in (((-1000.0, 0.8, 1.5), 'qi < 0.0'),
+                          ((1000.0, 0.0, 1.5), 'Di <= 0.0'),
+                          ((1000.0, 1.0, 1.5), 'Di >= 1.0'),
+                          ((1000.0, 5e-324, 1.5), 'converts to a zero nominal decline'),
+                          ((1000.0, 0.8, -0.1), 'bi < 0.0'),
+                          ((1000.0, 0.8, 2.5), 'bi > 2.0'),
+                          ((1000.0, np.nan, 1.5), 'Di is not finite'),
+                          ((1000.0, 0.8, np.inf), 'bi is not finite')):
+        with pytest.raises(ValueError) as e:
+            dca.Hyperbolic(*args)
+        assert message in str(e.value), args
+
+    # an unbounded exponent is GeneralizedHyperbolic's business, not this model's
+    assert dca.GeneralizedHyperbolic(1000.0, 0.8, 5.0, ()).segment_params[0, 3] == 5.0
+
+
+def test_hyperbolic_param_descs_and_phases() -> None:
+    rng = np.random.default_rng(20260804)
+    generated = [desc.naive_gen(rng, 6) for desc in dca.Hyperbolic.get_param_descs()]
+    assert np.all(generated[1] > 0.0)                  # Di must decline
+    assert np.all((generated[2] >= 0.0) & (generated[2] <= 2.0))
+    for params in zip(*generated):
+        assert np.all(np.isfinite(dca.Hyperbolic(*params).rate(dca.get_time())))
+
+    model = dca.Hyperbolic(1000.0, 0.8, 1.5)
+    assert isinstance(hash(model), int)
+    assert model == dca.Hyperbolic(1000.0, 0.8, 1.5)
+    assert dca.Hyperbolic.from_params([1000.0, 0.8, 1.5]).segment_params.shape[0] == 1
+
+    model.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=-0.2, t0=180.0))
+    model.add_water(dca.PLYield(c=0.5, m0=0.1, m=0.1, t0=180.0))
+    t = dca.get_time()
+    assert np.all(np.isfinite(model.secondary.gor(t)))
+    assert np.all(np.isfinite(model.water.wor(t)))
+
+
+# ---------------------------------------------------------------------------------------
 # IncliningHyperbolic
 # ---------------------------------------------------------------------------------------
 

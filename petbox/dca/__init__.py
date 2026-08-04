@@ -7,7 +7,7 @@ from .base import (get_time, get_time_monthly_vol,
                    AssociatedPhase, BothAssociatedPhase,
                    SecondaryPhase, WaterPhase,
                    DAYS_PER_MONTH, DAYS_PER_YEAR)
-from .primary import (NullPrimaryPhase, MultisegmentHyperbolic, MH, THM,
+from .primary import (NullPrimaryPhase, MultisegmentHyperbolic, Hyperbolic, MH, THM,
                       HyperbolicSegment, GeneralizedHyperbolic, IncliningHyperbolic,
                       PLE, SE, Duong)
 from .associated import (NullAssociatedPhase, MultisegmentPLYield,

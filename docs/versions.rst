@@ -15,6 +15,20 @@ forecasts to 2.1.0 for ``t >= 0``; their accepted parameter *domain* narrows, an
 of every model at ``t < 0`` changes --- see the breaking changes.
 
 * New Models
+    * ``Hyperbolic`` --- the plain single-segment Arps hyperbolic, taking ``qi``, ``Di``, ``bi``
+      and nothing else. It is bit-for-bit ``MH(qi, Di, bi)``: a modified hyperbolic given no
+      terminal decline *is* a hyperbolic, and this states that in the type rather than leaving it
+      implied by an omitted argument. Verified identical across ``segment_params``, ``rate``,
+      ``cum``, ``D``, ``beta``, ``b`` and ``time_at_rate``.
+
+        * It takes **no** ``Dterm``, which is the only difference from ``MH``. The decline falls
+          for all time instead of flattening onto a terminal exponential, so the forecast produces
+          volume forever and has no EUR: over 30 years ``Hyperbolic(1000, 0.8, 1.5)`` recovers
+          617,999 against 555,128 for ``MH(1000, 0.8, 1.5, 0.08)``, and the gap keeps widening.
+        * Bounds are ``MH``'s minus ``Dterm``: ``qi >= 0``, ``0 < Di < 1``, ``0 <= bi <= 2``. Like
+          ``MH`` and ``THM`` it requires a ``Di`` that actually declines --- see the breaking
+          change below --- and permits ``bi = 0``, the exponential limit.
+
     * ``GeneralizedHyperbolic`` --- an Arps primary-phase model taking an arbitrary number of
       caller-specified segments, given as :class:`HyperbolicSegment` instances. Each segment is
       by default continuous in rate and decline with the one before it; cumulative volume is
@@ -108,10 +122,10 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       parameter is always last and short forms omit the level.
 
 * New Methods
-    * ``MultisegmentHyperbolic.time_at_rate(q)`` inverts the rate function, so ``MH``, ``THM``,
-      ``GeneralizedHyperbolic`` and ``IncliningHyperbolic`` all gain it. It answers both the
-      forward question --- time to an economic limit --- and the backward one --- how far a
-      forecast can be extrapolated --- with the same call.
+    * ``MultisegmentHyperbolic.time_at_rate(q)`` inverts the rate function, so ``Hyperbolic``,
+      ``MH``, ``THM``, ``GeneralizedHyperbolic`` and ``IncliningHyperbolic`` all gain it. It
+      answers both the forward question --- time to an economic limit --- and the backward one
+      --- how far a forecast can be extrapolated --- with the same call.
 
         * Each segment is inverted only over the times it governs, using the same bracketing as
           ``rate``. That is not cosmetic: on ``MH(1000, 0.8, 1.5, 0.08)``, whose terminal segment
@@ -155,8 +169,9 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       zero-filled initial value survived: ``MH(1000, 0.8, 1.5).rate(-500)`` returned ``0``,
       indistinguishable from a dead well. The first segment now claims everything below the next
       boundary, so a forecast fit against a first-production date that was too late can be walked
-      backwards. ``MH``, ``THM``, ``GeneralizedHyperbolic`` and ``IncliningHyperbolic`` are
-      affected; results for ``t >= 0`` are bit-for-bit unchanged.
+      backwards. ``MH`` and ``THM`` change here; results for ``t >= 0`` are bit-for-bit unchanged.
+      The three models added in this release --- ``Hyperbolic``, ``GeneralizedHyperbolic`` and
+      ``IncliningHyperbolic`` --- share the behaviour from the start.
     * ``cum`` before ``t = 0`` is negative, being the volume back to the ``t = 0`` baseline as a
       signed offset.
     * Far enough back, a hyperbolic segment reaches the pole at ``t = -1 / (b D)``, where
@@ -172,6 +187,10 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       change ``MH`` and ``THM`` results for such a ``b`` at every ``t``, not just beyond the pole.
 
 * **Breaking:** ``MH`` and ``THM`` reject a ``Di`` that does not decline
+
+  ``Hyperbolic``, new in this release, is bound the same way --- which is part of what makes it
+  bit-for-bit ``MH``.
+
     * A ``Di`` of 0 gives ``q(t) = qi`` for all ``t``. That is a flat forecast, not a hyperbolic
       model --- every use of ``b`` is multiplied by ``D``, so the exponent has nothing to act on,
       and ``MH`` silently ignored its ``bi`` there. The descriptor bound narrows from ``[0, 1)``
@@ -331,7 +350,7 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       is what made an inclining model possible at all; ``MH`` and ``THM`` cannot pass a negative
       ``D`` or ``b`` into the base, so their results are unchanged.
     * ``THM``'s inline segment-chain loop and ``MH``'s hand-computed terminal row are now a shared
-      ``_fill_segment_chain`` and ``_append_terminal_segment``, which the two new models also use.
+      ``_fill_segment_chain`` and ``_append_terminal_segment``, which the new models also use.
       The chain fill is conditional on ``isnan``, so a supplied rate or decline is an override
       rather than being overwritten.
     * ``rate`` and ``time_at_rate`` share one ``_segment_window``. The round trip is exact only
@@ -342,6 +361,13 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       positional literals. Nineteen of those literals stated the column order nowhere, so
       reordering ``T_IDX``..``N_IDX`` would have left every one of them silently wrong. The order
       is now stated once.
+    * The first row of every model in the family --- rate ``qi`` at ``t = 0``, nothing produced
+      yet, ``Di`` converted against the first exponent --- is built by one
+      ``_initial_segment_row``, shared by all five. The secant-to-nominal conversion is the part
+      worth single-sourcing: a call site that omitted it would still produce a plausible forecast,
+      just one wrong by a factor of ``DAYS_PER_YEAR``. ``THM`` reads its ``D1`` back out of that
+      row rather than converting a second time, so its transient boundary walk cannot disagree
+      with the row it starts from. Verified bit-for-bit neutral across 130,192 probes.
     * All power-law yield math moved to a new ``MultisegmentPLYield`` base class, which caches
       per-segment anchor conditions and gathers them with ``searchsorted``. ``PLYield`` is now a
       subclass and supplies only its two segments; its results are bit-for-bit unchanged **for**
