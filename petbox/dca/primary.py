@@ -1598,7 +1598,7 @@ class THM(MultisegmentHyperbolic):
 
         if telf >= MIN_EPSILON:
             c = self.EXP_GAMMA / (1.5 * telf)
-            b = bi - (bi - bf) * np.exp(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
+            b: NDFloat = bi - (bi - bf) * np.exp(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
         else:
             b = np.full_like(t, bf, dtype=np.float64)
 
@@ -2376,25 +2376,31 @@ class SE(PrimaryPhase):
         # fall back to the bounded numerical integral.
         return self._integrate_with(self._qfn, t, **kwargs)
 
+    # `tau ** -n` and `tau ** n` are `float ** float`, which typeshed types as returning Any
+    # -- a negative base with a fractional exponent is complex. `tau > 0` by its descriptor
+    # bound, so both are real floats. The four functions below name the power rather than
+    # inline it, which pins the type, says why it is real, and hoists the scalar out of the
+    # array expression.
+
     def _Dfn(self, t: NDFloat) -> NDFloat:
-        tau = self.tau
         n = self.n
-        return n * tau**-n * t ** (n - 1.0)
+        tau_to_the_minus_n: float = self.tau**-n
+        return n * tau_to_the_minus_n * t ** (n - 1.0)
 
     def _Dfn2(self, t: NDFloat) -> NDFloat:
-        tau = self.tau
         n = self.n
-        return n * (n - 1.0) * tau**-n * t ** (n - 2.0)
+        tau_to_the_minus_n: float = self.tau**-n
+        return n * (n - 1.0) * tau_to_the_minus_n * t ** (n - 2.0)
 
     def _betafn(self, t: NDFloat) -> NDFloat:
-        tau = self.tau
         n = self.n
-        return n * tau**-n * t**n
+        tau_to_the_minus_n: float = self.tau**-n
+        return n * tau_to_the_minus_n * t**n
 
     def _bfn(self, t: NDFloat) -> NDFloat:
-        tau = self.tau
         n = self.n
-        return (1.0 - n) / n * tau**n * t**-n
+        tau_to_the_n: float = self.tau**n
+        return (1.0 - n) / n * tau_to_the_n * t**-n
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -2454,7 +2460,10 @@ class Duong(PrimaryPhase):
         a = self.a
         m = self.m
         with np.errstate(invalid="ignore"):
-            return a / (1.0 - m) * np.expm1((1.0 - m) * np.log(np.where(t == 0.0, 1.0, t)))
+            return np.asarray(
+                a / (1.0 - m) * np.expm1((1.0 - m) * np.log(np.where(t == 0.0, 1.0, t))),
+                dtype=np.float64,
+            )
 
     def _qfn(self, t: NDFloat) -> NDFloat:
         qi = self.qi

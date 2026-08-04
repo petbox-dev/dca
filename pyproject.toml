@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -96,18 +96,36 @@ ignore = [
 [tool.ruff.lint.mccabe]
 max-complexity = 20
 
+# These flags now cover everything `--strict` implies, plus four it does not
+# (disallow_any_unimported, no_implicit_optional, warn_unreachable, show_error_codes). Keeping
+# them spelled out means `mypy petbox/dca` and `mypy --strict petbox/dca` agree; the list had
+# drifted to 12 of strict's 14, so the CI command passed while `--strict` did not. If mypy adds
+# a flag to strict, add it here too.
+#
+# What the three formerly-missing flags caught:
+#   warn_return_any      -- 8 functions returning Any through a declared NDFloat, because
+#                           typeshed types `float ** float` as Any (a negative base with a
+#                           fractional exponent is complex) and np.where/np.diff as dtype[Any].
+#   no_implicit_reexport -- no `__all__` in petbox/dca/__init__.py. This package ships py.typed,
+#                           so a DOWNSTREAM consumer running strict got "Module petbox.dca does
+#                           not explicitly export attribute MH" on ordinary usage.
+#   extra_checks         -- nothing.
 [tool.mypy]
 check_untyped_defs = true
 disallow_any_generics = true
+disallow_any_unimported = true
 disallow_incomplete_defs = true
 disallow_subclassing_any = true
 disallow_untyped_calls = true
 disallow_untyped_decorators = true
 disallow_untyped_defs = true
+extra_checks = true
 no_implicit_optional = true
+no_implicit_reexport = true
 show_error_codes = true
 strict_equality = true
 warn_redundant_casts = true
+warn_return_any = true
 warn_unreachable = true
 warn_unused_configs = true
 warn_unused_ignores = true
@@ -130,7 +148,10 @@ plugins = ["numpy.typing.mypy_plugin"]
 # "Source file found twice under different module names"; and excluding `doc_examples.py`
 # outright would stop type-checking code that is published as documentation.
 [[tool.mypy.overrides]]
-module = ["mpmath.*", "data"]
+module = [
+    "mpmath.*",
+    "data"
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

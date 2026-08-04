@@ -311,8 +311,10 @@ class DeclineCurve(ABC):
             monthly equivalent volume: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
-        return self._Nfn(t, **kwargs) - np.where(
-            t < DAYS_PER_MONTH, 0, self._Nfn(t - DAYS_PER_MONTH, **kwargs)
+        return np.asarray(
+            self._Nfn(t, **kwargs)
+            - np.where(t < DAYS_PER_MONTH, 0.0, self._Nfn(t - DAYS_PER_MONTH, **kwargs)),
+            dtype=np.float64,
         )
 
     def monthly_vol_equiv(
@@ -344,10 +346,11 @@ class DeclineCurve(ABC):
         """
         t = self._validate_ndarray(t)
         t0 = np.atleast_1d(0.0).astype(np.float64)
-        return (
+        return np.asarray(
             np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
             / np.diff(t, prepend=t0)
-            * DAYS_PER_MONTH
+            * DAYS_PER_MONTH,
+            dtype=np.float64,
         )
 
     def D(self, t: Union[float, NDFloat]) -> NDFloat:

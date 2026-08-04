@@ -15,6 +15,7 @@ Created on August 5, 2019
 
 import inspect
 import re
+import types
 import sys
 import warnings
 from datetime import timedelta
@@ -38,7 +39,7 @@ def signif(x: npt.NDArray[np.float64], p: int) -> npt.NDArray[np.float64]:
     x = np.asarray(x)
     x_positive = np.where(np.isfinite(x) & (x != 0), np.abs(x), 10 ** (p - 1))
     mags = 10 ** (p - 1 - np.floor(np.log10(x_positive)))
-    return np.round(x * mags) / mags
+    return np.asarray(np.round(x * mags) / mags, dtype=np.float64)
 
 
 def is_float_array_like(arr: Any, like: npt.NDArray[np.float64]) -> bool:
@@ -947,8 +948,8 @@ def test_generalized_param_descs() -> None:
 
     # from_params must round-trip now that the descriptor count matches the field count
     y = dca.GeneralizedPLYield.from_params(
-        (1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),), None, 20.0)
-    )  # type: ignore[arg-type]
+        (1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),), None, 20.0)  # type: ignore[arg-type]
+    )
     assert y.segments == (dca.PLYieldSegment(180.0, m=0.6),)
 
     with pytest.raises(ValueError):
@@ -1523,6 +1524,31 @@ def test_non_finite_params_are_rejected_on_every_model() -> None:
     # and `validate_params=False` still opts out, as for every other check
     y = dca.PLYield(nan, 0.0, 0.6, 180.0, validate_params=[False])
     assert np.isnan(y.c)
+
+
+def test_all_matches_what_the_package_exports() -> None:
+    """`petbox.dca` ships py.typed, so a consumer's own `mypy --strict` type-checks against it --
+    and strict implies --no-implicit-reexport, under which a name merely imported into
+    __init__.py is not re-exported. A name missing from __all__ therefore breaks DOWNSTREAM code
+    with "Module petbox.dca does not explicitly export attribute X", while everything here keeps
+    passing, because this suite reaches names through the `dca` module object. Assert the two
+    agree so adding a model without exporting it fails here instead of in a user's build."""
+    exported = {name for name in dir(dca)
+                if not name.startswith('_')
+                and not isinstance(getattr(dca, name), types.ModuleType)}
+    declared = set(dca.__all__) - {'__version__'}
+
+    assert declared - exported == set(), f'in __all__ but not importable: {declared - exported}'
+    assert exported - declared == set(), f'importable but not in __all__: {exported - declared}'
+
+    # __version__ is listed too, and is a real string rather than a lazily-failing accessor
+    assert '__version__' in dca.__all__
+    assert isinstance(dca.__version__, str) and dca.__version__
+
+    # a star-import is the runtime half of the same contract
+    namespace: dict[str, Any] = {}
+    exec('from petbox import dca as _dca; from petbox.dca import *', namespace)  # noqa: S102
+    assert {n for n in namespace if not n.startswith('_')} == declared
 
 
 def test_every_model_is_hashable() -> None:
@@ -3016,8 +3042,9 @@ def test_generalized_segments_accept_a_generator() -> None:
     # GeneralizedPLYield only escaped this by accident -- its empty check raised TypeError
     # from len() before the exhaustion could matter
     generated_yield = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(t, m=0.5) for t in (180.0, 365.0))
-    )  # type: ignore[arg-type]
+        1.2, 0.0, (dca.PLYieldSegment(t, m=0.5)  # type: ignore[arg-type]
+                   for t in (180.0, 365.0))
+    )
     explicit_yield = dca.GeneralizedPLYield(
         1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.5), dca.PLYieldSegment(365.0, m=0.5))
     )
