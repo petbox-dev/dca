@@ -1,0 +1,21 @@
+# Normalize line endings in the repository, and pin them in the working tree where the tool
+# that reads the file cares.
+#
+# Without this, `core.autocrlf=true` (the Git for Windows default) checks `test/test.sh` out
+# with CRLF, and bash then fails on every line with `$'\r': command not found`. Git warns about
+# the rewrite at commit time but the breakage only shows up on the next fresh clone.
+
+# default: normalize to LF in the repo, let Git decide the working tree
+* text=auto
+
+# scripts read by a shell, which must be LF even on Windows
+*.sh text eol=lf
+
+# CMD is happy with either, but CRLF is the platform convention
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# binary, never touched
+*.png binary
+*.npz binary
+*.ico binary
