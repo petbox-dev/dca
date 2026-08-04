@@ -408,6 +408,53 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       searches that column, and a caller who disabled validation could pass ``t0 < 0`` and leave
       it unsorted, making the search result formally undefined. Selected values are unchanged.
 
+* **Typing:** the package now type-checks under ``mypy --strict``, and so does code that uses it
+    * ``petbox.dca`` declares ``__all__``. This package ships ``py.typed``, so a consumer's own
+      ``mypy --strict`` run type-checks against it --- and strict implies
+      ``--no-implicit-reexport``, under which a name merely imported into ``__init__.py`` is not
+      re-exported. Ordinary downstream code therefore failed::
+
+          from petbox import dca
+          model = dca.MH(1000.0, 0.8, 1.5, 0.08)
+          error: Module "petbox.dca" does not explicitly export attribute "MH"
+
+      All 27 public names are exported, and a test asserts ``__all__`` against the module in both
+      directions, so adding a model without exporting it fails in the suite rather than in a
+      user's build. ``ParamDesc`` is deliberately not exported: it is documented and reached as
+      ``petbox.dca.base.ParamDesc``.
+    * Every public time and rate argument is typed ``FloatLike`` ---
+      ``float | Sequence[float] | NDArray[floating] | NDArray[integer]`` --- rather than
+      ``float | NDFloat``. All of these already worked at runtime, since ``_validate_ndarray``
+      funnels them through ``np.atleast_1d(x).astype(np.float64)``, but the narrow annotation
+      rejected them, including the list form this documentation itself uses
+      (``mh.rate([-30.0, -10.0, 0.0])``). A scalar, a list, a tuple, a ``range``, and a float or
+      integer array of any width are now all accepted statically as well as at runtime. It stays
+      narrower than ``numpy.typing.ArrayLike``, which also admits strings, ``None``, and nested
+      sequences --- those reach ``astype`` and either raise there or silently return a 2-d
+      result, so excluding them keeps the call site checked. Applies to ``rate``, ``cum``,
+      ``interval_vol``, ``monthly_vol``, ``monthly_vol_equiv``, ``D``, ``beta``, ``b``,
+      ``time_at_rate``, the five ``transient_*`` functions, and ``gor``/``cgr``/``wor``/``wgr``.
+    * Eight functions returned ``Any`` through a declared ``NDFloat``, none of them wrong at
+      runtime. Two causes: ``float ** float`` is typed ``Any``, because a negative base with a
+      fractional exponent is complex, and ``np.where``/``np.diff``/``np.log`` yield
+      ``dtype[Any]``. ``SE``'s four diagnostic functions now name ``tau ** -n`` as a ``float``,
+      which pins the type, records why it is real (``tau > 0`` by its bound), and hoists the
+      scalar out of the array expression; ``Duong._Nfn``, ``monthly_vol`` and
+      ``monthly_vol_equiv`` wrap their result in ``np.asarray(..., dtype=np.float64)``, which is
+      a no-op rather than a copy for an array that is already ``float64``; ``THM._bfn`` needed
+      only an annotation. Values are unchanged.
+    * 42 blanket ``# type: ignore`` comments are gone. Only one was still needed --- ``mpmath``
+      ships no stubs, now declared once as a ``pyproject.toml`` override --- and the rest were
+      stale: ``scipy`` ships ``py.typed``, and the ``np.putmask``/``np.diff``/``np.clip`` ignores
+      no longer suppressed anything. ``warn_unused_ignores`` is on so they cannot accumulate
+      again, and every remaining ignore names its error code.
+    * ``NDFloat`` and ``NDBool`` are defined once in ``base`` and imported, rather than
+      re-derived in each module.
+    * ``pyproject.toml`` spells out every flag ``--strict`` implies, so ``mypy petbox/dca`` and
+      ``mypy --strict petbox/dca`` agree; the list had drifted to 12 of 14. CI now runs ``ruff``
+      and ``mypy --strict`` over the test tree as well as the package, and ``test/test.sh`` and
+      ``test/test.bat`` mirror it.
+
 * Other changes
     * The segment functions no longer emit ``RuntimeWarning``. ``log1p`` reaches ``-inf`` at the
       pole of a backward extrapolation and ``NaN`` beyond it, ``_Dcheck``'s denominator vanishes

@@ -17,9 +17,18 @@ jobs:
     - name: Install dependencies
       run: pip install -e ".[dev]"
     - name: Ruff
-      run: ruff check petbox/dca
+      run: ruff check petbox/dca test
     - name: Mypy
       run: mypy petbox/dca
+    # The test tree is type-checked too, and under --strict. The config now sets every strict
+    # flag, so these two agree with the plain runs above -- but pinning --strict explicitly
+    # means a flag dropped from pyproject.toml fails here rather than silently widening what
+    # CI accepts. `-p test` rather than a path: `test/` is a package, and passing the path
+    # makes mypy see test/data.py as both `data` and `test.data`.
+    - name: Mypy (strict, package and tests)
+      run: |
+        mypy --strict petbox/dca
+        mypy --strict -p test
 
   test:
     runs-on: ${{ matrix.os }}

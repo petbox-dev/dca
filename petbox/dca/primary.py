@@ -51,10 +51,10 @@ from .base import (
     LOG_EPSILON,
     MIN_EPSILON,
     _validate_segment_times,
+    NDFloat,
+    NDBool,
+    FloatLike,
 )
-
-NDFloat = NDArray[np.float64]
-NDBool = NDArray[np.bool_]
 
 
 @dataclass(frozen=True)
@@ -759,7 +759,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
     def _bfn(self, t: NDFloat) -> NDFloat:
         return self._vectorize(self._bcheck, t)
 
-    def time_at_rate(self, q: Union[float, NDFloat]) -> NDFloat:
+    def time_at_rate(self, q: FloatLike) -> NDFloat:
         """
         The earliest time at which the forecast rate equals ``q`` -- the inverse of
         :meth:`rate`.
@@ -1372,7 +1372,7 @@ class THM(MultisegmentHyperbolic):
         # and volume, so all three are inherited from the segment before it
         return self._fill_segment_chain(segments)
 
-    def transient_rate(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
+    def transient_rate(self, t: FloatLike, **kwargs: Any) -> NDFloat:
         """
         Compute the rate function using full definition.
         Numerically integrates :func:`transient_D`.
@@ -1396,7 +1396,7 @@ class THM(MultisegmentHyperbolic):
         t = self._validate_ndarray(t)
         return self._transqfn(t, **kwargs)
 
-    def transient_cum(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
+    def transient_cum(self, t: FloatLike, **kwargs: Any) -> NDFloat:
         """
         Compute the cumulative volume function using full definition.
         Numerically integrates :func:`transient_rate`.
@@ -1420,7 +1420,7 @@ class THM(MultisegmentHyperbolic):
         t = self._validate_ndarray(t)
         return self._transNfn(t, **kwargs)
 
-    def transient_D(self, t: Union[float, NDFloat]) -> NDFloat:
+    def transient_D(self, t: FloatLike) -> NDFloat:
         """
         Compute the D-parameter function using full definition.
 
@@ -1442,7 +1442,7 @@ class THM(MultisegmentHyperbolic):
         t = self._validate_ndarray(t)
         return self._transDfn(t)
 
-    def transient_beta(self, t: Union[float, NDFloat]) -> NDFloat:
+    def transient_beta(self, t: FloatLike) -> NDFloat:
         """
         Compute the beta-parameter function using full definition.
 
@@ -1464,7 +1464,7 @@ class THM(MultisegmentHyperbolic):
         t = self._validate_ndarray(t)
         return self._transDfn(t) * t
 
-    def transient_b(self, t: Union[float, NDFloat]) -> NDFloat:
+    def transient_b(self, t: FloatLike) -> NDFloat:
         """
         Compute the b-parameter function using full definition.
 

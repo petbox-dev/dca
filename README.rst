@@ -31,6 +31,8 @@ Additionally, we also define an interface to attach a GOR/CGR yield function to 
 
 Analytic functions are implemented wherever possible. When not possible, numerical evaluations are performed using ``scipy.integrate.cumulative_trapezoid`` on a dense log-spaced grid, achieving accuracy comparable to Gaussian quadrature at higher throughput.
 
+Every time and rate argument accepts a scalar, a list, a tuple, a ``range``, or a NumPy array of any float or integer width — the examples below use whichever is clearest — and always returns a 1-d ``float64`` array. The package ships ``py.typed``, so these signatures are checked in your own code, including under ``mypy --strict``.
+
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Primary Phase              | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |
 |                            | `Modified Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.MH>`_,                                    |

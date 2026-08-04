@@ -19,6 +19,9 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import cast
 
+# Defined here rather than imported from `.base`: this module is standalone -- `bourdet` is
+# a free function over arrays and imports nothing from the model hierarchy -- and importing
+# base would couple them for one alias. Keep identical to `base.NDFloat`.
 NDFloat = NDArray[np.float64]
 
 

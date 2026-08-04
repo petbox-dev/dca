@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 import hypothesis
 from hypothesis import assume, given, settings, note, strategies as st
-from typing import Any, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, List, Optional, Tuple, Type, TypeVar, Union
 
 from math import isnan
 import numpy as np
@@ -1054,10 +1054,7 @@ def test_generalized_anchor_chain_seed_is_consistent() -> None:
 
     mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
     mh.add_secondary(y)
-    # a plain list works at runtime -- every public method funnels through
-    # `_validate_ndarray`, which calls np.atleast_1d -- but the signatures say
-    # `float | NDFloat`, so mypy rejects what the README's own examples do.
-    assert np.all(mh.secondary.gor([45.0, 180.0, 900.0]) == 0.0)  # type: ignore[arg-type]
+    assert np.all(mh.secondary.gor([45.0, 180.0, 900.0]) == 0.0)
 
 
 # a 4-segment model: pre-anchor slope m0, then three breakpoints
@@ -1524,6 +1521,58 @@ def test_non_finite_params_are_rejected_on_every_model() -> None:
     # and `validate_params=False` still opts out, as for every other check
     y = dca.PLYield(nan, 0.0, 0.6, 180.0, validate_params=[False])
     assert np.isnan(y.c)
+
+
+def test_every_public_accessor_takes_every_FloatLike_form() -> None:
+    """`FloatLike` is the declared argument type of every public time/rate accessor, and it must
+    match what `_validate_ndarray` actually accepts: a scalar, any sequence of numbers, or a
+    numpy array of any float or integer dtype. The signatures said `float | NDFloat`, which
+    rejected under mypy what the library accepts and what README.rst's own examples do -- and
+    because this package ships py.typed, that landed on downstream users type-checking correct
+    code. This pins the runtime half; the static half is the annotation itself."""
+    forms: List[Any] = [
+        30.0,                                   # float
+        30,                                     # int, via the numeric tower
+        [30.0, 365.0],                          # list of float
+        [30, 365],                              # list of int
+        (30.0, 365.0),                          # tuple
+        range(1, 5),                            # any Sequence[int]
+        np.arange(1, 5),                        # integer array
+        np.array([30.0, 365.0], dtype=np.float32),   # non-float64 float array
+        np.array([30.0, 365.0], dtype=np.float64),   # NDFloat itself
+        np.float64(30.0),                       # numpy scalar
+    ]
+
+    primary = dca.MH(1000.0, 0.8, 1.5, 0.08)
+    primary.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=-0.2, t0=180.0))
+    primary.add_water(dca.PLYield(c=2.0, m0=0.0, m=0.0, t0=180.0))
+    transient = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.03, 10.0)
+
+    accessors = [
+        *((primary, name) for name in ('rate', 'cum', 'D', 'beta', 'b', 'monthly_vol',
+                                       'monthly_vol_equiv', 'interval_vol', 'time_at_rate')),
+        *((primary.secondary, name) for name in ('gor', 'cgr', 'rate', 'cum')),
+        *((primary.water, name) for name in ('wor', 'wgr')),
+        *((transient, name) for name in ('transient_rate', 'transient_cum', 'transient_D',
+                                         'transient_beta', 'transient_b')),
+    ]
+
+    for model, name in accessors:
+        reference = getattr(model, name)(np.array([30.0, 365.0], dtype=np.float64))
+        for form in forms:
+            result = getattr(model, name)(form)
+            assert isinstance(result, np.ndarray), (name, form)
+            assert result.dtype == np.float64, (name, form)
+
+            # the equivalent forms must give identical answers, not merely run
+            expected = np.atleast_1d(np.asarray(form, dtype=np.float64))
+            assert result.shape == expected.shape, (name, form)
+            if expected.shape == reference.shape and np.array_equal(expected, [30.0, 365.0]):
+                assert np.array_equal(result, reference, equal_nan=True), (name, form)
+
+    # interval_vol's t0 is FloatLike too, and Optional
+    for form in forms:
+        assert primary.interval_vol([30.0, 365.0], form).dtype == np.float64
 
 
 def test_all_matches_what_the_package_exports() -> None:

@@ -364,3 +364,29 @@ Other Classes
 .. currentmodule:: petbox.dca.base
 
 .. autoclass:: ParamDesc
+
+
+Type Aliases
+------------
+
+.. currentmodule:: petbox.dca.base
+
+.. data:: FloatLike
+
+    The argument type of every public time and rate function --
+    ``float | Sequence[float] | NDArray[floating] | NDArray[integer]``.
+
+    All of these are accepted: a scalar, a list, a tuple, a ``range``, or a NumPy array of any
+    float or integer width. Each is funnelled through ``np.atleast_1d(x).astype(np.float64)``,
+    so the return is always a 1-d ``float64`` array regardless of what went in.
+
+    Nested sequences, strings, and ``None`` are deliberately excluded, which is what makes this
+    narrower than :obj:`numpy.typing.ArrayLike`.
+
+.. data:: NDFloat
+
+    ``NDArray[numpy.float64]`` -- the return type of every model function.
+
+.. data:: NDBool
+
+    ``NDArray[numpy.bool_]`` -- a segment mask, used internally.

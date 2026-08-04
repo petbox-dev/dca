@@ -50,9 +50,9 @@ from .base import (
     LOG_EPSILON,
     MIN_EPSILON,
     _validate_segment_times,
+    NDFloat,
+    FloatLike,
 )
-
-NDFloat = NDArray[np.float64]
 
 
 @dataclass(frozen=True)
