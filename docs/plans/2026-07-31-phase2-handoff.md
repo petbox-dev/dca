@@ -178,10 +178,11 @@ sections. Summary:
 ```python
 @dataclass(frozen=True)
 class HyperbolicSegment:
-    t: float                                                # segment start [days]
+    t: float  # segment start [days]
     q: Optional[float] = field(default=None, kw_only=True)  # rate at t [vol/day]
     D: Optional[float] = field(default=None, kw_only=True)  # secant eff. decline at t [1/yr]
     b: Optional[float] = field(default=None, kw_only=True)  # exponent from t onward
+
 
 @dataclass(frozen=True)
 class GeneralizedHyperbolic(MultisegmentHyperbolic):
@@ -235,31 +236,48 @@ Write a dump script, run it on the branch and in a `main` worktree, compare bit 
 # scratchpad/dump_hyp.py — run from the repo root
 import sys
 import numpy as np
-sys.path.insert(0, '.')
+
+sys.path.insert(0, ".")
 from petbox import dca
 
-CASES_MH = [(1000.0, 0.8, 1.5, 0.0), (1000.0, 0.8, 1.5, 0.08),
-            (1000.0, 0.5, 0.0, 0.0), (1000.0, 0.99, 2.0, 0.5), (1.0, 0.001, 0.5, 0.0)]
-CASES_THM = [(1000.0, 0.8, 2.0, 0.8, 30.0, 0.0, 0.0),
-             (1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0),
-             (1000.0, 0.8, 2.0, 0.8, 30.0, 0.05, 0.0),
-             (1000.0, 0.5, 1.0, 1.0, 100.0, 0.0, 0.0)]
+CASES_MH = [
+    (1000.0, 0.8, 1.5, 0.0),
+    (1000.0, 0.8, 1.5, 0.08),
+    (1000.0, 0.5, 0.0, 0.0),
+    (1000.0, 0.99, 2.0, 0.5),
+    (1.0, 0.001, 0.5, 0.0),
+]
+CASES_THM = [
+    (1000.0, 0.8, 2.0, 0.8, 30.0, 0.0, 0.0),
+    (1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0),
+    (1000.0, 0.8, 2.0, 0.8, 30.0, 0.05, 0.0),
+    (1000.0, 0.5, 1.0, 1.0, 100.0, 0.0, 0.0),
+]
 
 # t >= 0 only: Task 1 deliberately changes t < 0
 t = np.concatenate([[0.0], dca.get_time(1e-8, 1e6, 401)])
 out = {}
 for i, p in enumerate(CASES_MH):
     model = dca.MH(*p)
-    for name in ('rate', 'cum', 'D', 'beta', 'b'):
-        out[f'mh{i}_{name}'] = getattr(model, name)(t)
+    for name in ("rate", "cum", "D", "beta", "b"):
+        out[f"mh{i}_{name}"] = getattr(model, name)(t)
 for i, p in enumerate(CASES_THM):
     model = dca.THM(*p)
-    for name in ('rate', 'cum', 'D', 'beta', 'b',
-                 'transient_rate', 'transient_cum', 'transient_D',
-                 'transient_beta', 'transient_b'):
-        out[f'thm{i}_{name}'] = getattr(model, name)(t)
+    for name in (
+        "rate",
+        "cum",
+        "D",
+        "beta",
+        "b",
+        "transient_rate",
+        "transient_cum",
+        "transient_D",
+        "transient_beta",
+        "transient_b",
+    ):
+        out[f"thm{i}_{name}"] = getattr(model, name)(t)
 np.savez(sys.argv[1], t=t, **out)
-print(f'wrote {sys.argv[1]} with {len(out)} arrays')
+print(f"wrote {sys.argv[1]} with {len(out)} arrays")
 ```
 
 ```bash

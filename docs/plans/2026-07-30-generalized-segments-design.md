@@ -45,14 +45,15 @@ segment"**.
 ```python
 @dataclass(frozen=True)
 class HyperbolicSegment:
-    t: float                                    # segment start time [days]
+    t: float  # segment start time [days]
     q: Optional[float] = field(default=None, kw_only=True)  # rate at t [vol/day]
     D: Optional[float] = field(default=None, kw_only=True)  # secant eff. decline at t [1/yr]
     b: Optional[float] = field(default=None, kw_only=True)  # exponent from t onward
 
+
 @dataclass(frozen=True)
 class PLYieldSegment:
-    t: float                                    # breakpoint time [days]
+    t: float  # breakpoint time [days]
     c: Optional[float] = field(default=None, kw_only=True)  # yield value AT t [vol/vol]
     m: Optional[float] = field(default=None, kw_only=True)  # slope from t onward
 ```
@@ -86,22 +87,32 @@ rather than special-cased so the protocol stays uniform.
 
 ```python
 GeneralizedHyperbolic.from_segments(
-    1000.0, 0.8, 2.0,
-    [(30.0, 1.2),                # b only
-     (365.0, 0.3, 0.8),          # D and b
-     (730.0, 250.0, None, 0.5)], # rate reset, decline inherited
-    Dterm=0.08)
+    1000.0,
+    0.8,
+    2.0,
+    [
+        (30.0, 1.2),  # b only
+        (365.0, 0.3, 0.8),  # D and b
+        (730.0, 250.0, None, 0.5),
+    ],  # rate reset, decline inherited
+    Dterm=0.08,
+)
 ```
 
 is equivalent to
 
 ```python
 GeneralizedHyperbolic(
-    1000.0, 0.8, 2.0,
-    segments=(HyperbolicSegment(30.0, b=1.2),
-              HyperbolicSegment(365.0, D=0.3, b=0.8),
-              HyperbolicSegment(730.0, q=250.0, b=0.5)),
-    Dterm=0.08)
+    1000.0,
+    0.8,
+    2.0,
+    segments=(
+        HyperbolicSegment(30.0, b=1.2),
+        HyperbolicSegment(365.0, D=0.3, b=0.8),
+        HyperbolicSegment(730.0, q=250.0, b=0.5),
+    ),
+    Dterm=0.08,
+)
 ```
 
 The constructor itself accepts only segment dataclasses. Keeping it strict keeps the field
@@ -525,7 +536,7 @@ expressible entirely within the existing parameterization: shift every breakpoin
 `GeneralizedPLYield` it is each `PLYieldSegment.t + dt`. No new parameter is needed.
 
 ```python
-def shift(self, dt: float) -> 'GeneralizedPLYield':
+def shift(self, dt: float) -> "GeneralizedPLYield":
     """Return a copy with every breakpoint moved later by ``dt`` days.
 
     Use when a fit was anchored to the wrong first-production date: shifting by the

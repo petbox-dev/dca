@@ -72,8 +72,8 @@ Append to `test/test_dca.py`:
 def test_plyield_param_desc_names() -> None:
     """The sixth PLYield descriptor described `max` but was named `min`."""
     names = [d.name for d in dca.PLYield.get_param_descs()]
-    assert names == ['c', 'm0', 'm', 't0', 'min', 'max']
-    assert dca.PLYield.get_param_desc('max').name == 'max'
+    assert names == ["c", "m0", "m", "t0", "min", "max"]
+    assert dca.PLYield.get_param_desc("max").name == "max"
 
 
 def test_plyield_validates_all_params() -> None:
@@ -153,10 +153,9 @@ Replace the loop header at `base.py:341`:
 Rename the sixth descriptor (`associated.py:209-212`) from `'min'` to `'max'`:
 
 ```python
-            ParamDesc(
-                'max', 'Maximum value of yield function [vol/vol]',
-                0, None,
-                lambda r, n: r.uniform(0.0, 1e5, n))
+ParamDesc(
+    "max", "Maximum value of yield function [vol/vol]", 0, None, lambda r, n: r.uniform(0.0, 1e5, n)
+)
 ```
 
 Add `field` to the `dataclasses` import and `Iterable` to the `typing` import at the top of `associated.py`:
@@ -166,8 +165,20 @@ from dataclasses import dataclass, field
 ```
 
 ```python
-from typing import (TypeVar, Type, List, Dict, Tuple, Any,
-                    Sequence, Iterable, Optional, Callable, ClassVar, Union)
+from typing import (
+    TypeVar,
+    Type,
+    List,
+    Dict,
+    Tuple,
+    Any,
+    Sequence,
+    Iterable,
+    Optional,
+    Callable,
+    ClassVar,
+    Union,
+)
 ```
 
 Add the sized flag list to `PLYield`, after `max` (`associated.py:120`):
@@ -268,8 +279,7 @@ def test_plyield_closed_form_clamped() -> None:
     # both bounds must actually be exercised, or the test proves nothing
     assert np.any(expected_y <= lo) and np.any(expected_y >= hi)
 
-    m_t = np.where((expected_y <= lo) | (expected_y >= hi), 0.0,
-                   np.where(t < t0, m0, m))
+    m_t = np.where((expected_y <= lo) | (expected_y >= hi), 0.0, np.where(t < t0, m0, m))
     assert np.allclose(y.D(t), -m_t / t + mh.D(t), rtol=1e-13)
 ```
 
@@ -357,11 +367,11 @@ class MultisegmentPLYield(BothAssociatedPhase):
 
     def _validate(self) -> None:
         if self.min is not None and self.max is not None and self.max < self.min:
-            raise ValueError('max < min')
+            raise ValueError("max < min")
 
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        object.__setattr__(self, 'segment_params', self._segments())
+        object.__setattr__(self, "segment_params", self._segments())
 
     def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
         """
@@ -373,7 +383,7 @@ class MultisegmentPLYield(BothAssociatedPhase):
         the first segment, where the ``t_ratio <= 0`` mask in `_yieldfn` handles it.
         """
         p = self.segment_params
-        i = np.maximum(np.searchsorted(p[:, self.T_IDX], t, side='right') - 1, 0)
+        i = np.maximum(np.searchsorted(p[:, self.T_IDX], t, side="right") - 1, 0)
         return p[i, self.TA_IDX], p[i, self.Y_IDX], p[i, self.M_IDX]
 
     def _yieldfn(self, t: NDFloat) -> NDFloat:
@@ -386,9 +396,15 @@ class MultisegmentPLYield(BothAssociatedPhase):
         np.putmask(log_factor, mask=log_factor < -LOG_EPSILON, values=-np.inf)  # type: ignore
 
         if self.min is not None or self.max is not None:
-            return np.where(t == 0.0, 0.0,
-                            np.clip(y_anchor * np.exp(log_factor),  # type: ignore
-                                    self.min, self.max))
+            return np.where(
+                t == 0.0,
+                0.0,
+                np.clip(
+                    y_anchor * np.exp(log_factor),  # type: ignore
+                    self.min,
+                    self.max,
+                ),
+            )
         return np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
 
     def _mfn(self, t: NDFloat) -> NDFloat:
@@ -433,15 +449,14 @@ The `# type: ignore` comments on `np.putmask` and `np.clip` are copied from the 
 Change the class statement to `class PLYield(MultisegmentPLYield):`. Keep the docstring, the six fields, their order and defaults, the `validate_params` field from Task 1, and `get_param_descs()` exactly as they are. Delete `_validate`, `_yieldfn`, `_qfn`, `_Nfn`, `_Dfn`, `_Dfn2`, `_betafn`, `_bfn` — all now inherited — and the commented-out `_set_defaults` block at `associated.py:122-123`. Add `_segments`:
 
 ```python
-    def _segments(self) -> NDFloat:
-        """
-        Precache the anchor conditions of each power-law segment. Both segments anchor at
-        ``(t0, c)``, which is what makes the two branches meet there.
-        """
-        return np.array([
-            [-np.inf, self.t0, self.c, self.m0],
-            [self.t0, self.t0, self.c, self.m]
-        ], dtype=np.float64)
+def _segments(self) -> NDFloat:
+    """
+    Precache the anchor conditions of each power-law segment. Both segments anchor at
+    ``(t0, c)``, which is what makes the two branches meet there.
+    """
+    return np.array(
+        [[-np.inf, self.t0, self.c, self.m0], [self.t0, self.t0, self.c, self.m]], dtype=np.float64
+    )
 ```
 
 Also fix the `GOR/CGR/WOR/CGR` typo in the `c` parameter docstring — the fourth should be `WGR`.
@@ -519,9 +534,18 @@ Append to `test/test_dca.py`:
     t0=st.floats(1e-10, 365.25),
 )
 @settings(deadline=None)  # type: ignore
-def test_generalized_reduces_to_plyield(qi: float, Di: float, bf: float, telf: float,
-                                       bterm: float, tterm: float, c: float, m0: float,
-                                       m: float, t0: float) -> None:
+def test_generalized_reduces_to_plyield(
+    qi: float,
+    Di: float,
+    bf: float,
+    telf: float,
+    bterm: float,
+    tterm: float,
+    c: float,
+    m0: float,
+    m: float,
+    t0: float,
+) -> None:
     """A single-breakpoint GeneralizedPLYield must be bit-for-bit identical to PLYield.
     Both of PLYield's segments anchor at (t0, c), so the anchor form reproduces its
     arithmetic exactly -- array_equal, not allclose."""
@@ -535,7 +559,7 @@ def test_generalized_reduces_to_plyield(qi: float, Di: float, bf: float, telf: f
     thm_b = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     thm_b.add_secondary(dca.GeneralizedPLYield(c, m0, ((t0, m),)))
 
-    for name in ('gor', 'cgr', 'rate', 'cum', 'D', 'beta', 'b'):
+    for name in ("gor", "cgr", "rate", "cum", "D", "beta", "b"):
         a = getattr(thm_a.secondary, name)(t)
         b = getattr(thm_b.secondary, name)(t)
         assert np.array_equal(a, b, equal_nan=True), name
@@ -551,11 +575,11 @@ def test_generalized_segments_normalized() -> None:
 
 def test_generalized_param_descs() -> None:
     names = [d.name for d in dca.GeneralizedPLYield.get_param_descs()]
-    assert names == ['c', 'm0', 'segments', 'min', 'max']
+    assert names == ["c", "m0", "segments", "min", "max"]
 
     # the `segments` descriptor must carry no scalar bounds, or the generic loop in
     # __post_init__ would try to compare a tuple against a float
-    seg = dca.GeneralizedPLYield.get_param_desc('segments')
+    seg = dca.GeneralizedPLYield.get_param_desc("segments")
     assert seg.lower_bound is None and seg.upper_bound is None
 
     # from_params must round-trip now that the descriptor count matches the field count
@@ -665,6 +689,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
         max: Optional[float] = None
             The maximum allowed value. Would be used e.g. to limit maximum GOR.
     """
+
     c: float
     m0: float
     segments: Sequence[Tuple[float, float]]
@@ -673,34 +698,33 @@ class GeneralizedPLYield(MultisegmentPLYield):
 
     validate_params: Iterable[bool] = field(default_factory=lambda: [True] * 5)
 
-
     def _validate(self) -> None:
         if len(self.segments) == 0:
-            raise ValueError('segments must contain at least one (t, m) pair')
+            raise ValueError("segments must contain at least one (t, m) pair")
 
         try:
             segments = tuple((float(t), float(m)) for t, m in self.segments)
         except (TypeError, ValueError) as e:
-            raise ValueError('segments entries must be (t, m) pairs') from e
+            raise ValueError("segments entries must be (t, m) pairs") from e
 
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        object.__setattr__(self, 'segments', segments)
+        object.__setattr__(self, "segments", segments)
 
         t = np.array([seg[0] for seg in segments], dtype=np.float64)
         m = np.array([seg[1] for seg in segments], dtype=np.float64)
 
         if not np.all(np.isfinite(t) & (t > 0.0)):
-            raise ValueError('segments t must be finite and > 0')
+            raise ValueError("segments t must be finite and > 0")
 
         # np.diff of a single element is empty, and np.all of empty is True
         if not np.all(np.diff(t) > 0.0):
-            raise ValueError('segments t not strictly increasing')
+            raise ValueError("segments t not strictly increasing")
 
         if not np.all(np.abs(m) <= self.SLOPE_BOUND):
             raise ValueError(
-                f'segments m must be finite and within '
-                f'[{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]')
+                f"segments m must be finite and within [{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]"
+            )
 
         super()._validate()
 
@@ -720,7 +744,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # overflowing part-way through a running product.
         y_anchor = np.empty_like(t_anchor)
         y_anchor[0] = self.c
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             log_anchor = float(np.log(self.c))
 
         for i in range(1, t_anchor.size):
@@ -731,38 +755,54 @@ class GeneralizedPLYield(MultisegmentPLYield):
                 log_anchor = -np.inf
             y_anchor[i] = np.exp(log_anchor)
 
-        return np.concatenate([
-            np.array([[-np.inf, t_anchor[0], self.c, self.m0]], dtype=np.float64),
-            np.column_stack([t_anchor, t_anchor, y_anchor, m])
-        ])
+        return np.concatenate(
+            [
+                np.array([[-np.inf, t_anchor[0], self.c, self.m0]], dtype=np.float64),
+                np.column_stack([t_anchor, t_anchor, y_anchor, m]),
+            ]
+        )
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
             ParamDesc(
-                'c', 'Pivot point of the early-time function and the first segment '
-                     '[vol/vol]',
-                0.0, None,
+                "c",
+                "Pivot point of the early-time function and the first segment [vol/vol]",
+                0.0,
+                None,
                 lambda r, n: r.uniform(0.0, 1e6, n),
-                exclude_lower_bound=True),
+                exclude_lower_bound=True,
+            ),
             ParamDesc(
-                'm0', 'Early-time slope before the first breakpoint',
-                -10.0, 10.0,
-                lambda r, n: r.uniform(-10.0, 10.0, n)),
+                "m0",
+                "Early-time slope before the first breakpoint",
+                -10.0,
+                10.0,
+                lambda r, n: r.uniform(-10.0, 10.0, n),
+            ),
             ParamDesc(
-                'segments', 'Breakpoint times and post-breakpoint slopes '
-                            '[(days, dimensionless), ...]',
-                None, None,
-                lambda r, n: np.column_stack([np.sort(r.uniform(1.0, 1e5, n)),
-                                              r.uniform(-10.0, 10.0, n)])),
+                "segments",
+                "Breakpoint times and post-breakpoint slopes [(days, dimensionless), ...]",
+                None,
+                None,
+                lambda r, n: np.column_stack(
+                    [np.sort(r.uniform(1.0, 1e5, n)), r.uniform(-10.0, 10.0, n)]
+                ),
+            ),
             ParamDesc(
-                'min', 'Minimum value of yield function [vol/vol]',
-                0, None,
-                lambda r, n: r.uniform(0.0, 1e3, n)),
+                "min",
+                "Minimum value of yield function [vol/vol]",
+                0,
+                None,
+                lambda r, n: r.uniform(0.0, 1e3, n),
+            ),
             ParamDesc(
-                'max', 'Maximum value of yield function [vol/vol]',
-                0, None,
-                lambda r, n: r.uniform(0.0, 1e5, n))
+                "max",
+                "Maximum value of yield function [vol/vol]",
+                0,
+                None,
+                lambda r, n: r.uniform(0.0, 1e5, n),
+            ),
         ]
 ```
 
@@ -773,8 +813,7 @@ The `segments` descriptor carries `lower_bound=None, upper_bound=None`, so the g
 Replace `petbox/dca/__init__.py:11`:
 
 ```python
-from .associated import (NullAssociatedPhase, MultisegmentPLYield,
-                         PLYield, GeneralizedPLYield)
+from .associated import NullAssociatedPhase, MultisegmentPLYield, PLYield, GeneralizedPLYield
 ```
 
 `MultisegmentPLYield` is exported for symmetry with `MultisegmentHyperbolic`, which is already exported on line 10.
@@ -896,7 +935,9 @@ def test_generalized_yield_values() -> None:
     assert np.isclose(y.gor(np.array([t3])), y3, rtol=1e-12)
 
     # pre-anchor segment, and a point inside each later segment
-    assert np.isclose(y.gor(np.array([45.0])), GENERALIZED_C * (45.0 / t1) ** GENERALIZED_M0, rtol=1e-12)
+    assert np.isclose(
+        y.gor(np.array([45.0])), GENERALIZED_C * (45.0 / t1) ** GENERALIZED_M0, rtol=1e-12
+    )
     assert np.isclose(y.gor(np.array([180.0])), y1 * (180.0 / t1) ** m1, rtol=1e-12)
     assert np.isclose(y.gor(np.array([900.0])), y2 * (900.0 / t2) ** m2, rtol=1e-12)
     assert np.isclose(y.gor(np.array([3650.0])), y3 * (3650.0 / t3) ** m3, rtol=1e-12)
@@ -914,19 +955,28 @@ def test_generalized_yield_values() -> None:
     qi=st.floats(0.0, 1e6),
 )
 @settings(deadline=None)  # type: ignore
-def test_generalized_model(c: float, m0: float, m1: float, m2: float, m3: float,
-                           t1: float, dt2: float, dt3: float, qi: float) -> None:
+def test_generalized_model(
+    c: float,
+    m0: float,
+    m1: float,
+    m2: float,
+    m3: float,
+    t1: float,
+    dt2: float,
+    dt3: float,
+    qi: float,
+) -> None:
     """Run a 4-segment model through the shared associated-phase checks, for both
     secondary and water attachment."""
     segments = ((t1, m1), (t1 + dt2, m2), (t1 + dt2 + dt3, m3))
 
     mh = dca.MH(qi, 0.7, 1.5, 0.08)
     mh.add_secondary(dca.GeneralizedPLYield(c, m0, segments))
-    check_yield_model(mh.secondary, 'secondary', qi)
+    check_yield_model(mh.secondary, "secondary", qi)
 
     mh = dca.MH(qi, 0.7, 1.5, 0.08)
     mh.add_water(dca.GeneralizedPLYield(c, m0, segments))
-    check_yield_model(mh.water, 'water', qi)
+    check_yield_model(mh.water, "water", qi)
 
 
 @given(
@@ -941,18 +991,26 @@ def test_generalized_model(c: float, m0: float, m1: float, m2: float, m3: float,
     _max=st.floats(1e4, 5e5),
 )
 @settings(deadline=None)  # type: ignore
-def test_generalized_model_min_max(c: float, m0: float, m1: float, m2: float,
-                                   t1: float, dt2: float, qi: float,
-                                   _min: float, _max: float) -> None:
+def test_generalized_model_min_max(
+    c: float,
+    m0: float,
+    m1: float,
+    m2: float,
+    t1: float,
+    dt2: float,
+    qi: float,
+    _min: float,
+    _max: float,
+) -> None:
     segments = ((t1, m1), (t1 + dt2, m2))
 
     mh = dca.MH(qi, 0.7, 1.5, 0.08)
     mh.add_secondary(dca.GeneralizedPLYield(c, m0, segments, _min, _max))
-    check_yield_model(mh.secondary, 'secondary', qi)
+    check_yield_model(mh.secondary, "secondary", qi)
 
     mh = dca.MH(qi, 0.7, 1.5, 0.08)
     mh.add_water(dca.GeneralizedPLYield(c, m0, segments, _min, _max))
-    check_yield_model(mh.water, 'water', qi)
+    check_yield_model(mh.water, "water", qi)
 ```
 
 - [ ] **Step 2: Write the cumulative-volume accuracy test**
@@ -966,8 +1024,7 @@ def _quad_cum_piecewise(rate_fn, t: np.ndarray, breaks: tuple) -> np.ndarray:
     out = []
     for ti in t:
         nodes = [0.0] + [b for b in breaks if b < float(ti)] + [float(ti)]
-        out.append(sum(quad(rate_fn, nodes[i], nodes[i + 1])[0]
-                       for i in range(len(nodes) - 1)))
+        out.append(sum(quad(rate_fn, nodes[i], nodes[i + 1])[0] for i in range(len(nodes) - 1)))
     return np.array(out)
 
 
@@ -975,9 +1032,11 @@ def test_integrate_with_GeneralizedPLYield_accuracy() -> None:
     """_integrate_with must reproduce the integral of a multi-segment yield rate."""
     breaks = (90.0, 365.0, 1825.0)
     mh = dca.MH(qi=1000.0, Di=0.8, bi=1.5, Dterm=0.05)
-    mh.add_secondary(dca.GeneralizedPLYield(c=1200.0, m0=-0.1,
-                                            segments=((90.0, 0.8), (365.0, 0.2),
-                                                      (1825.0, -0.3))))
+    mh.add_secondary(
+        dca.GeneralizedPLYield(
+            c=1200.0, m0=-0.1, segments=((90.0, 0.8), (365.0, 0.2), (1825.0, -0.3))
+        )
+    )
     sec = mh.secondary
 
     t = dca.get_time(1.0, 3000.0, 40)

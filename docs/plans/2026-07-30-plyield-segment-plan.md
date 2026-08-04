@@ -95,20 +95,26 @@ def test_plyield_segment_is_keyword_only() -> None:
 def test_generalized_from_segments_builder() -> None:
     """The builder's tuple arity selects the meaning: 2 -> (t, m), 3 -> (t, c, m)."""
     built = dca.GeneralizedPLYield.from_segments(
-        1.2, 0.0, [(180.0, 0.6), (1095.0, 2.5, -0.2)], None, 20.0)
+        1.2, 0.0, [(180.0, 0.6), (1095.0, 2.5, -0.2)], None, 20.0
+    )
     explicit = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                   dca.PLYieldSegment(1095.0, c=2.5, m=-0.2)), None, 20.0)
+        1.2,
+        0.0,
+        (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=2.5, m=-0.2)),
+        None,
+        20.0,
+    )
     assert built == explicit
 
     # an explicit None inherits exactly as a short form does
-    assert (dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0, None, 0.6)])
-            == dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0, 0.6)]))
+    assert dca.GeneralizedPLYield.from_segments(
+        1.2, 0.0, [(180.0, None, 0.6)]
+    ) == dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0, 0.6)])
 
-    with pytest.raises(ValueError, match='must be'):
+    with pytest.raises(ValueError, match="must be"):
         dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0, 0.6, -0.2, 99.0)])
 
-    with pytest.raises(ValueError, match='must be'):
+    with pytest.raises(ValueError, match="must be"):
         dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0,)])
 
 
@@ -116,9 +122,11 @@ def test_generalized_c_override_steps_the_yield() -> None:
     """A segment c breaks the anchor chain: the yield steps to exactly that value at the
     breakpoint instead of continuing from the preceding segment."""
     mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
-    mh.add_secondary(dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                   dca.PLYieldSegment(1095.0, c=2.5, m=0.6))))
+    mh.add_secondary(
+        dca.GeneralizedPLYield(
+            1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=2.5, m=0.6))
+        )
+    )
     y = mh.secondary
 
     # at the override the value is the override, exactly
@@ -130,42 +138,50 @@ def test_generalized_c_override_steps_the_yield() -> None:
     assert not np.isclose(before, 2.5, rtol=1e-6)
 
     # the chain restarts from the override: the next segment continues from 2.5
-    assert np.isclose(y.gor(np.array([2190.0]))[0], 2.5 * (2190.0 / 1095.0) ** 0.6,
-                      rtol=1e-12)
+    assert np.isclose(y.gor(np.array([2190.0]))[0], 2.5 * (2190.0 / 1095.0) ** 0.6, rtol=1e-12)
 
 
 def test_generalized_c_override_rejected_on_first_segment() -> None:
     """The model's own c already defines the yield at segments[0].t; a second source for
     the same quantity would silently conflict."""
-    with pytest.raises(ValueError, match='conflicts with the model c'):
+    with pytest.raises(ValueError, match="conflicts with the model c"):
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, c=2.5, m=0.6),))
 
 
 def test_generalized_c_override_rejects_nonfinite() -> None:
     """`overrides` uses nan to mean "absent", so an explicitly-NaN c must be rejected
     before it reaches that array -- otherwise it is silently read as no override."""
-    for bad in (float('nan'), np.inf, 0.0, -1.0):
-        with pytest.raises(ValueError, match='segments c must be finite and > 0'):
+    for bad in (float("nan"), np.inf, 0.0, -1.0):
+        with pytest.raises(ValueError, match="segments c must be finite and > 0"):
             dca.GeneralizedPLYield(
-                1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                           dca.PLYieldSegment(1095.0, c=bad, m=-0.2)))
+                1.2,
+                0.0,
+                (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=bad, m=-0.2)),
+            )
 
 
 def test_generalized_inherited_slope_is_a_no_op() -> None:
     """A segment with both optionals None continues the previous slope, so inserting one
     changes nothing but the row count."""
     with_extra = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                   dca.PLYieldSegment(500.0),        # inherits m=0.6, c continuous
-                   dca.PLYieldSegment(1095.0, m=-0.2)))
+        1.2,
+        0.0,
+        (
+            dca.PLYieldSegment(180.0, m=0.6),
+            dca.PLYieldSegment(500.0),  # inherits m=0.6, c continuous
+            dca.PLYieldSegment(1095.0, m=-0.2),
+        ),
+    )
     without = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                   dca.PLYieldSegment(1095.0, m=-0.2)))
+        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, m=-0.2))
+    )
 
     assert with_extra.segment_params.shape[0] == without.segment_params.shape[0] + 1
 
-    mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08); mh_a.add_secondary(with_extra)
-    mh_b = dca.MH(1000.0, 0.7, 1.5, 0.08); mh_b.add_secondary(without)
+    mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh_a.add_secondary(with_extra)
+    mh_b = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh_b.add_secondary(without)
     t = dca.get_time(1.0, 1e4, 61)
     assert np.allclose(mh_a.secondary.gor(t), mh_b.secondary.gor(t), rtol=1e-12)
 
@@ -218,6 +234,7 @@ class PLYieldSegment:
             The power-law slope from ``t`` onward. ``None`` continues the previous slope.
             Must be finite and within ``[-10, 10]`` when given.
     """
+
     t: float
     c: Optional[float] = field(default=None, kw_only=True)
     m: Optional[float] = field(default=None, kw_only=True)
@@ -264,123 +281,136 @@ and the reduction formula from `GeneralizedPLYield(c, m_0, ((t_0, m),))` to
 Then replace `_segment_arrays`, `_validate` and the head of `_segments`:
 
 ```python
-    @staticmethod
-    def from_tuple(spec: Sequence[Optional[float]]) -> PLYieldSegment:
-        """
-        Normalize one loose tuple. Arity selects the meaning: ``(t, m)`` inherits the
-        yield value, ``(t, c, m)`` sets it. An explicit ``None`` inherits exactly as a
-        short form does.
-        """
-        if len(spec) not in (2, 3):
-            raise ValueError('segment tuples must be (t, m) or (t, c, m)')
+@staticmethod
+def from_tuple(spec: Sequence[Optional[float]]) -> PLYieldSegment:
+    """
+    Normalize one loose tuple. Arity selects the meaning: ``(t, m)`` inherits the
+    yield value, ``(t, c, m)`` sets it. An explicit ``None`` inherits exactly as a
+    short form does.
+    """
+    if len(spec) not in (2, 3):
+        raise ValueError("segment tuples must be (t, m) or (t, c, m)")
 
-        t = spec[0]
-        if t is None:
-            raise ValueError('segment t must be given')
+    t = spec[0]
+    if t is None:
+        raise ValueError("segment t must be given")
 
-        if len(spec) == 2:
-            return PLYieldSegment(t, m=spec[1])
-        return PLYieldSegment(t, c=spec[1], m=spec[2])
+    if len(spec) == 2:
+        return PLYieldSegment(t, m=spec[1])
+    return PLYieldSegment(t, c=spec[1], m=spec[2])
 
-    @classmethod
-    def from_segments(cls, c: float, m0: float,
-                      segments: Iterable[Sequence[Optional[float]]],
-                      min: Optional[float] = None,
-                      max: Optional[float] = None) -> 'GeneralizedPLYield':
-        """
-        Construct from plain tuples instead of :class:`PLYieldSegment` instances.
 
-        Each entry is ``(t, m)`` or ``(t, c, m)``; see :meth:`from_tuple`. The
-        constructor itself accepts only :class:`PLYieldSegment`, which keeps the field
-        type free of unions -- this is the loose-tuple entry point.
+@classmethod
+def from_segments(
+    cls,
+    c: float,
+    m0: float,
+    segments: Iterable[Sequence[Optional[float]]],
+    min: Optional[float] = None,
+    max: Optional[float] = None,
+) -> "GeneralizedPLYield":
+    """
+    Construct from plain tuples instead of :class:`PLYieldSegment` instances.
 
-        Parameters
-        ----------
-            c: float
-                As :class:`GeneralizedPLYield`.
+    Each entry is ``(t, m)`` or ``(t, c, m)``; see :meth:`from_tuple`. The
+    constructor itself accepts only :class:`PLYieldSegment`, which keeps the field
+    type free of unions -- this is the loose-tuple entry point.
 
-            m0: float
-                As :class:`GeneralizedPLYield`.
+    Parameters
+    ----------
+        c: float
+            As :class:`GeneralizedPLYield`.
 
-            segments: Iterable[Sequence[Optional[float]]]
-                An iterable of ``(t, m)`` or ``(t, c, m)`` tuples.
+        m0: float
+            As :class:`GeneralizedPLYield`.
 
-            min: Optional[float] = None
-                As :class:`GeneralizedPLYield`.
+        segments: Iterable[Sequence[Optional[float]]]
+            An iterable of ``(t, m)`` or ``(t, c, m)`` tuples.
 
-            max: Optional[float] = None
-                As :class:`GeneralizedPLYield`.
+        min: Optional[float] = None
+            As :class:`GeneralizedPLYield`.
 
-        Returns
-        -------
-            yield model: :class:`GeneralizedPLYield`
-        """
-        return cls(c, m0, tuple(PLYieldSegment.from_tuple(spec) for spec in segments), min, max)
+        max: Optional[float] = None
+            As :class:`GeneralizedPLYield`.
 
-    def _segment_arrays(self) -> Tuple[NDFloat, NDFloat, NDFloat]:
-        """
-        Breakpoint times, resolved slopes, and yield-value overrides (``nan`` where
-        absent). A segment with ``m=None`` continues the previous slope; the first
-        continues ``m0``. Only valid once `_validate` has normalized ``segments``.
-        """
-        times = np.array([s.t for s in self.segments], dtype=np.float64)
-        overrides = np.array([np.nan if s.c is None else s.c for s in self.segments],
-                             dtype=np.float64)
+    Returns
+    -------
+        yield model: :class:`GeneralizedPLYield`
+    """
+    return cls(c, m0, tuple(PLYieldSegment.from_tuple(spec) for spec in segments), min, max)
 
-        slopes = np.empty_like(times)
-        slope = self.m0
-        for i, segment in enumerate(self.segments):
-            if segment.m is not None:
-                slope = segment.m
-            slopes[i] = slope
 
-        return times, slopes, overrides
+def _segment_arrays(self) -> Tuple[NDFloat, NDFloat, NDFloat]:
+    """
+    Breakpoint times, resolved slopes, and yield-value overrides (``nan`` where
+    absent). A segment with ``m=None`` continues the previous slope; the first
+    continues ``m0``. Only valid once `_validate` has normalized ``segments``.
+    """
+    times = np.array([s.t for s in self.segments], dtype=np.float64)
+    overrides = np.array([np.nan if s.c is None else s.c for s in self.segments], dtype=np.float64)
 
-    def _validate(self) -> None:
-        if len(self.segments) == 0:
-            raise ValueError('segments must contain at least one segment')
+    slopes = np.empty_like(times)
+    slope = self.m0
+    for i, segment in enumerate(self.segments):
+        if segment.m is not None:
+            slope = segment.m
+        slopes[i] = slope
 
-        if not all(isinstance(s, PLYieldSegment) for s in self.segments):
-            raise ValueError('segments entries must be PLYieldSegment')
+    return times, slopes, overrides
 
-        if self.segments[0].c is not None:
-            raise ValueError('segments[0] c conflicts with the model c at the same time')
 
-        # Check c per field rather than via the overrides array: that array uses nan to
-        # mean "absent", so an explicitly-NaN c would be silently read as no override.
-        for segment in self.segments:
-            if segment.c is not None and not (np.isfinite(segment.c) and segment.c > 0.0):
-                raise ValueError('segments c must be finite and > 0')
+def _validate(self) -> None:
+    if len(self.segments) == 0:
+        raise ValueError("segments must contain at least one segment")
 
-        # this is a little naughty: bypass the "frozen" protection, just this once...
-        # naturally, this should only be called during the __post_init__ process
-        object.__setattr__(self, 'segments', tuple(
-            PLYieldSegment(float(s.t),
-                           c=None if s.c is None else float(s.c),
-                           m=None if s.m is None else float(s.m))
-            for s in self.segments))
+    if not all(isinstance(s, PLYieldSegment) for s in self.segments):
+        raise ValueError("segments entries must be PLYieldSegment")
 
-        breakpoint_times, slopes, _ = self._segment_arrays()
+    if self.segments[0].c is not None:
+        raise ValueError("segments[0] c conflicts with the model c at the same time")
 
-        # These are written as `not np.all(<valid>)` rather than `np.any(<invalid>)` on
-        # purpose: every comparison against NaN is False, so `np.any(t <= 0.0)` would
-        # accept a NaN time and `np.any(abs(m) > bound)` a NaN slope -- either of which
-        # silently produces an all-NaN yield function. The positive form rejects NaN,
-        # and the explicit isfinite rejects an infinite breakpoint, which would place a
-        # segment that never starts.
-        if not np.all(np.isfinite(breakpoint_times) & (breakpoint_times > 0.0)):
-            raise ValueError('segments t must be finite and > 0')
+    # Check c per field rather than via the overrides array: that array uses nan to
+    # mean "absent", so an explicitly-NaN c would be silently read as no override.
+    for segment in self.segments:
+        if segment.c is not None and not (np.isfinite(segment.c) and segment.c > 0.0):
+            raise ValueError("segments c must be finite and > 0")
 
-        # np.diff of a single element is empty, and np.all of empty is True
-        if not np.all(np.diff(breakpoint_times) > 0.0):
-            raise ValueError('segments t not strictly increasing')
+    # this is a little naughty: bypass the "frozen" protection, just this once...
+    # naturally, this should only be called during the __post_init__ process
+    object.__setattr__(
+        self,
+        "segments",
+        tuple(
+            PLYieldSegment(
+                float(s.t),
+                c=None if s.c is None else float(s.c),
+                m=None if s.m is None else float(s.m),
+            )
+            for s in self.segments
+        ),
+    )
 
-        if not np.all(np.abs(slopes) <= self.SLOPE_BOUND):
-            raise ValueError(
-                f'segments m must be finite and within '
-                f'[{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]')
+    breakpoint_times, slopes, _ = self._segment_arrays()
 
-        super()._validate()
+    # These are written as `not np.all(<valid>)` rather than `np.any(<invalid>)` on
+    # purpose: every comparison against NaN is False, so `np.any(t <= 0.0)` would
+    # accept a NaN time and `np.any(abs(m) > bound)` a NaN slope -- either of which
+    # silently produces an all-NaN yield function. The positive form rejects NaN,
+    # and the explicit isfinite rejects an infinite breakpoint, which would place a
+    # segment that never starts.
+    if not np.all(np.isfinite(breakpoint_times) & (breakpoint_times > 0.0)):
+        raise ValueError("segments t must be finite and > 0")
+
+    # np.diff of a single element is empty, and np.all of empty is True
+    if not np.all(np.diff(breakpoint_times) > 0.0):
+        raise ValueError("segments t not strictly increasing")
+
+    if not np.all(np.abs(slopes) <= self.SLOPE_BOUND):
+        raise ValueError(
+            f"segments m must be finite and within [{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]"
+        )
+
+    super()._validate()
 ```
 
 In `_segments`, take the third array and branch on the override:
@@ -392,21 +422,20 @@ In `_segments`, take the third array and branch on the override:
 and replace the chain loop body with:
 
 ```python
-        for i in range(1, breakpoint_times.size):
-            if np.isnan(overrides[i]):
-                log_anchor += float(
-                    slopes[i - 1] * np.log(breakpoint_times[i] / breakpoint_times[i - 1]))
-                if log_anchor > LOG_EPSILON:
-                    log_anchor = np.inf
-                elif log_anchor < -LOG_EPSILON:
-                    log_anchor = -np.inf
-                anchor_values[i] = np.exp(log_anchor)
-            else:
-                # An override steps the yield at this breakpoint and restarts the chain,
-                # which also stops error accumulating across a long segment list.
-                anchor_values[i] = overrides[i]
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    log_anchor = float(np.log(overrides[i]))
+for i in range(1, breakpoint_times.size):
+    if np.isnan(overrides[i]):
+        log_anchor += float(slopes[i - 1] * np.log(breakpoint_times[i] / breakpoint_times[i - 1]))
+        if log_anchor > LOG_EPSILON:
+            log_anchor = np.inf
+        elif log_anchor < -LOG_EPSILON:
+            log_anchor = -np.inf
+        anchor_values[i] = np.exp(log_anchor)
+    else:
+        # An override steps the yield at this breakpoint and restarts the chain,
+        # which also stops error accumulating across a long segment list.
+        anchor_values[i] = overrides[i]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_anchor = float(np.log(overrides[i]))
 ```
 
 Also update the `_segments` docstring's continuity sentence to note the override, and the
@@ -428,8 +457,13 @@ with its description changed to
 `petbox/dca/__init__.py:11`:
 
 ```python
-from .associated import (NullAssociatedPhase, MultisegmentPLYield,
-                         PLYield, PLYieldSegment, GeneralizedPLYield)
+from .associated import (
+    NullAssociatedPhase,
+    MultisegmentPLYield,
+    PLYield,
+    PLYieldSegment,
+    GeneralizedPLYield,
+)
 ```
 
 - [ ] **Step 6: Migrate the existing tests**
@@ -454,11 +488,11 @@ These are mechanical. In `test/test_dca.py`:
 Two error-message assertions change, because the messages do:
 
 ```python
-    with pytest.raises(ValueError, match='at least one segment'):
-        dca.GeneralizedPLYield(1.2, 0.0, ())
+with pytest.raises(ValueError, match="at least one segment"):
+    dca.GeneralizedPLYield(1.2, 0.0, ())
 
-    with pytest.raises(ValueError, match='must be PLYieldSegment'):
-        dca.GeneralizedPLYield(1.2, 0.0, ((90.0, 0.8),))  # type: ignore
+with pytest.raises(ValueError, match="must be PLYieldSegment"):
+    dca.GeneralizedPLYield(1.2, 0.0, ((90.0, 0.8),))  # type: ignore
 ```
 
 The second now asserts the *type* check rather than a tuple-arity check — a bare tuple is
@@ -474,8 +508,7 @@ def test_generalized_segments_normalized() -> None:
     """The builder accepts ints and normalizes every field to float, so the instance stays
     hashable and its fields match their annotations at runtime."""
     y = dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(90, 0.8), (365, 2, 0.2)])
-    assert y.segments == (dca.PLYieldSegment(90.0, m=0.8),
-                          dca.PLYieldSegment(365.0, c=2.0, m=0.2))
+    assert y.segments == (dca.PLYieldSegment(90.0, m=0.8), dca.PLYieldSegment(365.0, c=2.0, m=0.2))
     assert all(isinstance(s.t, float) for s in y.segments)
     assert isinstance(y.segments[1].c, float) and isinstance(y.segments[1].m, float)
     assert hash(y.segments) == hash(y.segments)
@@ -484,11 +517,15 @@ def test_generalized_segments_normalized() -> None:
 In `test/test_perf.py`, the one construction becomes:
 
 ```python
-    yield_model = dca.GeneralizedPLYield(
-        c=1.2, m0=-0.1,
-        segments=(dca.PLYieldSegment(90.0, m=0.8),
-                  dca.PLYieldSegment(365.0, m=0.2),
-                  dca.PLYieldSegment(1825.0, m=-0.3)))
+yield_model = dca.GeneralizedPLYield(
+    c=1.2,
+    m0=-0.1,
+    segments=(
+        dca.PLYieldSegment(90.0, m=0.8),
+        dca.PLYieldSegment(365.0, m=0.2),
+        dca.PLYieldSegment(1825.0, m=-0.3),
+    ),
+)
 ```
 
 and its `breakpoints` derivation becomes
@@ -609,11 +646,13 @@ def test_plyield_shift_reanchors() -> None:
     assert isinstance(s, dca.PLYield)
     assert s.t0 == 180.0 + 30.4
     assert (s.c, s.m0, s.m) == (y.c, y.m0, y.m)
-    assert y.t0 == 180.0                      # original untouched
+    assert y.t0 == 180.0  # original untouched
 
     # the anchor value is preserved, at the shifted time
-    mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08); mh_a.add_secondary(y)
-    mh_b = dca.MH(1000.0, 0.7, 1.5, 0.08); mh_b.add_secondary(s)
+    mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh_a.add_secondary(y)
+    mh_b = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh_b.add_secondary(s)
     assert mh_a.secondary.gor(np.array([180.0]))[0] == 1.2
     assert mh_b.secondary.gor(np.array([210.4]))[0] == 1.2
 
@@ -623,15 +662,17 @@ def test_plyield_shift_reanchors() -> None:
 
 def test_generalized_shift_reanchors() -> None:
     """Every breakpoint moves; c, m0 and the slopes are unchanged."""
-    y = dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),
-                                          dca.PLYieldSegment(1095.0, m=-0.2)))
+    y = dca.GeneralizedPLYield(
+        1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, m=-0.2))
+    )
     s = y.shift(30.4)
     assert [seg.t for seg in s.segments] == [210.4, 1125.4]
     assert [seg.m for seg in s.segments] == [0.6, -0.2]
     assert (s.c, s.m0) == (y.c, y.m0)
-    assert [seg.t for seg in y.segments] == [180.0, 1095.0]   # original untouched
+    assert [seg.t for seg in y.segments] == [180.0, 1095.0]  # original untouched
 
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08); mh.add_secondary(s)
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(s)
     # real-valued and rising over the month the original fit could not reach
     got = mh.secondary.gor(np.array([1.0, 15.0, 30.4]))
     assert np.all(np.isfinite(got)) and np.all(np.diff(got) > 0.0)
@@ -640,13 +681,14 @@ def test_generalized_shift_reanchors() -> None:
 def test_shift_preserves_c_overrides_and_validates() -> None:
     """A shifted override keeps its value; a shift that pushes a breakpoint to <= 0 is
     rejected by the usual validation, because dc.replace re-runs __post_init__."""
-    y = dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                                          dca.PLYieldSegment(1095.0, c=2.5, m=-0.2)))
+    y = dca.GeneralizedPLYield(
+        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=2.5, m=-0.2))
+    )
     s = y.shift(-90.0)
     assert s.segments[1].c == 2.5 and s.segments[0].t == 90.0
 
-    with pytest.raises(ValueError, match='finite and > 0'):
-        y.shift(-180.0)          # first breakpoint would land exactly on 0
+    with pytest.raises(ValueError, match="finite and > 0"):
+        y.shift(-180.0)  # first breakpoint would land exactly on 0
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -662,52 +704,53 @@ Expected: `AttributeError: 'PLYield' object has no attribute 'shift'`.
 On `PLYield`:
 
 ```python
-    def shift(self, dt: float) -> 'PLYield':
-        """
-        Return a copy with the pivot time moved later by ``dt`` days.
+def shift(self, dt: float) -> "PLYield":
+    """
+    Return a copy with the pivot time moved later by ``dt`` days.
 
-        Use when a fit was anchored to the wrong first-production date: shifting by the
-        correction moves the power law's origin to true first production, so the model is
-        defined over the period the original could only reach at negative ``t``, where a
-        power law is not real-valued.
+    Use when a fit was anchored to the wrong first-production date: shifting by the
+    correction moves the power law's origin to true first production, so the model is
+    defined over the period the original could only reach at negative ``t``, where a
+    power law is not real-valued.
 
-        This re-anchors rather than reproducing the original curve. Late-time yield changes
-        by roughly ``(t0 / (t0 + dt)) ** m``, because the origin has moved. The original
-        parameters were biased by the wrong axis, so the shifted model is the more correct
-        one, but a rigorous correction is a re-fit.
+    This re-anchors rather than reproducing the original curve. Late-time yield changes
+    by roughly ``(t0 / (t0 + dt)) ** m``, because the origin has moved. The original
+    parameters were biased by the wrong axis, so the shifted model is the more correct
+    one, but a rigorous correction is a re-fit.
 
-        Parameters
-        ----------
-            dt: float
-                Days to move the pivot later. Negative moves it earlier.
+    Parameters
+    ----------
+        dt: float
+            Days to move the pivot later. Negative moves it earlier.
 
-        Returns
-        -------
-            yield model: :class:`PLYield`
-        """
-        return dc.replace(self, t0=self.t0 + dt)
+    Returns
+    -------
+        yield model: :class:`PLYield`
+    """
+    return dc.replace(self, t0=self.t0 + dt)
 ```
 
 On `GeneralizedPLYield`:
 
 ```python
-    def shift(self, dt: float) -> 'GeneralizedPLYield':
-        """
-        Return a copy with every breakpoint moved later by ``dt`` days. Value overrides,
-        slopes, ``c`` and ``m0`` are unchanged. See :meth:`PLYield.shift` for when to use
-        this, and for the caveat that it re-anchors rather than reproducing the original.
+def shift(self, dt: float) -> "GeneralizedPLYield":
+    """
+    Return a copy with every breakpoint moved later by ``dt`` days. Value overrides,
+    slopes, ``c`` and ``m0`` are unchanged. See :meth:`PLYield.shift` for when to use
+    this, and for the caveat that it re-anchors rather than reproducing the original.
 
-        Parameters
-        ----------
-            dt: float
-                Days to move every breakpoint later. Negative moves them earlier.
+    Parameters
+    ----------
+        dt: float
+            Days to move every breakpoint later. Negative moves them earlier.
 
-        Returns
-        -------
-            yield model: :class:`GeneralizedPLYield`
-        """
-        return dc.replace(self, segments=tuple(
-            dc.replace(segment, t=segment.t + dt) for segment in self.segments))
+    Returns
+    -------
+        yield model: :class:`GeneralizedPLYield`
+    """
+    return dc.replace(
+        self, segments=tuple(dc.replace(segment, t=segment.t + dt) for segment in self.segments)
+    )
 ```
 
 `dc` is already imported as `dataclasses` at the top of the module. `dc.replace` re-runs
@@ -803,13 +846,19 @@ but capture the negative-`t` mask first and overwrite the result at the end:
 and replace the two return statements with a single guarded return:
 
 ```python
-        if self.min is not None or self.max is not None:
-            out = np.where(t == 0.0, 0.0,
-                           np.clip(y_anchor * np.exp(log_factor),  # type: ignore
-                                   self.min, self.max))
-        else:
-            out = np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
-        return np.where(before_zero, np.nan, out)
+if self.min is not None or self.max is not None:
+    out = np.where(
+        t == 0.0,
+        0.0,
+        np.clip(
+            y_anchor * np.exp(log_factor),  # type: ignore
+            self.min,
+            self.max,
+        ),
+    )
+else:
+    out = np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
+return np.where(before_zero, np.nan, out)
 ```
 
 `before_zero` must be captured **before** the putmask mutates `t_ratio`, and keyed on `t`

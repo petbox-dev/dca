@@ -25,9 +25,9 @@ NDFloat = NDArray[np.float64]
 LOG10 = log(10)
 
 
-def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
-            xlog: bool = True, ylog: bool = False
-            ) -> NDFloat:
+def bourdet(
+    y: NDFloat, x: NDFloat, L: float = 0.0, xlog: bool = True, ylog: bool = False
+) -> NDFloat:
     """
     Bourdet Derivative Smoothing
 
@@ -112,14 +112,14 @@ def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
         # searchsorted(log_x, log_x[i] - L, side='right') - 1 gives the last
         # index where log_x[j] <= log_x[i] - L, i.e. first point outside L.
         target_L = log_x - L
-        raw_L = np.searchsorted(log_x, target_L, side='right').astype(np.intp) - 1
+        raw_L = np.searchsorted(log_x, target_L, side="right").astype(np.intp) - 1
         idx_L = np.clip(raw_L, 0, n - 1)
 
         # Right neighbor: first point j > i where log_x[j] - log_x[i] > L
         # searchsorted(log_x, log_x[i] + L, side='right') gives the first
         # index where log_x[j] > log_x[i] + L.
         target_R = log_x + L
-        raw_R = np.searchsorted(log_x, target_R, side='right').astype(np.intp)
+        raw_R = np.searchsorted(log_x, target_R, side="right").astype(np.intp)
         idx_R = np.clip(raw_R, 0, n - 1)
 
     # Ensure left neighbor is strictly before i, right is strictly after
@@ -138,7 +138,7 @@ def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
     #   - if x_R == 0: backward difference y_L / x_L
     denom = x_L + x_R
 
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         slope_L = np.where(x_L > 0.0, y_L / x_L, 0.0)
         slope_R = np.where(x_R > 0.0, y_R / x_R, 0.0)
 
@@ -146,8 +146,7 @@ def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
         left_only = (x_L > 0.0) & ~(x_R > 0.0)
         right_only = ~(x_L > 0.0) & (x_R > 0.0)
 
-        der[both] = ((slope_L[both] * x_R[both] + slope_R[both] * x_L[both])
-                     / denom[both])
+        der[both] = (slope_L[both] * x_R[both] + slope_R[both] * x_L[both]) / denom[both]
         der[left_only] = slope_L[left_only]
         der[right_only] = slope_R[right_only]
 

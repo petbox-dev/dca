@@ -32,6 +32,7 @@ This test captures the current behavior as a regression baseline and will later 
 """
 Performance regression tests for numerical integration and bourdet derivative.
 """
+
 import numpy as np
 import pytest
 from petbox import dca
@@ -102,28 +103,27 @@ from scipy.integrate import fixed_quad, cumulative_trapezoid  # type: ignore
 Replace the `_iter_t` and `_integrate_with` methods in `DeclineCurve` (base.py:425-443) with:
 
 ```python
-    def _integrate_with(self, fn: Callable[[NDFloat], NDFloat],
-                        t: NDFloat, **kwargs: Any) -> NDFloat:
-        n_grid = kwargs.pop('n', 50) * 10
-        if len(t) == 0:
-            return np.array([], dtype=np.float64)
+def _integrate_with(self, fn: Callable[[NDFloat], NDFloat], t: NDFloat, **kwargs: Any) -> NDFloat:
+    n_grid = kwargs.pop("n", 50) * 10
+    if len(t) == 0:
+        return np.array([], dtype=np.float64)
 
-        t_max = float(t[-1]) if t[-1] > 0 else 1.0
-        grid = np.linspace(0.0, t_max, max(n_grid, len(t) * 2), dtype=np.float64)
+    t_max = float(t[-1]) if t[-1] > 0 else 1.0
+    grid = np.linspace(0.0, t_max, max(n_grid, len(t) * 2), dtype=np.float64)
 
-        # evaluate fn on the full grid in one vectorized call
-        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-            y = fn(grid)
-        y[np.isnan(y)] = 0.0
+    # evaluate fn on the full grid in one vectorized call
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        y = fn(grid)
+    y[np.isnan(y)] = 0.0
 
-        # cumulative integral on the grid
-        cum_grid = np.empty_like(grid)
-        cum_grid[0] = 0.0
-        cum_grid[1:] = cumulative_trapezoid(y, grid)
+    # cumulative integral on the grid
+    cum_grid = np.empty_like(grid)
+    cum_grid[0] = 0.0
+    cum_grid[1:] = cumulative_trapezoid(y, grid)
 
-        # interpolate to the requested t values
-        result = np.interp(t, grid, cum_grid).astype(np.float64)
-        return result
+    # interpolate to the requested t values
+    result = np.interp(t, grid, cum_grid).astype(np.float64)
+    return result
 ```
 
 Also remove the `_iter_t` static method (base.py:424-433) — it is no longer used.
@@ -243,9 +243,9 @@ NDFloat = NDArray[np.float64]
 LOG10 = log(10)
 
 
-def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
-            xlog: bool = True, ylog: bool = False
-            ) -> NDFloat:
+def bourdet(
+    y: NDFloat, x: NDFloat, L: float = 0.0, xlog: bool = True, ylog: bool = False
+) -> NDFloat:
     """
     Bourdet Derivative Smoothing
 
@@ -334,13 +334,17 @@ def bourdet(y: NDFloat, x: NDFloat, L: float = 0.0,
             y_L[idx_pos] = dy_left[j_L]
 
             # right neighbor
-            dx_right = log_x[i + 1:] - log_x[i]
-            dy_right = y[i + 1:] - y[i]
+            dx_right = log_x[i + 1 :] - log_x[i]
+            dy_right = y[i + 1 :] - y[i]
             if L == 0.0:
                 j_R = 0
             else:
                 within = np.where((dx_right <= L) & (dx_right >= 0.0))[0]
-                j_R = min(len(dx_right) - 1, int(within[-1]) + 1) if within.size > 0 else len(dx_right) - 1
+                j_R = (
+                    min(len(dx_right) - 1, int(within[-1]) + 1)
+                    if within.size > 0
+                    else len(dx_right) - 1
+                )
 
             x_R[idx_pos] = dx_right[j_R]
             y_R[idx_pos] = dy_right[j_R]

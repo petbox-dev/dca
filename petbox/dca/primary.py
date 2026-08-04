@@ -21,17 +21,37 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from scipy.special import expi as ei, gammainc, gamma  # type: ignore
+from scipy.special import expi as ei, gammainc, gamma
 
 from abc import ABC, abstractmethod
-from typing import (TypeVar, Type, List, Dict, Tuple, Any,
-                    Sequence, Iterable, Optional, Callable, ClassVar, Union)
+from typing import (
+    TypeVar,
+    Type,
+    List,
+    Dict,
+    Tuple,
+    Any,
+    Sequence,
+    Iterable,
+    Optional,
+    Callable,
+    ClassVar,
+    Union,
+)
 from numpy.typing import NDArray
 from typing import cast
 
-from .base import (ParamDesc, DeclineCurve, PrimaryPhase, SecondaryPhase,
-                   DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON,
-                   _validate_segment_times)
+from .base import (
+    ParamDesc,
+    DeclineCurve,
+    PrimaryPhase,
+    SecondaryPhase,
+    DAYS_PER_MONTH,
+    DAYS_PER_YEAR,
+    LOG_EPSILON,
+    MIN_EPSILON,
+    _validate_segment_times,
+)
 
 NDFloat = NDArray[np.float64]
 NDBool = NDArray[np.bool_]
@@ -109,7 +129,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
     def _validate(self) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        object.__setattr__(self, 'segment_params', self._segments())
+        object.__setattr__(self, "segment_params", self._segments())
 
         # Reject a non-finite *derived* decline paired with a non-zero exponent.
         # `__post_init__` rejects non-finite inputs for the reason given there -- a silent zero
@@ -136,18 +156,23 @@ class MultisegmentHyperbolic(PrimaryPhase):
         declines, exponents = params[:, self.D_IDX], params[:, self.B_IDX]
 
         reachable = np.isfinite(params[:, self.T_IDX])
-        fatal = reachable & (np.isnan(declines)
-                             | (np.isinf(declines) & (exponents != 0.0)))
+        fatal = reachable & (np.isnan(declines) | (np.isinf(declines) & (exponents != 0.0)))
         if np.any(fatal):
             row = int(np.flatnonzero(fatal)[0])
-            where = 'the initial conditions' if row == 0 else f'segment {row - 1}'
+            where = "the initial conditions" if row == 0 else f"segment {row - 1}"
             raise ValueError(
-                f'{where} converts to a non-finite nominal decline; |b| is too large for '
-                f'this D')
+                f"{where} converts to a non-finite nominal decline; |b| is too large for this D"
+            )
 
     @classmethod
-    def _segment_row(cls, t: float, b: float, q: Optional[float] = None,
-                     D: Optional[float] = None, N: Optional[float] = None) -> List[float]:
+    def _segment_row(
+        cls,
+        t: float,
+        b: float,
+        q: Optional[float] = None,
+        D: Optional[float] = None,
+        N: Optional[float] = None,
+    ) -> List[float]:
         """
         One row of a segment array, placed through the column constants.
 
@@ -241,8 +266,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
             row: List[float]
                 A five-float row, ready for ``np.array`` alongside any later segments.
         """
-        return cls._segment_row(t=0.0, b=bi, q=qi, N=0.0,
-                                D=cls._nominal_per_day_from_secant(Di, bi))
+        return cls._segment_row(
+            t=0.0, b=bi, q=qi, N=0.0, D=cls._nominal_per_day_from_secant(Di, bi)
+        )
 
     @classmethod
     def _require_a_real_decline(cls, Di: float, bi: float) -> None:
@@ -271,13 +297,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # different model. Only reachable by opting out of the Di bound via `validate_params`.
         if nominal < 0.0:
             raise ValueError(
-                'Di is negative, which inclines; use IncliningHyperbolic or '
-                'GeneralizedHyperbolic')
+                "Di is negative, which inclines; use IncliningHyperbolic or GeneralizedHyperbolic"
+            )
 
         if abs(nominal) < MIN_EPSILON:
             raise ValueError(
-                'Di converts to a zero nominal decline; a flat forecast is not a '
-                'hyperbolic model')
+                "Di converts to a zero nominal decline; a flat forecast is not a hyperbolic model"
+            )
 
     def _fill_segment_chain(self, segments: NDFloat) -> NDFloat:
         """
@@ -369,17 +395,19 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # t ~ 1e14 days -- without saying so.
         ignored_because = None
         if D_last < 0.0:
-            ignored_because = 'is inclining'
+            ignored_because = "is inclining"
         elif D_last < MIN_EPSILON:
-            ignored_because = 'is flat'
+            ignored_because = "is flat"
         elif abs(b_last) <= MultisegmentHyperbolic.B_EPSILON:
-            ignored_because = 'is exponential'
+            ignored_because = "is exponential"
 
         if ignored_because is not None:
             warnings.warn(
-                f'Dterm ignored: the last segment {ignored_because}, '
-                f'so its decline never reaches Dterm',
-                RuntimeWarning, stacklevel=2)
+                f"Dterm ignored: the last segment {ignored_because}, "
+                f"so its decline never reaches Dterm",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return segments
 
         # a b_last that clears MIN_EPSILON by a hair overflows this division to inf, which
@@ -387,13 +415,12 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # forecast is the uncapped tail, which is the right answer. A hyperbolic tail whose
         # decline is already below Dterm gives a negative offset, which the max() clamps to
         # t_last, so the exponential tail starts with that segment.
-        with np.errstate(over='ignore'):
+        with np.errstate(over="ignore"):
             t_term = max(t_last, t_last + (1.0 / Dterm_nom - 1.0 / D_last) / b_last)
 
-        return self._fill_segment_chain(np.vstack([
-            segments,
-            self._segment_row(t=t_term, b=0.0, D=Dterm_nom)
-        ]))
+        return self._fill_segment_chain(
+            np.vstack([segments, self._segment_row(t=t_term, b=0.0, D=Dterm_nom)])
+        )
 
     @staticmethod
     def _log1p_decline_product(D: float, b: float, dt: NDFloat) -> NDFloat:
@@ -416,7 +443,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         including the non-overflowing ones, where ``dt`` may be zero or negative -- before those
         values are discarded.
         """
-        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
             product = D * b * dt
             log_product = np.log1p(product)
 
@@ -428,15 +455,16 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return log_product
 
     @staticmethod
-    def _qcheck(t0: float, q: float, D: float, b: float, N: float,
-                t: Union[float, NDFloat]) -> NDFloat:
+    def _qcheck(
+        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+    ) -> NDFloat:
         """
         Compute the proper Arps form of q
         """
         # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
         # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
         # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             dt = DeclineCurve._validate_ndarray(t - t0)
 
         # magnitude test, not a sign test: MIN_EPSILON is a tiny *positive* number, so
@@ -452,27 +480,28 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # ``1 + D b dt`` reaches 0 at the pole of a backward extrapolation and goes negative
         # past it, so log1p legitimately yields -inf then nan: silence both. ``D * b * dt``
         # itself overflows for an extreme dt, which the putmask below then saturates.
-        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
             if abs(b) <= MultisegmentHyperbolic.B_EPSILON:
                 D_dt = D * dt
             else:
                 D_dt = MultisegmentHyperbolic._log1p_decline_product(D, b, dt) / b
 
-        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
-        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
-        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
             return q * np.exp(-D_dt)
 
     @staticmethod
-    def _Ncheck(t0: float, q: float, D: float, b: float, N: float,
-                t: Union[float, NDFloat]) -> NDFloat:
+    def _Ncheck(
+        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+    ) -> NDFloat:
         """
         Compute the proper Arps form of N
         """
         # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
         # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
         # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             dt = DeclineCurve._validate_ndarray(t - t0)
 
         if q < MIN_EPSILON:
@@ -484,13 +513,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # ``q / D`` overflows for a tiny D, which is precisely what this guard is testing for
         # -- so the test itself has to be shielded. ``abs(D) < MIN_EPSILON`` short-circuits,
         # so the division is never reached for a D of zero.
-        with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
+        with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
             if abs(D) < MIN_EPSILON or abs(q / D) == np.inf:
                 return np.atleast_1d(N + q * dt)
 
         # as in _qcheck, log1p hits its own pole on a backward extrapolation, and the
         # products overflow for an extreme dt
-        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
             if abs(1.0 - b) < MIN_EPSILON:
                 return N + q / D * np.log1p(D * dt)
 
@@ -500,8 +529,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
                 D_dt = -D * dt
                 q_b_D = q / D
             else:
-                D_dt = (1.0 - 1.0 / b) * MultisegmentHyperbolic._log1p_decline_product(
-                    D, b, dt)
+                D_dt = (1.0 - 1.0 / b) * MultisegmentHyperbolic._log1p_decline_product(D, b, dt)
                 q_b_D = q / ((1.0 - b) * D)
 
         # The coefficient is what overflows, not ``q / D``: the ``1 - b`` factor shrinks the
@@ -512,9 +540,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if not isfinite(q_b_D):
             return np.atleast_1d(N + q * dt)
 
-        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
 
-        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
             volume = q_b_D * np.expm1(D_dt)
 
             # `expm1` overflows above LOG_EPSILON while the *product* is often still
@@ -533,15 +561,16 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return N - volume
 
     @staticmethod
-    def _Dcheck(t0: float, q: float, D: float, b: float, N: float,
-                t: Union[float, NDFloat]) -> NDFloat:
+    def _Dcheck(
+        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+    ) -> NDFloat:
         """
         Compute the proper Arps form of D
         """
         # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
         # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
         # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             dt = DeclineCurve._validate_ndarray(t - t0)
 
         if abs(D) < MIN_EPSILON:
@@ -554,20 +583,21 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # the denominator vanishes at the pole of a backward extrapolation, and is negative
         # beyond it where the segment has no real value. it is also formed as ``inf * 0`` for
         # an exponential segment carrying an infinite decline, so the multiply is guarded too
-        with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
+        with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
             Denom = 1.0 + D * b * dt
             return np.where(Denom < 0.0, np.nan, D / Denom)
 
     @staticmethod
-    def _Dcheck2(t0: float, q: float, D: float, b: float, N: float,
-                 t: Union[float, NDFloat]) -> NDFloat:
+    def _Dcheck2(
+        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+    ) -> NDFloat:
         """
         Compute the derivative of the proper Arps form of D
         """
         # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
         # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
         # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             dt = DeclineCurve._validate_ndarray(t - t0)
 
         if abs(D) < MIN_EPSILON:
@@ -575,13 +605,12 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return np.where(np.isnan(dt), np.nan, D)
 
         # as in _Dcheck: the denominator vanishes at the pole and is negative beyond it
-        with np.errstate(over='ignore', under='ignore', invalid='ignore', divide='ignore'):
+        with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
             Denom = 1.0 + D * b * dt
             return np.where(Denom < 0.0, np.nan, -b * D * D / (Denom * Denom))
 
     @staticmethod
-    def _tcheck(q: float, D: float, b: float,
-                q_target: Union[float, NDFloat]) -> NDFloat:
+    def _tcheck(q: float, D: float, b: float, q_target: Union[float, NDFloat]) -> NDFloat:
         """
         Invert the proper Arps form of q: the time *elapsed within* a segment whose rate starts
         at ``q``, before it reaches ``q_target``.
@@ -609,7 +638,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if q == 0.0:
             return np.where(np.atleast_1d(q_target) == 0.0, 0.0, np.nan)
 
-        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
             # a rate of 0 gives -inf here and an infinite rate +inf; both carry through to the
             # correct limit below, so neither is special-cased
             log_ratio = np.log(np.atleast_1d(q_target) / q)
@@ -622,14 +651,15 @@ class MultisegmentHyperbolic(PrimaryPhase):
                 return -log_ratio / D
 
             exponent = -b * log_ratio
-            np.putmask(exponent, mask=exponent > LOG_EPSILON, values=np.inf)  # type: ignore
-            np.putmask(exponent, mask=exponent < -LOG_EPSILON, values=-np.inf)  # type: ignore
+            np.putmask(exponent, mask=exponent > LOG_EPSILON, values=np.inf)
+            np.putmask(exponent, mask=exponent < -LOG_EPSILON, values=-np.inf)
 
             return np.expm1(exponent) / (b * D)
 
     @staticmethod
-    def _bcheck(t0: float, q: float, D: float, b: float, N: float,
-                t: Union[float, NDFloat]) -> NDFloat:
+    def _bcheck(
+        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+    ) -> NDFloat:
         """
         Compute the proper Arps form of b, which is constant within a segment but has no
         real value beyond the pole of a backward extrapolation
@@ -637,7 +667,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # ``inf - inf`` is nan and warns: a terminal row placed at an unreachable time
         # carries t0 = inf (see `_append_terminal_segment`), and a caller may ask about
         # t = inf. Both are valid, so the subtraction is guarded rather than the caller.
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             dt = DeclineCurve._validate_ndarray(t - t0)
 
         # A nan dt is tested for explicitly. Every comparison against nan is False, so the
@@ -648,7 +678,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         #
         # as in _Dcheck, ``D * b`` is ``inf * 0`` for an exponential segment carrying an
         # infinite decline; the resulting nan compares False and leaves b untouched
-        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
             return np.where(np.isnan(dt) | (1.0 + D * b * dt < 0.0), np.nan, b)
 
     def _segment_window(self, index: int, t: NDFloat) -> NDBool:
@@ -691,8 +721,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         return within
 
-    def _vectorize(self, fn: Callable[..., NDFloat],
-                   t: Union[float, NDFloat]) -> NDFloat:
+    def _vectorize(self, fn: Callable[..., NDFloat], t: Union[float, NDFloat]) -> NDFloat:
         """
         Vectorize the computation of a parameter
         """
@@ -787,7 +816,8 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # first hit is the earliest -- each segment's window is disjoint from the others'.
         for i in range(params.shape[0]):
             candidate = params[i, self.T_IDX] + self._tcheck(
-                params[i, self.Q_IDX], params[i, self.D_IDX], params[i, self.B_IDX], q)
+                params[i, self.Q_IDX], params[i, self.D_IDX], params[i, self.B_IDX], q
+            )
 
             # Keep only a solution that lands in the window the segment actually governs, so
             # the time returned is one at which `rate` evaluates that very segment -- which is
@@ -824,10 +854,10 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return cls.nominal_from_tangent(D)
 
         if abs(D) < MIN_EPSILON:
-            return 0.0 # pragma: no cover
+            return 0.0  # pragma: no cover
 
         if D >= 1.0:
-            return np.inf # pragma: no cover
+            return np.inf  # pragma: no cover
 
         # Saturate rather than let math.expm1 raise OverflowError. b is bounded only by
         # finiteness for GeneralizedHyperbolic, so the exponent below is unbounded -- and a
@@ -848,16 +878,16 @@ class MultisegmentHyperbolic(PrimaryPhase):
         # Deff = 1.0 - 1.0 / (1.0 + D * b) ** (1.0 / b)
 
         if abs(D) < MIN_EPSILON:
-            return 0.0 # pragma: no cover
+            return 0.0  # pragma: no cover
 
         D_b = D * b
         if 1.0 + D_b < MIN_EPSILON:
-            return -np.inf # pragma: no cover
+            return -np.inf  # pragma: no cover
 
         D_dt = log1p(D_b) / b
         if D_dt > LOG_EPSILON:
             # >= 100% decline is not possible
-            return 1.0 # pragma: no cover
+            return 1.0  # pragma: no cover
 
         # the mirror of the guard above: an unboundedly negative exponent is an unboundedly
         # steep incline, and would otherwise raise OverflowError out of math.expm1
@@ -869,21 +899,21 @@ class MultisegmentHyperbolic(PrimaryPhase):
     @classmethod
     def nominal_from_tangent(cls, D: float) -> float:
         if abs(D) < MIN_EPSILON:
-            return 0.0 # pragma: no cover
+            return 0.0  # pragma: no cover
 
         if D >= 1.0:
-            return np.inf # pragma: no cover
+            return np.inf  # pragma: no cover
 
         return -log1p(-D)
 
     @classmethod
     def tangent_from_nominal(cls, D: float) -> float:
         if abs(D) < MIN_EPSILON:
-            return 0.0 # pragma: no cover
+            return 0.0  # pragma: no cover
 
         if D > LOG_EPSILON:
             # >= 100% decline is not possible
-            return 1.0 # pragma: no cover
+            return 1.0  # pragma: no cover
 
         # the mirror of the guard above: an unboundedly negative nominal decline is an
         # unboundedly steep incline, and would otherwise raise OverflowError out of expm1
@@ -909,9 +939,8 @@ class MultisegmentHyperbolic(PrimaryPhase):
         own, drawing from a narrower range.
         """
         return ParamDesc(
-            'qi', 'Initial rate [vol/day]',
-            0.0, None,
-            lambda r, n: r.uniform(1e-10, 1e6, n))
+            "qi", "Initial rate [vol/day]", 0.0, None, lambda r, n: r.uniform(1e-10, 1e6, n)
+        )
 
     @classmethod
     def _declining_Di_desc(cls) -> ParamDesc:
@@ -927,10 +956,14 @@ class MultisegmentHyperbolic(PrimaryPhase):
         the bound alone cannot make.
         """
         return ParamDesc(  # TODO
-            'Di', 'Initial decline [sec. eff. / yr]',
-            0.0, 1.0,
+            "Di",
+            "Initial decline [sec. eff. / yr]",
+            0.0,
+            1.0,
             lambda r, n: r.uniform(1e-10, 1.0, n),
-            exclude_lower_bound=True, exclude_upper_bound=True)
+            exclude_lower_bound=True,
+            exclude_upper_bound=True,
+        )
 
     @classmethod
     def _bounded_bi_desc(cls) -> ParamDesc:
@@ -942,10 +975,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         a fixed 2.0, :class:`GeneralizedHyperbolic` bounds ``b`` only by being finite, and
         :class:`IncliningHyperbolic` requires it strictly negative.
         """
-        return ParamDesc(
-            'bi', 'Hyperbolic exponent',
-            0.0, 2.0,
-            lambda r, n: r.uniform(0.0, 2.0, n))
+        return ParamDesc("bi", "Hyperbolic exponent", 0.0, 2.0, lambda r, n: r.uniform(0.0, 2.0, n))
 
     @classmethod
     def _terminal_decline_desc(cls) -> ParamDesc:
@@ -957,10 +987,13 @@ class MultisegmentHyperbolic(PrimaryPhase):
         Generates zero, i.e. no cap, so a randomly generated model is a plain hyperbolic.
         """
         return ParamDesc(  # TODO
-            'Dterm', 'Terminal decline [tan. eff. / yr]',
-            0.0, 1.0,
+            "Dterm",
+            "Terminal decline [tan. eff. / yr]",
+            0.0,
+            1.0,
             lambda r, n: np.zeros(n, dtype=np.float64),
-            exclude_upper_bound=True)
+            exclude_upper_bound=True,
+        )
 
 
 @dataclass(frozen=True)
@@ -1034,6 +1067,7 @@ class Hyperbolic(MultisegmentHyperbolic):
             transient-linear-flow limit. :class:`GeneralizedHyperbolic` is the model that
             accepts an unbounded exponent.
     """
+
     qi: float
     Di: float
     bi: float
@@ -1107,6 +1141,7 @@ class MH(MultisegmentHyperbolic):
         Dterm: float
             The terminal secant effective decline rate aka annual effective percent decline.
     """
+
     qi: float
     Di: float
     bi: float
@@ -1120,7 +1155,7 @@ class MH(MultisegmentHyperbolic):
         self._require_a_real_decline(self.Di, self.bi)
 
         if self.nominal_from_secant(self.Di, self.bi) < self.nominal_from_tangent(self.Dterm):
-            raise ValueError('Di < Dterm')
+            raise ValueError("Di < Dterm")
         super()._validate()
 
     def _segments(self) -> NDFloat:
@@ -1130,7 +1165,8 @@ class MH(MultisegmentHyperbolic):
         # `_validate` rejects Di < Dterm, so the terminal time is never clamped here
         return self._append_terminal_segment(
             np.array([self._initial_segment_row(self.qi, self.Di, self.bi)], dtype=np.float64),
-            self.Dterm)
+            self.Dterm,
+        )
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -1214,6 +1250,7 @@ class THM(MultisegmentHyperbolic):
             exponential terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic
             terminal regime.
     """
+
     qi: float
     Di: float
     bi: float
@@ -1234,11 +1271,11 @@ class THM(MultisegmentHyperbolic):
 
         # TODO: do we want to deal with optional params at all?
         if self.bi < self.bf:
-            raise ValueError('bi < bf')
+            raise ValueError("bi < bf")
         if self.bf < self.bterm and self.tterm != 0.0:
-            raise ValueError('bf < bterm and tterm != 0')
+            raise ValueError("bf < bterm and tterm != 0")
         if self.tterm != 0.0 and self.tterm * DAYS_PER_YEAR < self.telf:
-            raise ValueError('tterm < telf')
+            raise ValueError("tterm < telf")
         super()._validate()
 
     def _segments(self) -> NDFloat:
@@ -1269,7 +1306,7 @@ class THM(MultisegmentHyperbolic):
                     self._segment_row(t=t2, b=b2),
                     self._segment_row(t=t3, b=b3),
                 ],
-                dtype=np.float64
+                dtype=np.float64,
             )
 
         elif tterm != 0.0:
@@ -1283,7 +1320,7 @@ class THM(MultisegmentHyperbolic):
                     self._segment_row(t=t3, b=b3),
                     self._segment_row(t=t4, b=b4),
                 ],
-                dtype=np.float64
+                dtype=np.float64,
             )
 
         elif tterm == 0.0 and bterm != 0.0:
@@ -1318,7 +1355,7 @@ class THM(MultisegmentHyperbolic):
                         self._segment_row(t=t2, b=b2),
                         self._segment_row(t=t4, b=b4),
                     ],
-                    dtype=np.float64
+                    dtype=np.float64,
                 )
             else:
                 segments = np.array(
@@ -1328,7 +1365,7 @@ class THM(MultisegmentHyperbolic):
                         self._segment_row(t=t3, b=b3),
                         self._segment_row(t=t4, b=b4),
                     ],
-                    dtype=np.float64
+                    dtype=np.float64,
                 )
 
         # every segment after the first supplies None -- i.e. nan -- for its rate, decline
@@ -1455,11 +1492,11 @@ class THM(MultisegmentHyperbolic):
         return self._transbfn(t)
 
     def _transNfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
-        kwargs.setdefault('n', 10)
+        kwargs.setdefault("n", 10)
         return self._integrate_with(lambda t: self._transqfn(t, **kwargs), t, **kwargs)
 
     def _transqfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
-        kwargs.setdefault('n', 10)
+        kwargs.setdefault("n", 10)
         qi = self.qi
         Dnom_i = self._nominal_per_day_from_secant(self.Di, self.bi)
         D_dt = Dnom_i - self._integrate_with(self._transDfn, t, **kwargs)
@@ -1469,18 +1506,20 @@ class THM(MultisegmentHyperbolic):
         # `result[~where_eps] = qi * np.exp(D_dt)` -- which raised ValueError for any input
         # where the mask excluded even one element, and it reported an *overflowing* exponent
         # as a rate of zero rather than infinity.
-        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)  # type: ignore
-        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)  # type: ignore
+        np.putmask(D_dt, mask=D_dt > LOG_EPSILON, values=np.inf)
+        np.putmask(D_dt, mask=D_dt < -LOG_EPSILON, values=-np.inf)
 
-        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
             return qi * np.exp(D_dt)
 
     def _transDfn(self, t: NDFloat) -> NDFloat:
         try:
-            import mpmath as mp  # type: ignore
+            import mpmath as mp
         except ImportError:
-            print('`mpmath` not installed, please install it compute the transient THM functions',
-                  file=sys.stderr)
+            print(
+                "`mpmath` not installed, please install it compute the transient THM functions",
+                file=sys.stderr,
+            )
             return np.full_like(t, np.nan, dtype=np.float64)
 
         t = np.atleast_1d(t)
@@ -1513,9 +1552,7 @@ class THM(MultisegmentHyperbolic):
             c = self.EXP_GAMMA / (1.5 * telf)
             D_denom = np.full_like(t, np.nan, dtype=np.float64)
             D_denom[~where_term] = (
-                1.0 / Dnom_i
-                + bi * t[~where_term]
-                - ei(-np.exp(c * telf + self.EXP_GAMMA))
+                1.0 / Dnom_i + bi * t[~where_term] - ei(-np.exp(c * telf + self.EXP_GAMMA))
             )
             if abs(bi - bf) >= MIN_EPSILON:
                 for i, _t in enumerate(t):
@@ -1526,11 +1563,7 @@ class THM(MultisegmentHyperbolic):
             D = 1.0 / D_denom
 
             if tterm > 0.0:
-                D_denom = (
-                    1.0 / Dnom_i
-                    + bi * tterm
-                    - ei(-np.exp(c * telf + self.EXP_GAMMA))
-                )
+                D_denom = 1.0 / Dnom_i + bi * tterm - ei(-np.exp(c * telf + self.EXP_GAMMA))
                 if abs(bi - bf) >= MIN_EPSILON:
                     D_denom += (bi - bf) / c * mp.ei(-mp.exp(-c * (tterm - telf) + self.EXP_GAMMA))
 
@@ -1592,32 +1625,36 @@ class THM(MultisegmentHyperbolic):
                 # not the shared `_initial_rate_desc`: THM's generator draws from a narrower
                 # range, since its seven parameters interact and a 1e-10 rate makes for a
                 # degenerate transient fit
-                'qi', 'Initial rate [vol/day]',
-                0.0, None,
-                lambda r, n: r.uniform(1.0, 2e4, n)),
+                "qi",
+                "Initial rate [vol/day]",
+                0.0,
+                None,
+                lambda r, n: r.uniform(1.0, 2e4, n),
+            ),
             cls._declining_Di_desc(),
             ParamDesc(
                 # not the shared `_bounded_bi_desc`: same [0, 2] bound, but THM interpolates
                 # from bi down to bf, so its generator pins the transient-linear-flow limit
-                'bi', 'Initial hyperbolic exponent',
-                0.0, 2.0,
-                lambda r, n: np.full(n, 2.0)),
+                "bi",
+                "Initial hyperbolic exponent",
+                0.0,
+                2.0,
+                lambda r, n: np.full(n, 2.0),
+            ),
             ParamDesc(  # TODO
-                'bf', 'Final hyperbolic exponent',
-                0.0, 2.0,
-                lambda r, n: r.uniform(0.0, 1.0, n)),
+                "bf", "Final hyperbolic exponent", 0.0, 2.0, lambda r, n: r.uniform(0.0, 1.0, n)
+            ),
             ParamDesc(  # TODO
-                'telf', 'Time to end of linear flow [days]',
-                None, None,
-                lambda r, n: r.uniform(1e-10, 365.25, n)),
+                "telf",
+                "Time to end of linear flow [days]",
+                None,
+                None,
+                lambda r, n: r.uniform(1e-10, 365.25, n),
+            ),
             ParamDesc(
-                'bterm', 'Terminal hyperbolic exponent',
-                0.0, 2.0,
-                lambda r, n: np.full(n, 0.0)),
-            ParamDesc(
-                'tterm', 'Terminal time [years]',
-                0.0, None,
-                lambda r, n: np.full(n, 0.0))
+                "bterm", "Terminal hyperbolic exponent", 0.0, 2.0, lambda r, n: np.full(n, 0.0)
+            ),
+            ParamDesc("tterm", "Terminal time [years]", 0.0, None, lambda r, n: np.full(n, 0.0)),
         ]
 
 
@@ -1661,13 +1698,14 @@ class HyperbolicSegment:
             sign with the segment's ``D``, and must be zero where that ``D`` is zero --
             including where either is inherited from the preceding segment.
     """
+
     t: float
     q: Optional[float] = field(default=None, kw_only=True)
     D: Optional[float] = field(default=None, kw_only=True)
     b: Optional[float] = field(default=None, kw_only=True)
 
     @classmethod
-    def from_tuple(cls, spec: Sequence[Optional[float]]) -> 'HyperbolicSegment':
+    def from_tuple(cls, spec: Sequence[Optional[float]]) -> "HyperbolicSegment":
         """
         Build one segment from a loose tuple. Arity selects the meaning, following one rule:
         the shape parameter is always last, and short forms omit the level. ``(t, b)``
@@ -1690,11 +1728,11 @@ class HyperbolicSegment:
             segment: :class:`HyperbolicSegment`
         """
         if len(spec) not in (2, 3, 4):
-            raise ValueError('segment tuples must be (t, b), (t, D, b) or (t, q, D, b)')
+            raise ValueError("segment tuples must be (t, b), (t, D, b) or (t, q, D, b)")
 
         t = spec[0]
         if t is None:
-            raise ValueError('segment t must be given')
+            raise ValueError("segment t must be given")
 
         if len(spec) == 2:
             return cls(t, b=spec[1])
@@ -1779,6 +1817,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             ``Dterm`` cannot be applied and is ignored, with a ``RuntimeWarning`` saying so.
             Note that for a flat tail this means the forecast produces volume forever.
     """
+
     qi: float
     Di: float
     bi: float
@@ -1790,9 +1829,14 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 5)
 
     @classmethod
-    def from_segments(cls, qi: float, Di: float, bi: float,
-                      segments: Iterable[Sequence[Optional[float]]],
-                      Dterm: float = 0.0) -> 'GeneralizedHyperbolic':
+    def from_segments(
+        cls,
+        qi: float,
+        Di: float,
+        bi: float,
+        segments: Iterable[Sequence[Optional[float]]],
+        Dterm: float = 0.0,
+    ) -> "GeneralizedHyperbolic":
         """
         Construct from plain tuples instead of :class:`HyperbolicSegment` instances.
 
@@ -1821,9 +1865,9 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         -------
             model: :class:`GeneralizedHyperbolic`
         """
-        return cls(qi, Di, bi,
-                   tuple(HyperbolicSegment.from_tuple(spec) for spec in segments),
-                   Dterm)
+        return cls(
+            qi, Di, bi, tuple(HyperbolicSegment.from_tuple(spec) for spec in segments), Dterm
+        )
 
     def _validate(self) -> None:
         # Materialize before anything else. ``segments`` is annotated Sequence, but nothing
@@ -1833,10 +1877,10 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         # use for laziness.
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        object.__setattr__(self, 'segments', tuple(self.segments))
+        object.__setattr__(self, "segments", tuple(self.segments))
 
         if not all(isinstance(segment, HyperbolicSegment) for segment in self.segments):
-            raise ValueError('segments entries must be HyperbolicSegment')
+            raise ValueError("segments entries must be HyperbolicSegment")
 
         # Check the optional fields per field rather than via the segment array: that array
         # uses nan to mean "inherited", so an explicitly-NaN q, D or b would be silently
@@ -1849,25 +1893,33 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         # both of which a well can do after a restimulation. b is bounded only by finiteness.
         for segment in self.segments:
             if segment.q is not None and not (np.isfinite(segment.q) and segment.q > 0.0):
-                raise ValueError('segments q must be finite and > 0')
+                raise ValueError("segments q must be finite and > 0")
 
             if segment.D is not None and not (np.isfinite(segment.D) and segment.D < 1.0):
-                raise ValueError('segments D must be finite and < 1')
+                raise ValueError("segments D must be finite and < 1")
 
             if segment.b is not None and not np.isfinite(segment.b):
-                raise ValueError('segments b must be finite')
+                raise ValueError("segments b must be finite")
 
         # normalize every field to float, so the instance stays hashable and its fields
         # match their annotations at runtime even when given ints
-        object.__setattr__(self, 'segments', tuple(
-            HyperbolicSegment(float(segment.t),
-                              q=None if segment.q is None else float(segment.q),
-                              D=None if segment.D is None else float(segment.D),
-                              b=None if segment.b is None else float(segment.b))
-            for segment in self.segments))
+        object.__setattr__(
+            self,
+            "segments",
+            tuple(
+                HyperbolicSegment(
+                    float(segment.t),
+                    q=None if segment.q is None else float(segment.q),
+                    D=None if segment.D is None else float(segment.D),
+                    b=None if segment.b is None else float(segment.b),
+                )
+                for segment in self.segments
+            ),
+        )
 
         _validate_segment_times(
-            np.array([segment.t for segment in self.segments], dtype=np.float64))
+            np.array([segment.t for segment in self.segments], dtype=np.float64)
+        )
 
         self._validate_decline_signs()
 
@@ -1889,7 +1941,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         """
         for index, (D, b) in enumerate(self._resolved_declines()):
             # row 0 is the model's own Di/bi; every later row is a caller segment
-            location = 'initial conditions' if index == 0 else f'segments[{index - 1}]'
+            location = "initial conditions" if index == 0 else f"segments[{index - 1}]"
 
             # Zero-ness is tested on the *stored* nominal-per-day decline, not on the secant it
             # came from. Two things floor to zero: `nominal_from_secant` returns 0.0 for any
@@ -1898,15 +1950,16 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             # secant let Di = 1e-307 pair with bi = 1.5 and store the forbidden
             # (D == 0, b != 0) -- the exact pair `_fill_segment_chain` zeroes on every later row.
             if abs(self._nominal_per_day_from_secant(D, b)) < MIN_EPSILON and b != 0.0:
-                raise ValueError(f'{location} has D == 0, which requires b == 0')
+                raise ValueError(f"{location} has D == 0, which requires b == 0")
 
             # Sign tests, not a product: ``D * b`` underflows to -0.0 for a pair like
             # (-1e-200, 1e-200), and ``-0.0 < 0.0`` is False, so the product form accepted
             # exactly the mixed-sign state this exists to reject.
             if (D > 0.0 and b < 0.0) or (D < 0.0 and b > 0.0):
                 raise ValueError(
-                    f'{location} has D and b of opposing signs; a segment must either decline '
-                    f'(D > 0, b >= 0) or incline (D < 0, b <= 0)')
+                    f"{location} has D and b of opposing signs; a segment must either decline "
+                    f"(D > 0, b >= 0) or incline (D < 0, b <= 0)"
+                )
 
     def _resolved_exponents(self) -> List[float]:
         """
@@ -1969,13 +2022,22 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
 
         for index, segment in enumerate(self.segments, start=1):
             b = exponents[index]
-            rows.append(self._segment_row(
-                t=segment.t, b=b, q=segment.q,
-                D=(None if segment.D is None
-                   else self._nominal_per_day_from_secant(segment.D, b))))
+            rows.append(
+                self._segment_row(
+                    t=segment.t,
+                    b=b,
+                    q=segment.q,
+                    D=(
+                        None
+                        if segment.D is None
+                        else self._nominal_per_day_from_secant(segment.D, b)
+                    ),
+                )
+            )
 
         return self._append_terminal_segment(
-            self._fill_segment_chain(np.array(rows, dtype=np.float64)), self.Dterm)
+            self._fill_segment_chain(np.array(rows, dtype=np.float64)), self.Dterm
+        )
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
@@ -1987,16 +2049,22 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                 # the whole rate within the year and converts to an infinite nominal
                 # decline. `_validate_decline_signs` additionally requires bi to agree in
                 # sign with Di.
-                'Di', 'Initial decline [sec. eff. / yr], negative to incline',
-                None, 1.0,
+                "Di",
+                "Initial decline [sec. eff. / yr], negative to incline",
+                None,
+                1.0,
                 lambda r, n: r.uniform(0.0, 1.0, n),
-                exclude_upper_bound=True),
+                exclude_upper_bound=True,
+            ),
             ParamDesc(
                 # Unbounded: b is bounded only by finiteness. THM's [0, 2] belongs to its
                 # specific transient-to-boundary transition, not to Arps in general.
-                'bi', 'Hyperbolic exponent, negative to incline',
-                None, None,
-                lambda r, n: r.uniform(0.0, 2.0, n)),
+                "bi",
+                "Hyperbolic exponent, negative to incline",
+                None,
+                None,
+                lambda r, n: r.uniform(0.0, 2.0, n),
+            ),
             ParamDesc(
                 # No scalar bounds: this parameter is a sequence, so the generic bound
                 # loop in `DeclineCurve.__post_init__` must skip it. `_validate` checks
@@ -2007,13 +2075,19 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                 # not accepted by the constructor, whose isinstance check requires
                 # HyperbolicSegment. D and b share a sign per row, since a mixed-sign
                 # segment is rejected -- so the emitted rows are always constructible.
-                'segments', 'Segment start times, declines and exponents '
-                            '[(days, sec. eff. / yr, dimensionless), ...]',
-                None, None,
-                lambda r, n: np.column_stack([
-                    np.sort(r.uniform(1.0, 1e5, n)),
-                    r.uniform(0.0, 1.0, n),
-                    r.uniform(0.0, 2.0, n)])),
+                "segments",
+                "Segment start times, declines and exponents "
+                "[(days, sec. eff. / yr, dimensionless), ...]",
+                None,
+                None,
+                lambda r, n: np.column_stack(
+                    [
+                        np.sort(r.uniform(1.0, 1e5, n)),
+                        r.uniform(0.0, 1.0, n),
+                        r.uniform(0.0, 2.0, n),
+                    ]
+                ),
+            ),
             cls._terminal_decline_desc(),
         ]
 
@@ -2078,6 +2152,7 @@ class IncliningHyperbolic(MultisegmentHyperbolic):
             would drive the decline through zero rather than describing a build-up. It is
             otherwise unbounded.
     """
+
     qi: float
     Di: float
     bi: float
@@ -2098,7 +2173,7 @@ class IncliningHyperbolic(MultisegmentHyperbolic):
         # interchangeable with a segment-free GeneralizedHyperbolic: that one rejects the same
         # pair through its (D == 0 implies b == 0) rule.
         if self._nominal_per_day_from_secant(self.Di, self.bi) > -MIN_EPSILON:
-            raise ValueError('Di is too small in magnitude to incline')
+            raise ValueError("Di is too small in magnitude to incline")
 
         super()._validate()
 
@@ -2119,16 +2194,22 @@ class IncliningHyperbolic(MultisegmentHyperbolic):
                 # Strictly negative: an inclining model that does not incline is a declining
                 # one, and belongs to MH. No lower bound -- a decline of -900% per year is a
                 # tenfold rise, which a well can do.
-                'Di', 'Initial decline [sec. eff. / yr], negative',
-                None, 0.0,
+                "Di",
+                "Initial decline [sec. eff. / yr], negative",
+                None,
+                0.0,
                 lambda r, n: r.uniform(-1.0, -1e-10, n),
-                exclude_upper_bound=True),
+                exclude_upper_bound=True,
+            ),
             ParamDesc(
                 # Strictly negative and otherwise unbounded, matching Di's sign.
-                'bi', 'Hyperbolic exponent, negative',
-                None, 0.0,
+                "bi",
+                "Hyperbolic exponent, negative",
+                None,
+                0.0,
                 lambda r, n: r.uniform(-2.0, -1e-10, n),
-                exclude_upper_bound=True),
+                exclude_upper_bound=True,
+            ),
         ]
 
 
@@ -2163,6 +2244,7 @@ class PLE(PrimaryPhase):
         n: float
             The n exponent.
     """
+
     qi: float
     Di: float
     Dinf: float
@@ -2174,14 +2256,14 @@ class PLE(PrimaryPhase):
 
     def _validate(self) -> None:
         if self.Dinf > self.Di:
-            raise ValueError('Dinf > Di')
+            raise ValueError("Dinf > Di")
 
     def _qfn(self, t: NDFloat) -> NDFloat:
         qi = self.qi
         Di = self.Di
         Dinf = self.Dinf
         n = self.n
-        return qi * np.exp(-Di * t ** n - Dinf * t)
+        return qi * np.exp(-Di * t**n - Dinf * t)
 
     def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         return self._integrate_with(self._qfn, t, **kwargs)
@@ -2202,36 +2284,36 @@ class PLE(PrimaryPhase):
         Di = self.Di
         Dinf = self.Dinf
         n = self.n
-        return Dinf * t + Di * n * t ** n
+        return Dinf * t + Di * n * t**n
 
     def _bfn(self, t: NDFloat) -> NDFloat:
         Di = self.Di
         Dinf = self.Dinf
         n = self.n
-        Denom = (Dinf * t + Di * n * t ** n)
-        return Di * (1.0 - n) * n * t ** n / (Denom * Denom)
+        Denom = Dinf * t + Di * n * t**n
+        return Di * (1.0 - n) * n * t**n / (Denom * Denom)
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
             ParamDesc(
-                'qi', 'Initial rate [vol/day]',
-                0, None,
-                lambda r, n: r.uniform(1e-10, 1e6, n)),
+                "qi", "Initial rate [vol/day]", 0, None, lambda r, n: r.uniform(1e-10, 1e6, n)
+            ),
             ParamDesc(
-                'Di', 'Initial decline rate [/day]',
-                0.0, None,
-                lambda r, n: r.uniform(0.0, 1e3, n)),
+                "Di", "Initial decline rate [/day]", 0.0, None, lambda r, n: r.uniform(0.0, 1e3, n)
+            ),
             ParamDesc(
-                'Dinf', 'Terminal decline rate [/day]',
-                0, None,
-                lambda r, n: r.uniform(0.0, 1e3, n)),
+                "Dinf", "Terminal decline rate [/day]", 0, None, lambda r, n: r.uniform(0.0, 1e3, n)
+            ),
             ParamDesc(
-                'n', 'PLE exponent',
-                0.0, 1.0,
+                "n",
+                "PLE exponent",
+                0.0,
+                1.0,
                 lambda r, n: r.uniform(1e-6, 1.0, n),
                 exclude_lower_bound=True,
-                exclude_upper_bound=True),
+                exclude_upper_bound=True,
+            ),
         ]
 
 
@@ -2261,6 +2343,7 @@ class SE(PrimaryPhase):
         n: float
             The ``n`` exponent.
     """
+
     qi: float
     tau: float
     n: float
@@ -2273,7 +2356,7 @@ class SE(PrimaryPhase):
         qi = self.qi
         tau = self.tau
         n = self.n
-        return qi * np.exp(-(t / tau) ** n)
+        return qi * np.exp(-((t / tau) ** n))
 
     def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         qi = self.qi
@@ -2287,7 +2370,7 @@ class SE(PrimaryPhase):
             # (t/tau)**n is not real-valued for t < 0 at non-integer n, so the result is nan
             # there -- the same answer `_integrate_with` now gives for a negative time, and an
             # expected outcome of a valid call rather than something to warn about
-            with np.errstate(invalid='ignore'):
+            with np.errstate(invalid="ignore"):
                 return coef * gammainc(1.0 / n, (t / tau) ** n)
         # gamma(1/n) overflows for very small n (where the closed-form EUR diverges);
         # fall back to the bounded numerical integral.
@@ -2296,39 +2379,38 @@ class SE(PrimaryPhase):
     def _Dfn(self, t: NDFloat) -> NDFloat:
         tau = self.tau
         n = self.n
-        return n * tau ** -n * t ** (n - 1.0)
+        return n * tau**-n * t ** (n - 1.0)
 
     def _Dfn2(self, t: NDFloat) -> NDFloat:
         tau = self.tau
         n = self.n
-        return n * (n - 1.0) * tau ** -n * t ** (n - 2.0)
+        return n * (n - 1.0) * tau**-n * t ** (n - 2.0)
 
     def _betafn(self, t: NDFloat) -> NDFloat:
         tau = self.tau
         n = self.n
-        return n * tau ** -n * t ** n
+        return n * tau**-n * t**n
 
     def _bfn(self, t: NDFloat) -> NDFloat:
         tau = self.tau
         n = self.n
-        return (1.0 - n) / n * tau ** n * t ** -n
+        return (1.0 - n) / n * tau**n * t**-n
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
             ParamDesc(
-                'qi', 'Initial rate [vol/day]',
-                0.0, None,
-                lambda r, n: r.uniform(1e-10, 1e6, n)),
+                "qi", "Initial rate [vol/day]", 0.0, None, lambda r, n: r.uniform(1e-10, 1e6, n)
+            ),
+            ParamDesc("tau", "tau", 1e-10, 1e4, lambda r, n: r.uniform(1e-10, 1e4, n)),
             ParamDesc(
-                'tau', 'tau',
-                1e-10, 1e4,
-                lambda r, n: r.uniform(1e-10, 1e4, n)),
-            ParamDesc(
-                'n', 'SE exponent',
-                1e-10, 1.0,
+                "n",
+                "SE exponent",
+                1e-10,
+                1.0,
                 lambda r, n: r.uniform(1e-10, 1.0, n),
-                exclude_upper_bound=True),
+                exclude_upper_bound=True,
+            ),
         ]
 
 
@@ -2353,6 +2435,7 @@ class Duong(PrimaryPhase):
             The ``m`` parameter. Roughly speaking, controls curvature of the:func:``q(t)``
             function.
     """
+
     qi: float
     a: float
     m: float
@@ -2370,13 +2453,13 @@ class Duong(PrimaryPhase):
         """
         a = self.a
         m = self.m
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             return a / (1.0 - m) * np.expm1((1.0 - m) * np.log(np.where(t == 0.0, 1.0, t)))
 
     def _qfn(self, t: NDFloat) -> NDFloat:
         qi = self.qi
         exp_arg = self._duong_exp_arg(t)
-        return np.where(t == 0.0, 0.0, qi * t ** -self.m * np.exp(exp_arg))
+        return np.where(t == 0.0, 0.0, qi * t**-self.m * np.exp(exp_arg))
 
     def _Nfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         qi = self.qi
@@ -2387,7 +2470,7 @@ class Duong(PrimaryPhase):
         a = self.a
         m = self.m
         # alternative form: D = m * t ** -1.0 - a * t ** -m
-        return m / t - a * t ** -m
+        return m / t - a * t**-m
 
     def _Dfn2(self, t: NDFloat) -> NDFloat:
         a = self.a
@@ -2403,24 +2486,17 @@ class Duong(PrimaryPhase):
     def _bfn(self, t: NDFloat) -> NDFloat:
         a = self.a
         m = self.m
-        Denom = a * t - m * t ** m
-        return np.where(
-            Denom == 0.0, 0.0, m * t ** m * (t ** m - a * t) / (Denom * Denom))
+        Denom = a * t - m * t**m
+        return np.where(Denom == 0.0, 0.0, m * t**m * (t**m - a * t) / (Denom * Denom))
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
             ParamDesc(
-                'qi', 'Initial rate [vol/day]',
-                0.0, None,
-                lambda r, n: r.uniform(1.0, 2e4, n)),
+                "qi", "Initial rate [vol/day]", 0.0, None, lambda r, n: r.uniform(1.0, 2e4, n)
+            ),
+            ParamDesc("a", "a", 1.0, None, lambda r, n: r.uniform(1.0, 10.0, n)),
             ParamDesc(
-                'a', 'a',
-                1.0, None,
-                lambda r, n: r.uniform(1.0, 10.0, n)),
-            ParamDesc(
-                'm', 'm',
-                1.0, None,
-                lambda r, n: r.uniform(1.0, 10.0, n),
-                exclude_lower_bound=True)
+                "m", "m", 1.0, None, lambda r, n: r.uniform(1.0, 10.0, n), exclude_lower_bound=True
+            ),
         ]

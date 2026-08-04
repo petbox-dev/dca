@@ -20,15 +20,37 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from abc import abstractmethod
-from typing import (TypeVar, Type, List, Dict, Tuple, Any,
-                    Sequence, Iterable, Optional, Callable, ClassVar, Union)
+from typing import (
+    TypeVar,
+    Type,
+    List,
+    Dict,
+    Tuple,
+    Any,
+    Sequence,
+    Iterable,
+    Optional,
+    Callable,
+    ClassVar,
+    Union,
+)
 from numpy.typing import NDArray
 from typing import cast
 
-from .base import (DeclineCurve, PrimaryPhase,
-                   AssociatedPhase, SecondaryPhase, WaterPhase, BothAssociatedPhase,
-                   ParamDesc, DAYS_PER_MONTH, DAYS_PER_YEAR, LOG_EPSILON, MIN_EPSILON,
-                   _validate_segment_times)
+from .base import (
+    DeclineCurve,
+    PrimaryPhase,
+    AssociatedPhase,
+    SecondaryPhase,
+    WaterPhase,
+    BothAssociatedPhase,
+    ParamDesc,
+    DAYS_PER_MONTH,
+    DAYS_PER_YEAR,
+    LOG_EPSILON,
+    MIN_EPSILON,
+    _validate_segment_times,
+)
 
 NDFloat = NDArray[np.float64]
 
@@ -126,7 +148,7 @@ class MultisegmentPLYield(BothAssociatedPhase):
         raise NotImplementedError
 
     @abstractmethod
-    def shift(self, dt: float) -> 'MultisegmentPLYield':
+    def shift(self, dt: float) -> "MultisegmentPLYield":
         """
         Return a copy with every breakpoint moved later by ``dt`` days.
 
@@ -149,11 +171,11 @@ class MultisegmentPLYield(BothAssociatedPhase):
 
     def _validate(self) -> None:
         if self.min is not None and self.max is not None and self.max < self.min:
-            raise ValueError('max < min')
+            raise ValueError("max < min")
 
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        object.__setattr__(self, 'segment_params', self._segments())
+        object.__setattr__(self, "segment_params", self._segments())
 
     def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
         """
@@ -167,11 +189,12 @@ class MultisegmentPLYield(BothAssociatedPhase):
         only, covering ``t == -inf``.
         """
         params = self.segment_params
-        segment_index = np.maximum(
-            np.searchsorted(params[:, self.T_IDX], t, side='right') - 1, 0)
-        return (params[segment_index, self.TA_IDX],
-                params[segment_index, self.Y_IDX],
-                params[segment_index, self.M_IDX])
+        segment_index = np.maximum(np.searchsorted(params[:, self.T_IDX], t, side="right") - 1, 0)
+        return (
+            params[segment_index, self.TA_IDX],
+            params[segment_index, self.Y_IDX],
+            params[segment_index, self.M_IDX],
+        )
 
     def _yieldfn(self, t: NDFloat) -> NDFloat:
         """
@@ -193,15 +216,15 @@ class MultisegmentPLYield(BothAssociatedPhase):
         before_zero = t < 0.0
 
         t_ratio = t / t_anchor
-        np.putmask(t_ratio, mask=t_ratio <= 0, values=MIN_EPSILON)  # type: ignore
+        np.putmask(t_ratio, mask=t_ratio <= 0, values=MIN_EPSILON)
         log_factor = m * np.log(t_ratio)
-        np.putmask(log_factor, mask=log_factor > LOG_EPSILON, values=np.inf)  # type: ignore
-        np.putmask(log_factor, mask=log_factor < -LOG_EPSILON, values=-np.inf)  # type: ignore
+        np.putmask(log_factor, mask=log_factor > LOG_EPSILON, values=np.inf)
+        np.putmask(log_factor, mask=log_factor < -LOG_EPSILON, values=-np.inf)
 
         if self.min is not None or self.max is not None:
-            out = np.where(t == 0.0, 0.0,
-                           np.clip(y_anchor * np.exp(log_factor),  # type: ignore
-                                   self.min, self.max))
+            out = np.where(
+                t == 0.0, 0.0, np.clip(y_anchor * np.exp(log_factor), self.min, self.max)
+            )
         else:
             out = np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
         return np.where(before_zero, np.nan, out)
@@ -242,8 +265,7 @@ class MultisegmentPLYield(BothAssociatedPhase):
         sum, so that silent zero would under-count a forecast whose start date is wrong,
         which is exactly what the ``nan`` exists to surface.
         """
-        return np.where(t < 0.0, np.nan,
-                        self._integrate_with(self._qfn, t, **kwargs))
+        return np.where(t < 0.0, np.nan, self._integrate_with(self._qfn, t, **kwargs))
 
     def _Dfn(self, t: NDFloat) -> NDFloat:
         """
@@ -254,7 +276,7 @@ class MultisegmentPLYield(BothAssociatedPhase):
         for a power law. The warning is suppressed because the degenerate point is
         expected, matching how `MultisegmentHyperbolic` guards its own overflow.
         """
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             return -self._mfn(t) / t + self.primary._Dfn(t)
 
     def _Dfn2(self, t: NDFloat) -> NDFloat:
@@ -263,13 +285,13 @@ class MultisegmentPLYield(BothAssociatedPhase):
         contribution is deliberately excluded here: `_bfn` subtracts ``primary._Dfn2``
         itself, so including it here would double-count it.
         """
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             return -self._mfn(t) / (t * t)
 
     def _betafn(self, t: NDFloat) -> NDFloat:
         """``beta = t * D``, so the yield term contributes a constant ``-m`` per segment."""
         # inf * 0 at t == 0 is an expected nan, not a caller error
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             return self._Dfn(t) * t
 
     def _bfn(self, t: NDFloat) -> NDFloat:
@@ -281,9 +303,8 @@ class MultisegmentPLYield(BothAssociatedPhase):
         divide-by-zero rather than leaving it to surface as a spurious warning.
         """
         D = self._Dfn(t)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            return np.where(D == 0.0, 0.0,
-                            (self._Dfn2(t) - self.primary._Dfn2(t)) / (D * D))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(D == 0.0, 0.0, (self._Dfn2(t) - self.primary._Dfn2(t)) / (D * D))
 
 
 @dataclass(frozen=True)
@@ -327,6 +348,7 @@ class PLYield(MultisegmentPLYield):
         max: Optional[float] = None
             The maximum allowed value. Would be used e.g. to limit maximum GOR.
     """
+
     c: float
     m0: float
     m: float
@@ -338,7 +360,7 @@ class PLYield(MultisegmentPLYield):
     # the generated __hash__ hashes the field tuple
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 6)
 
-    def shift(self, dt: float) -> 'PLYield':
+    def shift(self, dt: float) -> "PLYield":
         """
         Return a copy with the pivot time moved later by ``dt`` days.
 
@@ -375,43 +397,62 @@ class PLYield(MultisegmentPLYield):
         reach by disabling validation. With ``[0.0, t0]`` and a negative ``t0`` the column
         was unsorted and the binary search returned an arbitrary segment.
         """
-        return np.array([
-            [-np.inf, self.t0, self.c, self.m0],
-            [self.t0, self.t0, self.c, self.m]
-        ], dtype=np.float64)
+        return np.array(
+            [[-np.inf, self.t0, self.c, self.m0], [self.t0, self.t0, self.c, self.m]],
+            dtype=np.float64,
+        )
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
             ParamDesc(
-                'c', 'Pivot point of early- and late-time functions [vol/vol]',
-                0.0, None,
+                "c",
+                "Pivot point of early- and late-time functions [vol/vol]",
+                0.0,
+                None,
                 lambda r, n: r.uniform(0.0, 1e6, n),
-                exclude_lower_bound=True),
+                exclude_lower_bound=True,
+            ),
             ParamDesc(
-                'm0', 'Early-time slope before pivot point',
-                -cls.SLOPE_BOUND, cls.SLOPE_BOUND,
-                lambda r, n: r.uniform(-MultisegmentPLYield.SLOPE_BOUND,
-                                       MultisegmentPLYield.SLOPE_BOUND, n)),
+                "m0",
+                "Early-time slope before pivot point",
+                -cls.SLOPE_BOUND,
+                cls.SLOPE_BOUND,
+                lambda r, n: r.uniform(
+                    -MultisegmentPLYield.SLOPE_BOUND, MultisegmentPLYield.SLOPE_BOUND, n
+                ),
+            ),
             ParamDesc(
                 # the late-time slope is a different quantity from `m0` and keeps its own,
                 # tighter bound: sustained GOR growth beyond t**1 is unphysical
-                'm', 'Late-time slope after pivot point',
-                -1.0, 1.0,
-                lambda r, n: r.uniform(-1.0, 1.0, n)),
+                "m",
+                "Late-time slope after pivot point",
+                -1.0,
+                1.0,
+                lambda r, n: r.uniform(-1.0, 1.0, n),
+            ),
             ParamDesc(
-                't0', 'Time of pivot point [days]',
-                0, None,
+                "t0",
+                "Time of pivot point [days]",
+                0,
+                None,
                 lambda r, n: r.uniform(0.0, 1e5, n),
-                exclude_lower_bound=True),
+                exclude_lower_bound=True,
+            ),
             ParamDesc(
-                'min', 'Minimum value of yield function [vol/vol]',
-                0, None,
-                lambda r, n: r.uniform(0.0, 1e3, n)),
+                "min",
+                "Minimum value of yield function [vol/vol]",
+                0,
+                None,
+                lambda r, n: r.uniform(0.0, 1e3, n),
+            ),
             ParamDesc(
-                'max', 'Maximum value of yield function [vol/vol]',
-                0, None,
-                lambda r, n: r.uniform(0.0, 1e5, n))
+                "max",
+                "Maximum value of yield function [vol/vol]",
+                0,
+                None,
+                lambda r, n: r.uniform(0.0, 1e5, n),
+            ),
         ]
 
 
@@ -445,12 +486,13 @@ class PLYieldSegment:
             The power-law slope from ``t`` onward. ``None`` continues the previous slope.
             Must be finite and within ``[-10, 10]`` when given.
     """
+
     t: float
     c: Optional[float] = field(default=None, kw_only=True)
     m: Optional[float] = field(default=None, kw_only=True)
 
     @classmethod
-    def from_tuple(cls, spec: Sequence[Optional[float]]) -> 'PLYieldSegment':
+    def from_tuple(cls, spec: Sequence[Optional[float]]) -> "PLYieldSegment":
         """
         Build one segment from a loose tuple. Arity selects the meaning: ``(t, m)`` inherits
         the yield value, ``(t, c, m)`` sets it. An explicit ``None`` inherits exactly as a
@@ -469,11 +511,11 @@ class PLYieldSegment:
             segment: :class:`PLYieldSegment`
         """
         if len(spec) not in (2, 3):
-            raise ValueError('segment tuples must be (t, m) or (t, c, m)')
+            raise ValueError("segment tuples must be (t, m) or (t, c, m)")
 
         t = spec[0]
         if t is None:
-            raise ValueError('segment t must be given')
+            raise ValueError("segment t must be given")
 
         if len(spec) == 2:
             return cls(t, m=spec[1])
@@ -529,6 +571,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
         max: Optional[float] = None
             The maximum allowed value. Would be used e.g. to limit maximum GOR.
     """
+
     c: float
     m0: float
     segments: Sequence[PLYieldSegment]
@@ -539,10 +582,14 @@ class GeneralizedPLYield(MultisegmentPLYield):
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 5)
 
     @classmethod
-    def from_segments(cls, c: float, m0: float,
-                      segments: Iterable[Sequence[Optional[float]]],
-                      min: Optional[float] = None,
-                      max: Optional[float] = None) -> 'GeneralizedPLYield':
+    def from_segments(
+        cls,
+        c: float,
+        m0: float,
+        segments: Iterable[Sequence[Optional[float]]],
+        min: Optional[float] = None,
+        max: Optional[float] = None,
+    ) -> "GeneralizedPLYield":
         """
         Construct from plain tuples instead of :class:`PLYieldSegment` instances.
 
@@ -571,11 +618,9 @@ class GeneralizedPLYield(MultisegmentPLYield):
         -------
             yield model: :class:`GeneralizedPLYield`
         """
-        return cls(c, m0,
-                   tuple(PLYieldSegment.from_tuple(spec) for spec in segments),
-                   min, max)
+        return cls(c, m0, tuple(PLYieldSegment.from_tuple(spec) for spec in segments), min, max)
 
-    def shift(self, dt: float) -> 'GeneralizedPLYield':
+    def shift(self, dt: float) -> "GeneralizedPLYield":
         """
         Return a copy with every breakpoint moved later by ``dt`` days. Value overrides,
         slopes, ``c`` and ``m0`` are unchanged. See :meth:`PLYield.shift` for when to use
@@ -590,8 +635,9 @@ class GeneralizedPLYield(MultisegmentPLYield):
         -------
             yield model: :class:`GeneralizedPLYield`
         """
-        shifted = dc.replace(self, segments=tuple(
-            dc.replace(segment, t=segment.t + dt) for segment in self.segments))
+        shifted = dc.replace(
+            self, segments=tuple(dc.replace(segment, t=segment.t + dt) for segment in self.segments)
+        )
         shifted._adopt_attachment(self)
         return shifted
 
@@ -604,7 +650,8 @@ class GeneralizedPLYield(MultisegmentPLYield):
         times = np.array([segment.t for segment in self.segments], dtype=np.float64)
         overrides = np.array(
             [np.nan if segment.c is None else segment.c for segment in self.segments],
-            dtype=np.float64)
+            dtype=np.float64,
+        )
 
         slopes = np.empty_like(times)
         slope = self.m0
@@ -623,30 +670,37 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # that guard prevents, but an accident rather than a design.
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        object.__setattr__(self, 'segments', tuple(self.segments))
+        object.__setattr__(self, "segments", tuple(self.segments))
 
         if len(self.segments) == 0:
-            raise ValueError('segments must contain at least one segment')
+            raise ValueError("segments must contain at least one segment")
 
         if not all(isinstance(segment, PLYieldSegment) for segment in self.segments):
-            raise ValueError('segments entries must be PLYieldSegment')
+            raise ValueError("segments entries must be PLYieldSegment")
 
         if self.segments[0].c is not None:
-            raise ValueError('segments[0] c conflicts with the model c at the same time')
+            raise ValueError("segments[0] c conflicts with the model c at the same time")
 
         # Check c per field rather than via the overrides array: that array uses nan to
         # mean "absent", so an explicitly-NaN c would be silently read as no override.
         for segment in self.segments:
             if segment.c is not None and not (np.isfinite(segment.c) and segment.c > 0.0):
-                raise ValueError('segments c must be finite and > 0')
+                raise ValueError("segments c must be finite and > 0")
 
         # normalize every field to float, so the instance stays hashable and its fields
         # match their annotations at runtime even when given ints
-        object.__setattr__(self, 'segments', tuple(
-            PLYieldSegment(float(segment.t),
-                           c=None if segment.c is None else float(segment.c),
-                           m=None if segment.m is None else float(segment.m))
-            for segment in self.segments))
+        object.__setattr__(
+            self,
+            "segments",
+            tuple(
+                PLYieldSegment(
+                    float(segment.t),
+                    c=None if segment.c is None else float(segment.c),
+                    m=None if segment.m is None else float(segment.m),
+                )
+                for segment in self.segments
+            ),
+        )
 
         breakpoint_times, slopes, _ = self._segment_arrays()
 
@@ -656,8 +710,8 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # bound)` would accept a NaN slope and silently produce an all-NaN yield function.
         if not np.all(np.abs(slopes) <= self.SLOPE_BOUND):
             raise ValueError(
-                f'segments m must be finite and within '
-                f'[{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]')
+                f"segments m must be finite and within [{-self.SLOPE_BOUND}, {self.SLOPE_BOUND}]"
+            )
 
         super()._validate()
 
@@ -687,13 +741,14 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # PLYield -- exp(log(c)) does not round-trip. A non-positive c needs validation
         # disabled, but a NaN c does NOT: `nan <= 0.0` is False, so it passes the `c`
         # ParamDesc bound check. See the library-wide NaN gap noted in the design spec.
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             log_anchor = float(np.log(self.c))
 
         for i in range(1, breakpoint_times.size):
             if np.isnan(overrides[i]):
                 log_anchor += float(
-                    slopes[i - 1] * np.log(breakpoint_times[i] / breakpoint_times[i - 1]))
+                    slopes[i - 1] * np.log(breakpoint_times[i] / breakpoint_times[i - 1])
+                )
                 if log_anchor > LOG_EPSILON:
                     log_anchor = np.inf
                 elif log_anchor < -LOG_EPSILON:
@@ -703,30 +758,38 @@ class GeneralizedPLYield(MultisegmentPLYield):
                 # An override steps the yield at this breakpoint and restarts the chain,
                 # which also stops error accumulating across a long segment list.
                 anchor_values[i] = overrides[i]
-                with np.errstate(divide='ignore', invalid='ignore'):
+                with np.errstate(divide="ignore", invalid="ignore"):
                     log_anchor = float(np.log(overrides[i]))
 
         # the pre-anchor segment starts at -inf so the t_start column is sorted for
         # `_lookup_segment` regardless of the first breakpoint time
-        return np.concatenate([
-            np.array([[-np.inf, breakpoint_times[0], self.c, self.m0]], dtype=np.float64),
-            np.column_stack([breakpoint_times, breakpoint_times, anchor_values, slopes])
-        ])
+        return np.concatenate(
+            [
+                np.array([[-np.inf, breakpoint_times[0], self.c, self.m0]], dtype=np.float64),
+                np.column_stack([breakpoint_times, breakpoint_times, anchor_values, slopes]),
+            ]
+        )
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
             ParamDesc(
-                'c', 'Pivot point of the early-time function and the first segment '
-                     '[vol/vol]',
-                0.0, None,
+                "c",
+                "Pivot point of the early-time function and the first segment [vol/vol]",
+                0.0,
+                None,
                 lambda r, n: r.uniform(0.0, 1e6, n),
-                exclude_lower_bound=True),
+                exclude_lower_bound=True,
+            ),
             ParamDesc(
-                'm0', 'Early-time slope before the first breakpoint',
-                -cls.SLOPE_BOUND, cls.SLOPE_BOUND,
-                lambda r, n: r.uniform(-MultisegmentPLYield.SLOPE_BOUND,
-                                       MultisegmentPLYield.SLOPE_BOUND, n)),
+                "m0",
+                "Early-time slope before the first breakpoint",
+                -cls.SLOPE_BOUND,
+                cls.SLOPE_BOUND,
+                lambda r, n: r.uniform(
+                    -MultisegmentPLYield.SLOPE_BOUND, MultisegmentPLYield.SLOPE_BOUND, n
+                ),
+            ),
             ParamDesc(
                 # No scalar bounds: this parameter is a sequence, so the generic bound
                 # loop in `DeclineCurve.__post_init__` must skip it. `_validate` checks
@@ -737,19 +800,31 @@ class GeneralizedPLYield(MultisegmentPLYield):
                 # value there. Feed the result through `from_segments`, which reads each
                 # 2-row as (t, m); the raw array is not accepted by the constructor,
                 # whose isinstance check requires PLYieldSegment.
-                'segments', 'Breakpoint times and post-breakpoint slopes '
-                            '[(days, dimensionless), ...]',
-                None, None,
-                lambda r, n: np.column_stack([
-                    np.sort(r.uniform(1.0, 1e5, n)),
-                    r.uniform(-MultisegmentPLYield.SLOPE_BOUND,
-                              MultisegmentPLYield.SLOPE_BOUND, n)])),
+                "segments",
+                "Breakpoint times and post-breakpoint slopes [(days, dimensionless), ...]",
+                None,
+                None,
+                lambda r, n: np.column_stack(
+                    [
+                        np.sort(r.uniform(1.0, 1e5, n)),
+                        r.uniform(
+                            -MultisegmentPLYield.SLOPE_BOUND, MultisegmentPLYield.SLOPE_BOUND, n
+                        ),
+                    ]
+                ),
+            ),
             ParamDesc(
-                'min', 'Minimum value of yield function [vol/vol]',
-                0, None,
-                lambda r, n: r.uniform(0.0, 1e3, n)),
+                "min",
+                "Minimum value of yield function [vol/vol]",
+                0,
+                None,
+                lambda r, n: r.uniform(0.0, 1e3, n),
+            ),
             ParamDesc(
-                'max', 'Maximum value of yield function [vol/vol]',
-                0, None,
-                lambda r, n: r.uniform(0.0, 1e5, n))
+                "max",
+                "Maximum value of yield function [vol/vol]",
+                0,
+                None,
+                lambda r, n: r.uniform(0.0, 1e5, n),
+            ),
         ]

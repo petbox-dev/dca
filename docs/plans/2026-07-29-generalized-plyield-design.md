@@ -113,10 +113,13 @@ A hardcoded literal, no chain:
 
 ```python
 def _segments(self) -> NDFloat:
-    return np.array([
-        [-np.inf, self.t0, self.c, self.m0],
-        [self.t0, self.t0, self.c, self.m],
-    ], dtype=np.float64)
+    return np.array(
+        [
+            [-np.inf, self.t0, self.c, self.m0],
+            [self.t0, self.t0, self.c, self.m],
+        ],
+        dtype=np.float64,
+    )
 ```
 
 ## Evaluation: searchsorted gather, not a loop
@@ -134,7 +137,7 @@ closer to the current implementation's `np.where(t < t0, m0, m)`.
 ```python
 def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
     p = self.segment_params
-    i = np.searchsorted(p[:, self.T_IDX], t, side='right') - 1
+    i = np.searchsorted(p[:, self.T_IDX], t, side="right") - 1
     i = np.maximum(i, 0)
     return p[i, self.TA_IDX], p[i, self.Y_IDX], p[i, self.M_IDX]
 ```
@@ -166,12 +169,11 @@ class MultisegmentPLYield(BothAssociatedPhase):
 
     def _validate(self) -> None:
         if self.min is not None and self.max is not None and self.max < self.min:
-            raise ValueError('max < min')
+            raise ValueError("max < min")
         # bypass the "frozen" protection, as MultisegmentHyperbolic._validate does
-        object.__setattr__(self, 'segment_params', self._segments())
+        object.__setattr__(self, "segment_params", self._segments())
 
-    def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
-        ...  # as above
+    def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]: ...  # as above
 
     def _yieldfn(self, t: NDFloat) -> NDFloat:
         ta, y, m = self._lookup_segment(t)
@@ -187,7 +189,7 @@ class MultisegmentPLYield(BothAssociatedPhase):
 
     def _mfn(self, t: NDFloat) -> NDFloat:
         """Per-t segment slope, zeroed where the yield is clamped by min/max."""
-        m = self._lookup_segment(t)[2]      # fancy-indexed -> fresh array, safe to mutate
+        m = self._lookup_segment(t)[2]  # fancy-indexed -> fresh array, safe to mutate
         y = self._yieldfn(t)
         if self.min is not None:
             m[y <= self.min] = 0.0
@@ -273,22 +275,22 @@ class GeneralizedPLYield(MultisegmentPLYield):
 Usage:
 
 ```python
-mh.add_secondary(dca.GeneralizedPLYield(
-    c=1200.0, m0=0.0, segments=((180.0, 0.6), (1095.0, -0.2)), max=20_000.0))
+mh.add_secondary(
+    dca.GeneralizedPLYield(c=1200.0, m0=0.0, segments=((180.0, 0.6), (1095.0, -0.2)), max=20_000.0)
+)
 ```
 
 Equivalence with the 2-segment model:
 
 ```python
-dca.PLYield(c, m0, m, t0)  ==  dca.GeneralizedPLYield(c, m0, ((t0, m),))
+dca.PLYield(c, m0, m, t0) == dca.GeneralizedPLYield(c, m0, ((t0, m),))
 ```
 
 ### GeneralizedPLYield validation
 
 ```python
 def _validate(self) -> None:
-    object.__setattr__(self, 'segments',
-                       tuple((float(t), float(m)) for t, m in self.segments))
+    object.__setattr__(self, "segments", tuple((float(t), float(m)) for t, m in self.segments))
     ...  # checks below
     super()._validate()
 ```
@@ -325,12 +327,15 @@ mid-life behaviour. The rejected alternative was `[-10, 10]` on interior segment
 length-consistent.
 
 ```python
-ParamDesc(
-    'segments',
-    'Breakpoint times and post-breakpoint slopes [(days, dimensionless), ...]',
-    None, None,
-    lambda r, n: np.column_stack([np.sort(r.uniform(1.0, 1e5, n)),
-                                  r.uniform(-10.0, 10.0, n)])),
+(
+    ParamDesc(
+        "segments",
+        "Breakpoint times and post-breakpoint slopes [(days, dimensionless), ...]",
+        None,
+        None,
+        lambda r, n: np.column_stack([np.sort(r.uniform(1.0, 1e5, n)), r.uniform(-10.0, 10.0, n)]),
+    ),
+)
 ```
 
 `lower_bound=None, upper_bound=None` means the generic bound loop in `__post_init__`

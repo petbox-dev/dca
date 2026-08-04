@@ -12,19 +12,21 @@ Notes
 -----
 Created on August 5, 2019
 """
+
 import inspect
 import re
 import sys
 import warnings
 from datetime import timedelta
 from pathlib import Path
-import pytest # type: ignore
+import pytest
 import hypothesis
 from hypothesis import assume, given, settings, note, strategies as st
 from typing import Any, Optional, Tuple, Type, TypeVar, Union
 
 from math import isnan
 import numpy as np
+import numpy.typing as npt
 
 from petbox import dca
 
@@ -32,14 +34,14 @@ from petbox import dca
 from .data import rate as q_data, time as t_data  # noqa
 
 
-def signif(x: np.ndarray, p: int) -> np.ndarray:
+def signif(x: npt.NDArray[np.float64], p: int) -> npt.NDArray[np.float64]:
     x = np.asarray(x)
-    x_positive = np.where(np.isfinite(x) & (x != 0), np.abs(x), 10**(p - 1))
+    x_positive = np.where(np.isfinite(x) & (x != 0), np.abs(x), 10 ** (p - 1))
     mags = 10 ** (p - 1 - np.floor(np.log10(x_positive)))
     return np.round(x * mags) / mags
 
 
-def is_float_array_like(arr: Any, like: np.ndarray) -> bool:
+def is_float_array_like(arr: Any, like: npt.NDArray[np.float64]) -> bool:
     return (
         isinstance(arr, np.ndarray)
         and arr.dtype == np.dtype(np.float64)
@@ -47,29 +49,35 @@ def is_float_array_like(arr: Any, like: np.ndarray) -> bool:
     )
 
 
-def is_monotonic_nonincreasing(arr: np.ndarray) -> bool:
+def is_monotonic_nonincreasing(arr: npt.NDArray[np.float64]) -> bool:
     # a = np.diff(signif(arr, 6))
     a = np.diff(arr, 6)
-    return np.all(a <= 0.0)
+    return bool(np.all(a <= 0.0))
 
 
-def is_monotonic_increasing(arr: np.ndarray) -> bool:
+def is_monotonic_increasing(arr: npt.NDArray[np.float64]) -> bool:
     # a = np.diff(signif(arr, 6))
     a = np.diff(arr, 6)
-    return np.all(a > 0.0)
+    return bool(np.all(a > 0.0))
 
 
-def is_monotonic_nondecreasing(arr: np.ndarray) -> bool:
+def is_monotonic_nondecreasing(arr: npt.NDArray[np.float64]) -> bool:
     # a = np.diff(signif(arr, 6))
     a = np.diff(arr, 6)
-    return np.all(a >= 0.0)
+    return bool(np.all(a >= 0.0))
 
 
-T = TypeVar('T', bound=dca.DeclineCurve)
+T = TypeVar("T", bound=dca.DeclineCurve)
+
+
 def model_floats(model_cls: Type[T], param: str) -> st.SearchStrategy[float]:
     p = model_cls.get_param_desc(param)
-    return st.floats(p.lower_bound, p.upper_bound,  # type: ignore
-                     exclude_min=p.exclude_lower_bound, exclude_max=p.exclude_upper_bound)
+    return st.floats(
+        p.lower_bound,
+        p.upper_bound,
+        exclude_min=p.exclude_lower_bound,
+        exclude_max=p.exclude_upper_bound,
+    )
 
 
 def check_model(model: dca.DeclineCurve, qi: float) -> bool:
@@ -93,8 +101,8 @@ def check_model(model: dca.DeclineCurve, qi: float) -> bool:
         cum = model.cum(t)
         assert is_float_array_like(cum, t)
         # if not isinstance(model, dca.PLE):
-            # exclude PLE as it is numerically integrated
-            # assert is_monotonic_nondecreasing(cum)
+        # exclude PLE as it is numerically integrated
+        # assert is_monotonic_nondecreasing(cum)
         assert np.all(np.isfinite(cum))
 
         mvolume = model.monthly_vol(t)
@@ -142,15 +150,16 @@ def check_model(model: dca.DeclineCurve, qi: float) -> bool:
     return True
 
 
-def check_yield_model(model: Union[dca.SecondaryPhase, dca.WaterPhase],
-                      phase: str, qi: float) -> bool:
+def check_yield_model(
+    model: Union[dca.SecondaryPhase, dca.WaterPhase], phase: str, qi: float
+) -> bool:
     t = dca.get_time()
 
     with warnings.catch_warnings(record=True) as w:
         t0 = 0.0
         assert np.isclose(model.cum(np.array(0.0)), 0.0, atol=1e-10)
 
-        if phase == 'secondary' and isinstance(model, dca.SecondaryPhase):
+        if phase == "secondary" and isinstance(model, dca.SecondaryPhase):
             gor = model.gor(t)
             assert is_float_array_like(gor, t)
             assert np.all(np.isfinite(gor))
@@ -160,21 +169,21 @@ def check_yield_model(model: Union[dca.SecondaryPhase, dca.WaterPhase],
             assert np.all(np.isfinite(cgr))
 
             with pytest.raises(ValueError) as e:
-                wor = model.wor(t)  # type: ignore
+                wor = model.wor(t)  # type: ignore[attr-defined]
                 assert is_float_array_like(wor, t)
                 assert np.all(np.isfinite(wor))
 
-                wgr = model.wgr(t)  # type: ignore
+                wgr = model.wgr(t)  # type: ignore[attr-defined]
                 assert is_float_array_like(wgr, t)
                 assert np.all(np.isfinite(wgr))
 
-        elif phase == 'water' and isinstance(model, dca.WaterPhase):
+        elif phase == "water" and isinstance(model, dca.WaterPhase):
             with pytest.raises(ValueError) as e:
-                gor = model.gor(t)  # type: ignore
+                gor = model.gor(t)  # type: ignore[attr-defined]
                 assert is_float_array_like(gor, t)
                 assert np.all(np.isfinite(gor))
 
-                cgr = model.cgr(t)  # type: ignore
+                cgr = model.cgr(t)  # type: ignore[attr-defined]
                 assert is_float_array_like(cgr, t)
                 assert np.all(np.isfinite(cgr))
 
@@ -194,8 +203,8 @@ def check_yield_model(model: Union[dca.SecondaryPhase, dca.WaterPhase],
         cum = model.cum(t)
         assert is_float_array_like(cum, t)
         # if not isinstance(model, dca.PLE):
-            # exclude PLE as it is numerically integrated
-            # assert is_monotonic_nondecreasing(cum)
+        # exclude PLE as it is numerically integrated
+        # assert is_monotonic_nondecreasing(cum)
         assert np.all(np.isfinite(cum))
 
         mvolume = model.monthly_vol(t)
@@ -320,16 +329,16 @@ def test_nulls() -> None:
 
 def test_associated() -> None:
     with pytest.raises(TypeError) as e:
-        sec = dca.AssociatedPhase()  # type: ignore
+        sec = dca.AssociatedPhase()  # type: ignore[abstract]
 
     with pytest.raises(TypeError) as e:
-        sec = dca.SecondaryPhase()  # type: ignore
+        sec = dca.SecondaryPhase()  # type: ignore[abstract]
 
     with pytest.raises(TypeError) as e:
-        wtr = dca.WaterPhase()  # type: ignore
+        wtr = dca.WaterPhase()  # type: ignore[abstract]
 
     with pytest.raises(TypeError) as e:
-        bth = dca.BothAssociatedPhase()  # type: ignore
+        bth = dca.BothAssociatedPhase()  # type: ignore[abstract]
 
 
 # TODO: use bounds, after we use testing to set them
@@ -337,7 +346,7 @@ def test_associated() -> None:
     qi=st.floats(0.0, 1e6),
     Di=st.floats(1e-10, 1e10),
     Dinf=st.floats(1e-10, 1e10),
-    n=st.floats(1e-10, 1.0, exclude_max=True)
+    n=st.floats(1e-10, 1.0, exclude_max=True),
 )
 def test_PLE(qi: float, Di: float, Dinf: float, n: float) -> None:
     assume(Dinf <= Di)
@@ -346,22 +355,14 @@ def test_PLE(qi: float, Di: float, Dinf: float, n: float) -> None:
     check_model(ple, qi)
 
 
-@given(
-    qi=st.floats(0.0, 1e6),
-    tau=st.floats(1e-10, 1e4),
-    n=st.floats(1e-10, 1.0, exclude_max=True)
-)
+@given(qi=st.floats(0.0, 1e6), tau=st.floats(1e-10, 1e4), n=st.floats(1e-10, 1.0, exclude_max=True))
 def test_SE(qi: float, tau: float, n: float) -> None:
     se = dca.SE.from_params((qi, tau, n))
     se = dca.SE(qi, tau, n)
     check_model(se, qi)
 
 
-@given(
-    qi=st.floats(0.0, 1e6),
-    a=st.floats(1.0, 10.0),
-    m=st.floats(1.0, 10.0, exclude_min=True)
-)
+@given(qi=st.floats(0.0, 1e6), a=st.floats(1.0, 10.0), m=st.floats(1.0, 10.0, exclude_min=True))
 def test_Duong(qi: float, a: float, m: float) -> None:
     duong = dca.Duong.from_params((qi, a, m))
     duong = dca.Duong(qi, a, m)
@@ -375,12 +376,12 @@ def test_Duong(qi: float, a: float, m: float) -> None:
     # ~8.13e-306, where the conversion's /DAYS_PER_YEAR leaves exactly MIN_EPSILON.
     Di=st.floats(1e-300, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
-    telf=st.floats(0.0, 1e6)
+    telf=st.floats(0.0, 1e6),
 )
 # deadline=None to match every other THM test: the default 200ms deadline is tripped by
 # coverage instrumentation on the first call, and hypothesis then reports Flaky, so a plain
 # `pytest` (which enables coverage via addopts) failed intermittently.
-@settings(deadline=None)  # type: ignore
+@settings(deadline=None)
 def test_THM(qi: float, Di: float, bf: float, telf: float) -> None:
     thm = dca.THM.from_params((qi, Di, 2.0, bf, telf, 0.0, 0.0))
     thm = dca.THM(qi, Di, 2.0, bf, telf, 0.0, 0.0)
@@ -403,8 +404,9 @@ def test_THM(qi: float, Di: float, bf: float, telf: float) -> None:
     bterm=st.floats(0.0, 1.0),
     tterm=st.floats(1e-3, 30.0),
 )
-def test_THM_terminal(qi: float, Di: float, bf: float, telf: float,
-                      bterm: float, tterm: float) -> None:
+def test_THM_terminal(
+    qi: float, Di: float, bf: float, telf: float, bterm: float, tterm: float
+) -> None:
     assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
@@ -419,8 +421,9 @@ def test_THM_terminal(qi: float, Di: float, bf: float, telf: float,
     bterm=st.floats(0.0, 1.0),
     tterm=st.floats(5.0, 30.0),
 )
-def test_THM_rejects_a_zero_Di(qi: float, bf: float, telf: float, bterm: float,
-                               tterm: float) -> None:
+def test_THM_rejects_a_zero_Di(
+    qi: float, bf: float, telf: float, bterm: float, tterm: float
+) -> None:
     """A Di of 0 is a flat forecast, q(t) = qi for all t, which is not a hyperbolic model --
     every use of b is multiplied by D, so the exponent has nothing to act on. MH and THM now
     reject it; GeneralizedHyperbolic accepts it, since flat segments are part of what that
@@ -430,22 +433,22 @@ def test_THM_rejects_a_zero_Di(qi: float, bf: float, telf: float, bterm: float,
 
     with pytest.raises(ValueError) as e:
         dca.THM(qi, 0.0, 2.0, bf, telf, bterm, tterm)
-    assert 'Di <= 0.0' in str(e.value)
+    assert "Di <= 0.0" in str(e.value)
 
     with pytest.raises(ValueError) as e:
         dca.MH(qi, 0.0, 2.0)
-    assert 'Di <= 0.0' in str(e.value)
+    assert "Di <= 0.0" in str(e.value)
 
     # A denormal Di reaches the same flat forecast by another route -- nominal_from_secant
     # floors any magnitude below MIN_EPSILON to zero -- so it is rejected too, with the
     # conversion named rather than the bound.
-    with pytest.raises(ValueError, match='converts to a zero nominal decline'):
+    with pytest.raises(ValueError, match="converts to a zero nominal decline"):
         dca.MH(1000.0, 5e-324, 2.0)
 
     # The boundary is where the STORED decline reaches MIN_EPSILON, which is ~8.13e-306 for
     # this bi -- the conversion divides by DAYS_PER_YEAR, so the secant threshold sits about
     # 2.5 decades higher than MIN_EPSILON itself.
-    with pytest.raises(ValueError, match='converts to a zero nominal decline'):
+    with pytest.raises(ValueError, match="converts to a zero nominal decline"):
         dca.MH(1000.0, dca.base.MIN_EPSILON, 2.0)
 
     accepted = dca.MH(1000.0, 1e-300, 2.0)
@@ -503,9 +506,9 @@ def test_THM_transient_extra() -> None:
     Di=st.floats(1e-300, 1.0, exclude_max=True),
     bf=st.floats(0.0, 2.0),
     telf=st.floats(0.0, 1e6),
-    bterm=st.floats(1e-3, 0.3)
+    bterm=st.floats(1e-3, 0.3),
 )
-@settings(suppress_health_check=[hypothesis.HealthCheck.filter_too_much])  # type: ignore
+@settings(suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
 def test_THM_terminal_exp(qi: float, Di: float, bf: float, telf: float, bterm: float) -> None:
     assume(dca.THM.nominal_from_secant(Di, 2.0) >= dca.THM.nominal_from_tangent(bterm))
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, 0.0)
@@ -513,7 +516,7 @@ def test_THM_terminal_exp(qi: float, Di: float, bf: float, telf: float, bterm: f
     check_transient_model(thm)
 
 
-@pytest.mark.filterwarnings('ignore:Dterm ignored')  # bi = 0 with Dterm > 0 is in range here
+@pytest.mark.filterwarnings("ignore:Dterm ignored")  # bi = 0 with Dterm > 0 is in range here
 @given(
     qi=st.floats(0.0, 1e6),
     # 1e-300, not 0: MH and THM reject any Di whose *stored* nominal decline lands below
@@ -531,7 +534,7 @@ def test_MH(qi: float, Di: float, bi: float, Dterm: float) -> None:
     # a Di of 0 is a flat forecast, not a hyperbolic one -- see test_THM_zero_Di
     with pytest.raises(ValueError) as e:
         dca.MH(qi, 0.0, bi, 0.0)
-    assert 'Di <= 0.0' in str(e.value)
+    assert "Di <= 0.0" in str(e.value)
 
 
 @given(
@@ -573,6 +576,7 @@ def test_decline_conv(D: float, b: float) -> None:
     Dnom = dca.MultisegmentHyperbolic.nominal_from_secant(D, b)
     _D = dca.MultisegmentHyperbolic.secant_from_nominal(Dnom, b)
 
+
 def test_bound_errors() -> None:
     with pytest.raises(ValueError) as e:
         # < lower bound
@@ -593,7 +597,7 @@ def test_bound_errors() -> None:
     with pytest.raises(KeyError) as e:
         # invalid parameter
         thm = dca.THM(1000, 0.5, 2.0, 0.5, 30.0)
-        thm.get_param_desc('n')
+        thm.get_param_desc("n")
 
     with pytest.raises(ValueError) as e:
         # invalid parameter sequence length
@@ -633,21 +637,30 @@ def test_terminal_exceeds() -> None:
 # The two assume() calls below reject most draws, so hypothesis trips
 # filter_too_much on roughly 2 of 3 runs; suppress it as test_THM_terminal_exp
 # already does. deadline=None for the same reason as test_THM.
-@settings(deadline=None,
-          suppress_health_check=[hypothesis.HealthCheck.filter_too_much])  # type: ignore
-def test_yield(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm: float,
-               c: float, m0: float, m: float, t0: float) -> None:
+@settings(deadline=None, suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
+def test_yield(
+    qi: float,
+    Di: float,
+    bf: float,
+    telf: float,
+    bterm: float,
+    tterm: float,
+    c: float,
+    m0: float,
+    m: float,
+    t0: float,
+) -> None:
     assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     sec = dca.PLYield(c, m0, m, t0)
     thm.add_secondary(sec)
-    check_yield_model(thm.secondary, 'secondary', qi)
+    check_yield_model(thm.secondary, "secondary", qi)
 
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     wtr = dca.PLYield(c, m0, m, t0)
     thm.add_water(wtr)
-    check_yield_model(thm.water, 'water', qi)
+    check_yield_model(thm.water, "water", qi)
 
 
 @given(
@@ -662,21 +675,33 @@ def test_yield(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm
     m=st.floats(-1.0, 1.0),
     t0=st.floats(1e-10, 365.25),
     _min=st.floats(0, 100.0),
-    _max=st.floats(1e4, 5e5)
+    _max=st.floats(1e4, 5e5),
 )
-@settings(deadline=None)  # type: ignore
-def test_yield_min_max(qi: float, Di: float, bf: float, telf: float, bterm: float, tterm: float,
-                       c: float, m0: float, m: float, t0: float, _min: float, _max: float) -> None:
+@settings(deadline=None)
+def test_yield_min_max(
+    qi: float,
+    Di: float,
+    bf: float,
+    telf: float,
+    bterm: float,
+    tterm: float,
+    c: float,
+    m0: float,
+    m: float,
+    t0: float,
+    _min: float,
+    _max: float,
+) -> None:
     assume(tterm * dca.DAYS_PER_YEAR > telf)
     assume(bterm < bf)
     thm = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     sec = dca.PLYield(c, m0, m, t0, _min, _max)
     thm.add_secondary(sec)
-    check_yield_model(thm.secondary, 'secondary', qi)
+    check_yield_model(thm.secondary, "secondary", qi)
 
     wtr = dca.PLYield(c, m0, m, t0, _min, _max)
     thm.add_water(wtr)
-    check_yield_model(thm.water, 'water', qi)
+    check_yield_model(thm.water, "water", qi)
 
 
 def test_yield_min_max_invalid() -> None:
@@ -704,7 +729,7 @@ def test_yield_errors() -> None:
     with pytest.raises(KeyError) as e:
         # invalid parameter
         thm = dca.THM(1000, 0.5, 2.0, 0.5, 30.0)
-        thm.get_param_desc('n')
+        thm.get_param_desc("n")
 
     with pytest.raises(ValueError) as e:
         # invalid parameter sequence length
@@ -719,42 +744,39 @@ def test_examples_literalinclude_markers_resolve() -> None:
     A broken marker is only a Sphinx *warning*, and the build still succeeds, so the affected
     block would silently lose its code. CI does not build the docs at all. This asserts every
     marker the documentation references actually exists, exactly once, in the right order."""
-    docs = Path(__file__).parent.parent / 'docs' / 'examples.rst'
-    script = Path(__file__).parent / 'doc_examples.py'
-    rst, source = docs.read_text(encoding='utf-8'), script.read_text(encoding='utf-8')
+    docs = Path(__file__).parent.parent / "docs" / "examples.rst"
+    script = Path(__file__).parent / "doc_examples.py"
+    rst, source = docs.read_text(encoding="utf-8"), script.read_text(encoding="utf-8")
 
-    starts = re.findall(r':start-after: (.+)', rst)
-    ends = re.findall(r':end-before: (.+)', rst)
-    includes = re.findall(r'\.\. literalinclude:: (.+)', rst)
+    starts = re.findall(r":start-after: (.+)", rst)
+    ends = re.findall(r":end-before: (.+)", rst)
+    includes = re.findall(r"\.\. literalinclude:: (.+)", rst)
 
     assert len(includes) == len(starts) == len(ends) > 0
     # every include must point at the script this test checks
-    assert set(includes) == {'../test/doc_examples.py'}
+    assert set(includes) == {"../test/doc_examples.py"}
 
     for start, end in zip(starts, ends):
-        assert source.count(start) == 1, f'{start!r} appears {source.count(start)} times'
-        assert source.count(end) == 1, f'{end!r} appears {source.count(end)} times'
-        assert source.index(start) < source.index(end), f'{start!r} follows {end!r}'
+        assert source.count(start) == 1, f"{start!r} appears {source.count(start)} times"
+        assert source.count(end) == 1, f"{end!r} appears {source.count(end)} times"
+        assert source.index(start) < source.index(end), f"{start!r} follows {end!r}"
         # a pair must name the same region, so a mismatched begin/end cannot slip through on
         # the ordering assertion alone
-        assert start.replace('begin', '') == end.replace('end', ''), (
-            f'{start!r} is paired with {end!r}')
+        assert start.replace("begin", "") == end.replace("end", ""), (
+            f"{start!r} is paired with {end!r}"
+        )
 
     # the marked regions must be disjoint and in the same order as the document
     spans = [(source.index(s), source.index(e)) for s, e in zip(starts, ends)]
     for (_, previous_end), (next_start, _) in zip(spans, spans[1:]):
-        assert previous_end < next_start, 'marked regions overlap or are out of order'
+        assert previous_end < next_start, "marked regions overlap or are out of order"
 
     # and every marker in the script must be referenced, so none is left orphaned
-    for marker in re.findall(r'^# \[(?:begin|end) example-\d+\]$', source, re.M):
-        assert marker in rst, f'{marker!r} is not referenced by examples.rst'
+    for marker in re.findall(r"^# \[(?:begin|end) example-\d+\]$", source, re.M):
+        assert marker in rst, f"{marker!r} is not referenced by examples.rst"
 
 
-@given(
-    L=st.floats(0.0, 2.0),
-    xlog=st.booleans(),
-    ylog=st.booleans()
-)
+@given(L=st.floats(0.0, 2.0), xlog=st.booleans(), ylog=st.booleans())
 def test_bourdet(L: float, xlog: bool, ylog: bool) -> None:
     with warnings.catch_warnings(record=True) as w:
         der = dca.bourdet(q_data, t_data, L, xlog, ylog)
@@ -763,8 +785,8 @@ def test_bourdet(L: float, xlog: bool, ylog: bool) -> None:
 def test_plyield_param_desc_names() -> None:
     """The sixth PLYield descriptor described `max` but was named `min`."""
     names = [d.name for d in dca.PLYield.get_param_descs()]
-    assert names == ['c', 'm0', 'm', 't0', 'min', 'max']
-    assert dca.PLYield.get_param_desc('max').name == 'max'
+    assert names == ["c", "m0", "m", "t0", "min", "max"]
+    assert dca.PLYield.get_param_desc("max").name == "max"
 
 
 def test_plyield_validates_all_params() -> None:
@@ -831,8 +853,9 @@ def test_plyield_closed_form() -> None:
     assert np.allclose(y.D(t), expected_D, rtol=1e-13)
     assert np.allclose(y.beta(t), expected_D * t, rtol=1e-13)
 
-    expected_b = np.where(expected_D == 0.0, 0.0,
-                          (-m_t / (t * t) - mh._Dfn2(t)) / (expected_D * expected_D))
+    expected_b = np.where(
+        expected_D == 0.0, 0.0, (-m_t / (t * t) - mh._Dfn2(t)) / (expected_D * expected_D)
+    )
     assert np.allclose(y.b(t), expected_b, rtol=1e-13)
 
 
@@ -852,8 +875,7 @@ def test_plyield_closed_form_clamped() -> None:
     # both bounds must actually be exercised, or the test proves nothing
     assert np.any(expected_y <= lo) and np.any(expected_y >= hi)
 
-    m_t = np.where((expected_y <= lo) | (expected_y >= hi), 0.0,
-                   np.where(t < t0, m0, m))
+    m_t = np.where((expected_y <= lo) | (expected_y >= hi), 0.0, np.where(t < t0, m0, m))
     assert np.allclose(y.D(t), -m_t / t + mh.D(t), rtol=1e-13)
 
 
@@ -872,11 +894,19 @@ def test_plyield_closed_form_clamped() -> None:
 # The two assume() calls below reject roughly two draws in three -- 202 invalid against 99
 # passing on a typical run -- so hypothesis intermittently trips filter_too_much. Suppress it
 # as test_yield and test_THM_terminal_exp already do, for the same reason.
-@settings(deadline=None,
-          suppress_health_check=[hypothesis.HealthCheck.filter_too_much])  # type: ignore
-def test_generalized_reduces_to_plyield(qi: float, Di: float, bf: float, telf: float,
-                                        bterm: float, tterm: float, c: float, m0: float,
-                                        m: float, t0: float) -> None:
+@settings(deadline=None, suppress_health_check=[hypothesis.HealthCheck.filter_too_much])
+def test_generalized_reduces_to_plyield(
+    qi: float,
+    Di: float,
+    bf: float,
+    telf: float,
+    bterm: float,
+    tterm: float,
+    c: float,
+    m0: float,
+    m: float,
+    t0: float,
+) -> None:
     """A single-breakpoint GeneralizedPLYield must be bit-for-bit identical to PLYield.
     Both of PLYield's segments anchor at (t0, c), so the anchor form reproduces its
     arithmetic exactly -- array_equal, not allclose."""
@@ -890,7 +920,7 @@ def test_generalized_reduces_to_plyield(qi: float, Di: float, bf: float, telf: f
     thm_b = dca.THM(qi, Di, 2.0, bf, telf, bterm, tterm)
     thm_b.add_secondary(dca.GeneralizedPLYield(c, m0, (dca.PLYieldSegment(t0, m=m),)))
 
-    for name in ('gor', 'cgr', 'rate', 'cum', 'D', 'beta', 'b'):
+    for name in ("gor", "cgr", "rate", "cum", "D", "beta", "b"):
         a = getattr(thm_a.secondary, name)(t)
         b = getattr(thm_b.secondary, name)(t)
         assert np.array_equal(a, b, equal_nan=True), name
@@ -900,8 +930,7 @@ def test_generalized_segments_normalized() -> None:
     """The builder accepts ints and normalizes every field to float, so the instance stays
     hashable and its fields match their annotations at runtime."""
     y = dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(90, 0.8), (365, 2, 0.2)])
-    assert y.segments == (dca.PLYieldSegment(90.0, m=0.8),
-                          dca.PLYieldSegment(365.0, c=2.0, m=0.2))
+    assert y.segments == (dca.PLYieldSegment(90.0, m=0.8), dca.PLYieldSegment(365.0, c=2.0, m=0.2))
     assert all(isinstance(segment.t, float) for segment in y.segments)
     assert isinstance(y.segments[1].c, float) and isinstance(y.segments[1].m, float)
     assert hash(y.segments) == hash(y.segments)
@@ -909,68 +938,73 @@ def test_generalized_segments_normalized() -> None:
 
 def test_generalized_param_descs() -> None:
     names = [d.name for d in dca.GeneralizedPLYield.get_param_descs()]
-    assert names == ['c', 'm0', 'segments', 'min', 'max']
+    assert names == ["c", "m0", "segments", "min", "max"]
 
     # the `segments` descriptor must carry no scalar bounds, or the generic loop in
     # __post_init__ would try to compare a tuple against a float
-    seg = dca.GeneralizedPLYield.get_param_desc('segments')
+    seg = dca.GeneralizedPLYield.get_param_desc("segments")
     assert seg.lower_bound is None and seg.upper_bound is None
 
     # from_params must round-trip now that the descriptor count matches the field count
     y = dca.GeneralizedPLYield.from_params(
-        (1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),), None, 20.0))
+        (1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),), None, 20.0)
+    )  # type: ignore[arg-type]
     assert y.segments == (dca.PLYieldSegment(180.0, m=0.6),)
 
     with pytest.raises(ValueError):
-        dca.GeneralizedPLYield.from_params((1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),)))
+        dca.GeneralizedPLYield.from_params((1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),)))  # type: ignore[arg-type]
 
 
 def test_generalized_errors() -> None:
     """`match=` is deliberate: a bare `raises(ValueError)` would pass even if a
     different check fired than the one each case is meant to exercise."""
-    with pytest.raises(ValueError, match='at least one segment'):
+    with pytest.raises(ValueError, match="at least one segment"):
         # at least one breakpoint is required
         dca.GeneralizedPLYield(1.2, 0.0, ())
 
-    with pytest.raises(ValueError, match='must be PLYieldSegment'):
+    with pytest.raises(ValueError, match="must be PLYieldSegment"):
         # a bare tuple is no longer a valid entry; use from_segments for tuples
-        dca.GeneralizedPLYield(1.2, 0.0, ((90.0, 0.8),))  # type: ignore
+        dca.GeneralizedPLYield(1.2, 0.0, ((90.0, 0.8),))  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError, match='finite and > 0'):
+    with pytest.raises(ValueError, match="finite and > 0"):
         # t must be positive
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(0.0, m=0.8),))
 
-    with pytest.raises(ValueError, match='finite and > 0'):
+    with pytest.raises(ValueError, match="finite and > 0"):
         # t must be positive, and a negative time must not be read as "before the
         # first segment" -- searchsorted assumes segment_params is sorted
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(-90.0, m=0.8),))
 
-    with pytest.raises(ValueError, match='strictly increasing'):
+    with pytest.raises(ValueError, match="strictly increasing"):
         # t must be strictly increasing
-        dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(365.0, m=0.8),
-                                          dca.PLYieldSegment(90.0, m=0.2)))
+        dca.GeneralizedPLYield(
+            1.2, 0.0, (dca.PLYieldSegment(365.0, m=0.8), dca.PLYieldSegment(90.0, m=0.2))
+        )
 
-    with pytest.raises(ValueError, match='strictly increasing'):
+    with pytest.raises(ValueError, match="strictly increasing"):
         # equal times are not strictly increasing
-        dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.8),
-                                          dca.PLYieldSegment(90.0, m=0.2)))
+        dca.GeneralizedPLYield(
+            1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.8), dca.PLYieldSegment(90.0, m=0.2))
+        )
 
-    with pytest.raises(ValueError, match=r'within \[-10.0, 10.0\]'):
+    with pytest.raises(ValueError, match=r"within \[-10.0, 10.0\]"):
         # slope outside [-10, 10]
-        dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.8),
-                                          dca.PLYieldSegment(365.0, m=25.0)))
+        dca.GeneralizedPLYield(
+            1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.8), dca.PLYieldSegment(365.0, m=25.0))
+        )
 
-    with pytest.raises(ValueError, match='max < min'):
+    with pytest.raises(ValueError, match="max < min"):
         # max < min, raised by the shared base
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.8),), 10.0, 1.0)
 
-    with pytest.raises(ValueError, match='c <= 0.0'):
+    with pytest.raises(ValueError, match="c <= 0.0"):
         # c at its excluded lower bound
         dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(90.0, m=0.8),))
 
     # the inclusive bound endpoints are accepted
-    dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=-10.0),
-                                      dca.PLYieldSegment(365.0, m=10.0)))
+    dca.GeneralizedPLYield(
+        1.2, 0.0, (dca.PLYieldSegment(90.0, m=-10.0), dca.PLYieldSegment(365.0, m=10.0))
+    )
 
 
 def test_generalized_rejects_nonfinite_segments() -> None:
@@ -978,28 +1012,30 @@ def test_generalized_rejects_nonfinite_segments() -> None:
     `np.any(t <= 0)` / `np.any(abs(m) > bound)` would ACCEPT a NaN time or slope and
     silently produce an all-NaN yield function. Infinite times place a segment that
     never starts. Both must be rejected."""
-    nan = float('nan')
+    nan = float("nan")
 
     # a single NaN time is the worst case: np.diff of one element is empty, so the
     # strictly-increasing check cannot catch it either
-    with pytest.raises(ValueError, match='finite and > 0'):
+    with pytest.raises(ValueError, match="finite and > 0"):
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(nan, m=0.5),))
 
-    with pytest.raises(ValueError, match='finite and > 0'):
-        dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.5),
-                                          dca.PLYieldSegment(nan, m=0.2)))
+    with pytest.raises(ValueError, match="finite and > 0"):
+        dca.GeneralizedPLYield(
+            1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.5), dca.PLYieldSegment(nan, m=0.2))
+        )
 
-    with pytest.raises(ValueError, match='finite and > 0'):
+    with pytest.raises(ValueError, match="finite and > 0"):
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(np.inf, m=0.5),))
 
-    with pytest.raises(ValueError, match=r'finite and within'):
+    with pytest.raises(ValueError, match=r"finite and within"):
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=nan),))
 
-    with pytest.raises(ValueError, match=r'finite and within'):
-        dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.5),
-                                          dca.PLYieldSegment(365.0, m=nan)))
+    with pytest.raises(ValueError, match=r"finite and within"):
+        dca.GeneralizedPLYield(
+            1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.5), dca.PLYieldSegment(365.0, m=nan))
+        )
 
-    with pytest.raises(ValueError, match=r'finite and within'):
+    with pytest.raises(ValueError, match=r"finite and within"):
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=np.inf),))
 
 
@@ -1007,21 +1043,29 @@ def test_generalized_anchor_chain_seed_is_consistent() -> None:
     """With validation disabled, c == 0 must give a yield of zero on EVERY segment, not
     just the first. Seeding the log-space chain with a `c > 0` special case made
     segment 0 report c while every later segment reported 0."""
-    y = dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(90.0, m=0.5),
-                                      dca.PLYieldSegment(365.0, m=0.5)),
-                               validate_params=[False])
+    y = dca.GeneralizedPLYield(
+        0.0,
+        0.0,
+        (dca.PLYieldSegment(90.0, m=0.5), dca.PLYieldSegment(365.0, m=0.5)),
+        validate_params=[False],
+    )
     assert np.all(y.segment_params[:, y.Y_IDX] == 0.0)
 
     mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
     mh.add_secondary(y)
-    assert np.all(mh.secondary.gor([45.0, 180.0, 900.0]) == 0.0)
+    # a plain list works at runtime -- every public method funnels through
+    # `_validate_ndarray`, which calls np.atleast_1d -- but the signatures say
+    # `float | NDFloat`, so mypy rejects what the README's own examples do.
+    assert np.all(mh.secondary.gor([45.0, 180.0, 900.0]) == 0.0)  # type: ignore[arg-type]
 
 
 # a 4-segment model: pre-anchor slope m0, then three breakpoints
 GENERALIZED_C, GENERALIZED_M0 = 1200.0, -0.1
-GENERALIZED_SEGMENTS = (dca.PLYieldSegment(90.0, m=0.8),
-                        dca.PLYieldSegment(365.0, m=0.2),
-                        dca.PLYieldSegment(1825.0, m=-0.3))
+GENERALIZED_SEGMENTS = (
+    dca.PLYieldSegment(90.0, m=0.8),
+    dca.PLYieldSegment(365.0, m=0.2),
+    dca.PLYieldSegment(1825.0, m=-0.3),
+)
 
 
 def _generalized_primary() -> dca.MH:
@@ -1048,8 +1092,9 @@ def test_segment_start_column_is_sorted() -> None:
     precondition hold unconditionally."""
     models = [
         dca.PLYield(1200.0, 0.3, 0.6, 180.0),
-        dca.GeneralizedPLYield(1.2, 0.3, (dca.PLYieldSegment(90.0, m=0.6),
-                                          dca.PLYieldSegment(365.0, m=-0.2))),
+        dca.GeneralizedPLYield(
+            1.2, 0.3, (dca.PLYieldSegment(90.0, m=0.6), dca.PLYieldSegment(365.0, m=-0.2))
+        ),
         # validation off: t0 <= 0 would otherwise be rejected
         dca.PLYield(1200.0, 0.3, 0.6, -5.0, validate_params=[False] * 4),
         dca.PLYield(1200.0, 0.3, 0.6, 0.0, validate_params=[False] * 4),
@@ -1110,6 +1155,10 @@ def test_generalized_yield_values() -> None:
     t2, m2 = GENERALIZED_SEGMENTS[1].t, GENERALIZED_SEGMENTS[1].m
     t3, m3 = GENERALIZED_SEGMENTS[2].t, GENERALIZED_SEGMENTS[2].m
 
+    # `m` is Optional -- None means "inherit the previous slope" -- but this fixture sets all
+    # three, and the hand-computed products below raise them as exponents.
+    assert m1 is not None and m2 is not None and m3 is not None
+
     y1 = GENERALIZED_C
     y2 = y1 * (t2 / t1) ** m1
     y3 = y2 * (t3 / t2) ** m2
@@ -1119,8 +1168,9 @@ def test_generalized_yield_values() -> None:
     assert np.isclose(y.gor(np.array([t3])), y3, rtol=1e-12)
 
     # pre-anchor segment, and a point inside each later segment
-    assert np.isclose(y.gor(np.array([45.0])),
-                      GENERALIZED_C * (45.0 / t1) ** GENERALIZED_M0, rtol=1e-12)
+    assert np.isclose(
+        y.gor(np.array([45.0])), GENERALIZED_C * (45.0 / t1) ** GENERALIZED_M0, rtol=1e-12
+    )
     assert np.isclose(y.gor(np.array([180.0])), y1 * (180.0 / t1) ** m1, rtol=1e-12)
     assert np.isclose(y.gor(np.array([900.0])), y2 * (900.0 / t2) ** m2, rtol=1e-12)
     assert np.isclose(y.gor(np.array([3650.0])), y3 * (3650.0 / t3) ** m3, rtol=1e-12)
@@ -1131,15 +1181,17 @@ def test_generalized_anchor_chain_saturates() -> None:
     same convention `_yieldfn` uses, rather than overflowing part-way through a running
     product. log(1e300) = 690.8 and 10 * log(10) = 23.0, so the sum clears the 709.8
     limit on the first chain step."""
-    y = dca.GeneralizedPLYield(1e300, 0.0, (dca.PLYieldSegment(1.0, m=10.0),
-                                            dca.PLYieldSegment(10.0, m=0.5)))
+    y = dca.GeneralizedPLYield(
+        1e300, 0.0, (dca.PLYieldSegment(1.0, m=10.0), dca.PLYieldSegment(10.0, m=0.5))
+    )
     assert np.isinf(y.segment_params[2, y.Y_IDX])
     assert y.segment_params[2, y.Y_IDX] > 0.0
     assert np.isinf(y.gor(np.array([100.0])))
 
     # and the same in the other direction: log(1e-300) - 10 * log(10) < -709.8
-    y = dca.GeneralizedPLYield(1e-300, 0.0, (dca.PLYieldSegment(1.0, m=-10.0),
-                                             dca.PLYieldSegment(10.0, m=-0.5)))
+    y = dca.GeneralizedPLYield(
+        1e-300, 0.0, (dca.PLYieldSegment(1.0, m=-10.0), dca.PLYieldSegment(10.0, m=-0.5))
+    )
     assert y.segment_params[2, y.Y_IDX] == 0.0
     assert y.gor(np.array([100.0])) == 0.0
 
@@ -1155,22 +1207,33 @@ def test_generalized_anchor_chain_saturates() -> None:
     dt3=st.floats(1.0, 5000.0),
     qi=st.floats(0.0, 1e6),
 )
-@settings(deadline=None)  # type: ignore
-def test_generalized_model(c: float, m0: float, m1: float, m2: float, m3: float,
-                           t1: float, dt2: float, dt3: float, qi: float) -> None:
+@settings(deadline=None)
+def test_generalized_model(
+    c: float,
+    m0: float,
+    m1: float,
+    m2: float,
+    m3: float,
+    t1: float,
+    dt2: float,
+    dt3: float,
+    qi: float,
+) -> None:
     """Run a 4-segment model through the shared associated-phase checks, for both
     secondary and water attachment."""
-    segments = (dca.PLYieldSegment(t1, m=m1),
-                dca.PLYieldSegment(t1 + dt2, m=m2),
-                dca.PLYieldSegment(t1 + dt2 + dt3, m=m3))
+    segments = (
+        dca.PLYieldSegment(t1, m=m1),
+        dca.PLYieldSegment(t1 + dt2, m=m2),
+        dca.PLYieldSegment(t1 + dt2 + dt3, m=m3),
+    )
 
     mh = dca.MH(qi, 0.7, 1.5, 0.08)
     mh.add_secondary(dca.GeneralizedPLYield(c, m0, segments))
-    check_yield_model(mh.secondary, 'secondary', qi)
+    check_yield_model(mh.secondary, "secondary", qi)
 
     mh = dca.MH(qi, 0.7, 1.5, 0.08)
     mh.add_water(dca.GeneralizedPLYield(c, m0, segments))
-    check_yield_model(mh.water, 'water', qi)
+    check_yield_model(mh.water, "water", qi)
 
 
 @given(
@@ -1184,27 +1247,34 @@ def test_generalized_model(c: float, m0: float, m1: float, m2: float, m3: float,
     _min=st.floats(0.0, 100.0),
     _max=st.floats(1e4, 5e5),
 )
-@settings(deadline=None)  # type: ignore
-def test_generalized_model_min_max(c: float, m0: float, m1: float, m2: float,
-                                   t1: float, dt2: float, qi: float,
-                                   _min: float, _max: float) -> None:
-    segments = (dca.PLYieldSegment(t1, m=m1),
-                dca.PLYieldSegment(t1 + dt2, m=m2))
+@settings(deadline=None)
+def test_generalized_model_min_max(
+    c: float,
+    m0: float,
+    m1: float,
+    m2: float,
+    t1: float,
+    dt2: float,
+    qi: float,
+    _min: float,
+    _max: float,
+) -> None:
+    segments = (dca.PLYieldSegment(t1, m=m1), dca.PLYieldSegment(t1 + dt2, m=m2))
 
     mh = dca.MH(qi, 0.7, 1.5, 0.08)
     mh.add_secondary(dca.GeneralizedPLYield(c, m0, segments, _min, _max))
-    check_yield_model(mh.secondary, 'secondary', qi)
+    check_yield_model(mh.secondary, "secondary", qi)
 
     mh = dca.MH(qi, 0.7, 1.5, 0.08)
     mh.add_water(dca.GeneralizedPLYield(c, m0, segments, _min, _max))
-    check_yield_model(mh.water, 'water', qi)
+    check_yield_model(mh.water, "water", qi)
 
 
 def test_plyield_segment_is_keyword_only() -> None:
     """PLYieldSegment(180.0, 0.6) would positionally set c, while the builder's 2-tuple
     (180.0, 0.6) means m. Keyword-only makes that confusion impossible."""
     with pytest.raises(TypeError):
-        dca.PLYieldSegment(180.0, 0.6)  # type: ignore
+        dca.PLYieldSegment(180.0, 0.6)  # type: ignore[call-arg]
 
     seg = dca.PLYieldSegment(180.0, m=0.6)
     assert seg.t == 180.0 and seg.m == 0.6 and seg.c is None
@@ -1213,24 +1283,30 @@ def test_plyield_segment_is_keyword_only() -> None:
 def test_generalized_from_segments_builder() -> None:
     """The builder's tuple arity selects the meaning: 2 -> (t, m), 3 -> (t, c, m)."""
     built = dca.GeneralizedPLYield.from_segments(
-        1.2, 0.0, [(180.0, 0.6), (1095.0, 2.5, -0.2)], None, 20.0)
+        1.2, 0.0, [(180.0, 0.6), (1095.0, 2.5, -0.2)], None, 20.0
+    )
     explicit = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                   dca.PLYieldSegment(1095.0, c=2.5, m=-0.2)), None, 20.0)
+        1.2,
+        0.0,
+        (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=2.5, m=-0.2)),
+        None,
+        20.0,
+    )
     assert built == explicit
 
     # an explicit None inherits exactly as a short form does
-    assert (dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0, None, 0.6)])
-            == dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0, 0.6)]))
+    assert dca.GeneralizedPLYield.from_segments(
+        1.2, 0.0, [(180.0, None, 0.6)]
+    ) == dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0, 0.6)])
 
-    with pytest.raises(ValueError, match='must be'):
+    with pytest.raises(ValueError, match="must be"):
         dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0, 0.6, -0.2, 99.0)])
 
-    with pytest.raises(ValueError, match='must be'):
+    with pytest.raises(ValueError, match="must be"):
         dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(180.0,)])
 
     # t is the one field with no inherit semantics -- there is nothing to continue from
-    with pytest.raises(ValueError, match='segment t must be given'):
+    with pytest.raises(ValueError, match="segment t must be given"):
         dca.GeneralizedPLYield.from_segments(1.2, 0.0, [(None, 0.6)])
 
 
@@ -1238,9 +1314,11 @@ def test_generalized_c_override_steps_the_yield() -> None:
     """A segment c breaks the anchor chain: the yield steps to exactly that value at the
     breakpoint instead of continuing from the preceding segment."""
     mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
-    mh.add_secondary(dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                   dca.PLYieldSegment(1095.0, c=2.5, m=0.6))))
+    mh.add_secondary(
+        dca.GeneralizedPLYield(
+            1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=2.5, m=0.6))
+        )
+    )
     y = mh.secondary
 
     # at the override the value is the override, exactly
@@ -1252,37 +1330,43 @@ def test_generalized_c_override_steps_the_yield() -> None:
     assert not np.isclose(before, 2.5, rtol=1e-6)
 
     # the chain restarts from the override: the next segment continues from 2.5
-    assert np.isclose(y.gor(np.array([2190.0]))[0], 2.5 * (2190.0 / 1095.0) ** 0.6,
-                      rtol=1e-12)
+    assert np.isclose(y.gor(np.array([2190.0]))[0], 2.5 * (2190.0 / 1095.0) ** 0.6, rtol=1e-12)
 
 
 def test_generalized_c_override_rejected_on_first_segment() -> None:
     """The model's own c already defines the yield at segments[0].t; a second source for
     the same quantity would silently conflict."""
-    with pytest.raises(ValueError, match='conflicts with the model c'):
+    with pytest.raises(ValueError, match="conflicts with the model c"):
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, c=2.5, m=0.6),))
 
 
 def test_generalized_c_override_rejects_nonfinite() -> None:
     """`overrides` uses nan to mean "absent", so an explicitly-NaN c must be rejected
     before it reaches that array -- otherwise it is silently read as no override."""
-    for bad in (float('nan'), np.inf, 0.0, -1.0):
-        with pytest.raises(ValueError, match='segments c must be finite and > 0'):
+    for bad in (float("nan"), np.inf, 0.0, -1.0):
+        with pytest.raises(ValueError, match="segments c must be finite and > 0"):
             dca.GeneralizedPLYield(
-                1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                           dca.PLYieldSegment(1095.0, c=bad, m=-0.2)))
+                1.2,
+                0.0,
+                (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=bad, m=-0.2)),
+            )
 
 
 def test_generalized_inherited_slope_is_a_no_op() -> None:
     """A segment with both optionals None continues the previous slope, so inserting one
     changes nothing but the row count."""
     with_extra = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                   dca.PLYieldSegment(500.0),        # inherits m=0.6, c continuous
-                   dca.PLYieldSegment(1095.0, m=-0.2)))
+        1.2,
+        0.0,
+        (
+            dca.PLYieldSegment(180.0, m=0.6),
+            dca.PLYieldSegment(500.0),  # inherits m=0.6, c continuous
+            dca.PLYieldSegment(1095.0, m=-0.2),
+        ),
+    )
     without = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                   dca.PLYieldSegment(1095.0, m=-0.2)))
+        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, m=-0.2))
+    )
 
     assert with_extra.segment_params.shape[0] == without.segment_params.shape[0] + 1
 
@@ -1305,7 +1389,7 @@ def test_plyield_shift_reanchors() -> None:
     assert isinstance(shifted, dca.PLYield)
     assert shifted.t0 == 180.0 + 30.4
     assert (shifted.c, shifted.m0, shifted.m) == (y.c, y.m0, y.m)
-    assert y.t0 == 180.0                      # original untouched
+    assert y.t0 == 180.0  # original untouched
 
     # the anchor value is preserved, at the shifted time
     mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08)
@@ -1321,8 +1405,9 @@ def test_plyield_shift_reanchors() -> None:
 
 def test_generalized_shift_reanchors() -> None:
     """Every breakpoint moves; c, m0 and the slopes are unchanged."""
-    y = dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),
-                                          dca.PLYieldSegment(1095.0, m=-0.2)))
+    y = dca.GeneralizedPLYield(
+        1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, m=-0.2))
+    )
     shifted = y.shift(30.4)
     assert [segment.t for segment in shifted.segments] == [210.4, 1125.4]
     assert [segment.m for segment in shifted.segments] == [0.6, -0.2]
@@ -1339,13 +1424,14 @@ def test_generalized_shift_reanchors() -> None:
 def test_shift_preserves_c_overrides_and_validates() -> None:
     """A shifted override keeps its value; a shift that pushes a breakpoint to <= 0 is
     rejected by the usual validation, because dc.replace re-runs __post_init__."""
-    y = dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6),
-                                          dca.PLYieldSegment(1095.0, c=2.5, m=-0.2)))
+    y = dca.GeneralizedPLYield(
+        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=2.5, m=-0.2))
+    )
     shifted = y.shift(-90.0)
     assert shifted.segments[1].c == 2.5 and shifted.segments[0].t == 90.0
 
-    with pytest.raises(ValueError, match='finite and > 0'):
-        y.shift(-180.0)          # first breakpoint would land exactly on 0
+    with pytest.raises(ValueError, match="finite and > 0"):
+        y.shift(-180.0)  # first breakpoint would land exactly on 0
 
 
 def test_shift_keeps_its_primary_phase() -> None:
@@ -1353,12 +1439,15 @@ def test_shift_keeps_its_primary_phase() -> None:
     instance and installs a NullPrimaryPhase -- so without _adopt_attachment the shifted
     model returns 0.0 from rate and cum with no error, which is worse than the negative-t
     problem shift() exists to solve."""
-    for model in (dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0),
-                  dca.GeneralizedPLYield(1.2, 0.0,
-                                         (dca.PLYieldSegment(180.0, m=0.6),
-                                          dca.PLYieldSegment(1095.0, m=-0.2)))):
+    for model in (
+        dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0),
+        dca.GeneralizedPLYield(
+            1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, m=-0.2))
+        ),
+    ):
         mh = dca.MH(qi=1000.0, Di=0.8, bi=1.5, Dterm=0.05)
         mh.add_secondary(model)
+        assert isinstance(mh.secondary, dca.MultisegmentPLYield)
         shifted = mh.secondary.shift(30.0)
 
         assert isinstance(shifted.primary, dca.MH), type(model).__name__
@@ -1377,13 +1466,15 @@ def test_shift_preserves_the_wrong_phase_guard() -> None:
     gor() instead of raising."""
     mh = dca.MH(1000.0, 0.8, 1.5, 0.05)
     mh.add_water(dca.PLYield(2.0, 0.0, 0.1, 90.0))
-    with pytest.raises(ValueError, match='water phase and has no `gor`'):
+    assert isinstance(mh.water, dca.MultisegmentPLYield)
+    with pytest.raises(ValueError, match="water phase and has no `gor`"):
         mh.water.shift(30.0).gor(np.array([100.0]))
 
     mh2 = dca.MH(1000.0, 0.8, 1.5, 0.05)
     mh2.add_secondary(dca.PLYield(1.2, 0.0, 0.6, 180.0))
-    with pytest.raises(ValueError, match='secondary phase and has no `wor`'):
-        mh2.secondary.shift(30.0).wor(np.array([100.0]))  # type: ignore
+    assert isinstance(mh2.secondary, dca.MultisegmentPLYield)
+    with pytest.raises(ValueError, match="secondary phase and has no `wor`"):
+        mh2.secondary.shift(30.0).wor(np.array([100.0]))
 
 
 def test_shift_of_a_superseded_model_has_no_guard_to_mirror() -> None:
@@ -1394,7 +1485,7 @@ def test_shift_of_a_superseded_model_has_no_guard_to_mirror() -> None:
     mh = dca.MH(1000.0, 0.8, 1.5, 0.05)
     displaced = dca.PLYield(1.2, 0.0, 0.6, 180.0)
     mh.add_secondary(displaced)
-    mh.add_secondary(dca.PLYield(2.4, 0.0, 0.3, 90.0))   # displaces the first
+    mh.add_secondary(dca.PLYield(2.4, 0.0, 0.3, 90.0))  # displaces the first
 
     assert mh.secondary is not displaced
     assert displaced.primary is mh
@@ -1410,18 +1501,19 @@ def test_non_finite_params_are_rejected_on_every_model() -> None:
     `param < lower_bound` accepts it, and an unbounded-above parameter accepts inf. The
     consequence was worse than a NaN forecast: `_integrate_with` zeroes NaN, so a NaN
     parameter gave NaN rates but a definite ZERO cumulative, i.e. a silent zero EUR."""
-    nan = float('nan')
+    nan = float("nan")
     for bad in (nan, np.inf, -np.inf):
-        for ctor in (lambda v=bad: dca.MH(v, 0.7, 1.5, 0.08),
-                     lambda v=bad: dca.MH(1000.0, v, 1.5, 0.08),
-                     lambda v=bad: dca.THM(1000.0, 0.7, 2.0, 0.8, v),
-                     lambda v=bad: dca.PLE(1000.0, 0.5, 0.05, v),
-                     lambda v=bad: dca.SE(1000.0, v, 0.5),
-                     lambda v=bad: dca.Duong(1000.0, v, 1.2),
-                     lambda v=bad: dca.PLYield(1.2, 0.0, 0.6, v),
-                     lambda v=bad: dca.PLYield(v, 0.0, 0.6, 180.0),
-                     lambda v=bad: dca.GeneralizedPLYield(
-                         v, 0.0, (dca.PLYieldSegment(180.0, m=0.6),))):
+        for ctor in (
+            lambda v=bad: dca.MH(v, 0.7, 1.5, 0.08),
+            lambda v=bad: dca.MH(1000.0, v, 1.5, 0.08),
+            lambda v=bad: dca.THM(1000.0, 0.7, 2.0, 0.8, v),
+            lambda v=bad: dca.PLE(1000.0, 0.5, 0.05, v),
+            lambda v=bad: dca.SE(1000.0, v, 0.5),
+            lambda v=bad: dca.Duong(1000.0, v, 1.2),
+            lambda v=bad: dca.PLYield(1.2, 0.0, 0.6, v),
+            lambda v=bad: dca.PLYield(v, 0.0, 0.6, 180.0),
+            lambda v=bad: dca.GeneralizedPLYield(v, 0.0, (dca.PLYieldSegment(180.0, m=0.6),)),
+        ):
             with pytest.raises(ValueError):
                 ctor()
 
@@ -1456,18 +1548,22 @@ def test_every_model_is_hashable() -> None:
     # every concrete model in the package is represented. The Null* models take no parameters
     # and so cannot carry the mutable-default bug this guards, but are counted anyway.
     covered = {type(model) for model in models} | {dca.NullPrimaryPhase, dca.NullAssociatedPhase}
-    concrete = {obj for obj in vars(dca).values()
-                if isinstance(obj, type) and issubclass(obj, dca.DeclineCurve)
-                and not inspect.isabstract(obj)
-                and obj.__name__ not in ('MultisegmentHyperbolic', 'MultisegmentPLYield')}
-    assert concrete == covered, f'not covered: {sorted(c.__name__ for c in concrete - covered)}'
+    concrete = {
+        obj
+        for obj in vars(dca).values()
+        if isinstance(obj, type)
+        and issubclass(obj, dca.DeclineCurve)
+        and not inspect.isabstract(obj)
+        and obj.__name__ not in ("MultisegmentHyperbolic", "MultisegmentPLYield")
+    }
+    assert concrete == covered, f"not covered: {sorted(c.__name__ for c in concrete - covered)}"
     assert isinstance(hash(dca.NullPrimaryPhase()), int)
     assert isinstance(hash(dca.NullAssociatedPhase()), int)
 
     # equal models must hash equal, or dict lookup silently misses
-    assert {models[8]: 'a'}[dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)] == 'a'
-    assert {models[1]: 'b'}[dca.MH(1000.0, 0.5, 1.2, 0.08)] == 'b'
-    assert {models[0]: 'c'}[dca.Hyperbolic(1000.0, 0.5, 1.2)] == 'c'
+    assert {models[8]: "a"}[dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)] == "a"
+    assert {models[1]: "b"}[dca.MH(1000.0, 0.5, 1.2, 0.08)] == "b"
+    assert {models[0]: "c"}[dca.Hyperbolic(1000.0, 0.5, 1.2)] == "c"
 
 
 def test_segments_naive_gen_is_usable() -> None:
@@ -1475,7 +1571,7 @@ def test_segments_naive_gen_is_usable() -> None:
     its output must actually construct a model. A generated `c` on row 0 is rejected
     outright, so it emits (t, m) rows for from_segments rather than (t, c, m)."""
     rng = np.random.default_rng(0)
-    generated = dca.GeneralizedPLYield.get_param_desc('segments').naive_gen(rng, 4)
+    generated = dca.GeneralizedPLYield.get_param_desc("segments").naive_gen(rng, 4)
     assert generated.shape == (4, 2)
     model = dca.GeneralizedPLYield.from_segments(1.2, 0.0, generated)
     assert len(model.segments) == 4
@@ -1514,13 +1610,16 @@ def test_yield_nan_is_consistent_across_every_output() -> None:
     read the per-segment slope, which exists for any t. A definite volume or decline for a
     domain with no rate is the failure mode this guards."""
     t = np.array([-30.4, -10.0])
-    for model in (dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0),
-                  dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),
-                                                    dca.PLYieldSegment(1095.0, m=-0.2)))):
+    for model in (
+        dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0),
+        dca.GeneralizedPLYield(
+            1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, m=-0.2))
+        ),
+    ):
         mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
         mh.add_secondary(model)
         y = mh.secondary
-        for name in ('gor', 'cgr', 'rate', 'cum', 'D', 'beta', 'b'):
+        for name in ("gor", "cgr", "rate", "cum", "D", "beta", "b"):
             assert np.all(np.isnan(getattr(y, name)(t))), (type(model).__name__, name)
 
         # the volume methods route through _Nfn, so they must agree too
@@ -1537,42 +1636,62 @@ def test_yield_nan_is_consistent_across_every_output() -> None:
 # D or b. t = [1, 30.4, 365.25, 3652.5] days.
 GUARD_REFERENCE_T = np.array([1.0, 30.4, 365.25, 3652.5])
 GUARD_REFERENCE = {
-    'MH(1000,.8,1.5,0)': (
-        dca.MH(1000., .8, 1.5, 0.), {
-            'rate': [981.8396626562013, 664.210599737096, 199.99999999999997,
-                     45.56818012543986],
-            'cum': [990.850493166883, 24433.673590829454, 133042.85527918086,
-                    396584.08517439046],
-            'D': [0.018077636613935855, 0.010058645377762836, 0.0016619799788273027,
-                  0.00018074792519363043],
-            'b': [1.5, 1.5, 1.5, 1.5]}),
-    'MH(1000,.8,1.5,.08)': (
-        dca.MH(1000., .8, 1.5, .08), {
-            'rate': [981.8396626562013, 664.210599737096, 199.99999999999997,
-                     44.680397388876266],
-            'cum': [990.850493166883, 24433.673590829454, 133042.85527918086,
-                    396338.0238722265],
-            'D': [0.018077636613935855, 0.010058645377762836, 0.0016619799788273027,
-                  0.00022828640366612198],
-            'b': [1.5, 1.5, 1.5, 0.0]}),
-    'THM(1000,.8,2,.8,30)': (
-        dca.THM(1000., .8, 2., .8, 30.), {
-            'rate': [968.6810451560933, 577.5875201834856, 152.86137440662728,
-                     13.153037654471326],
-            'cum': [984.0914022507778, 22260.14137274077, 114126.06836052494,
-                    241555.51635911534],
-            'D': [0.030828516377649332, 0.010960405535004797, 0.0023255363661494432,
-                  0.00032681785701511667],
-            'b': [2.0, 2.0, 0.8, 0.8]}),
-    'THM(1000,.8,2,.8,30,.1,20)': (
-        dca.THM(1000., .8, 2., .8, 30., .1, 20.), {
-            'rate': [968.6810451560933, 577.5875201834856, 152.86137440662728,
-                     13.153037654471326],
-            'cum': [984.0914022507778, 22260.14137274077, 114126.06836052494,
-                    241555.51635911534],
-            'D': [0.030828516377649332, 0.010960405535004797, 0.0023255363661494432,
-                  0.00032681785701511667],
-            'b': [2.0, 2.0, 0.8, 0.8]}),
+    "MH(1000,.8,1.5,0)": (
+        dca.MH(1000.0, 0.8, 1.5, 0.0),
+        {
+            "rate": [981.8396626562013, 664.210599737096, 199.99999999999997, 45.56818012543986],
+            "cum": [990.850493166883, 24433.673590829454, 133042.85527918086, 396584.08517439046],
+            "D": [
+                0.018077636613935855,
+                0.010058645377762836,
+                0.0016619799788273027,
+                0.00018074792519363043,
+            ],
+            "b": [1.5, 1.5, 1.5, 1.5],
+        },
+    ),
+    "MH(1000,.8,1.5,.08)": (
+        dca.MH(1000.0, 0.8, 1.5, 0.08),
+        {
+            "rate": [981.8396626562013, 664.210599737096, 199.99999999999997, 44.680397388876266],
+            "cum": [990.850493166883, 24433.673590829454, 133042.85527918086, 396338.0238722265],
+            "D": [
+                0.018077636613935855,
+                0.010058645377762836,
+                0.0016619799788273027,
+                0.00022828640366612198,
+            ],
+            "b": [1.5, 1.5, 1.5, 0.0],
+        },
+    ),
+    "THM(1000,.8,2,.8,30)": (
+        dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
+        {
+            "rate": [968.6810451560933, 577.5875201834856, 152.86137440662728, 13.153037654471326],
+            "cum": [984.0914022507778, 22260.14137274077, 114126.06836052494, 241555.51635911534],
+            "D": [
+                0.030828516377649332,
+                0.010960405535004797,
+                0.0023255363661494432,
+                0.00032681785701511667,
+            ],
+            "b": [2.0, 2.0, 0.8, 0.8],
+        },
+    ),
+    "THM(1000,.8,2,.8,30,.1,20)": (
+        dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0),
+        {
+            "rate": [968.6810451560933, 577.5875201834856, 152.86137440662728, 13.153037654471326],
+            "cum": [984.0914022507778, 22260.14137274077, 114126.06836052494, 241555.51635911534],
+            "D": [
+                0.030828516377649332,
+                0.010960405535004797,
+                0.0023255363661494432,
+                0.00032681785701511667,
+            ],
+            "b": [2.0, 2.0, 0.8, 0.8],
+        },
+    ),
 }
 
 
@@ -1614,8 +1733,10 @@ def test_inclining_segment_math_through_the_base_statics() -> None:
 
     # D(t) = D / (1 + D b t), staying negative and shrinking in magnitude
     assert np.allclose(msh._Dcheck(0.0, qi, D, b, 0.0, t), D / (1.0 + D * b * t))
-    assert np.allclose(msh._Dcheck(0.0, qi, D, b, 0.0, t),
-                       [-0.002, -0.0018181818181818, -0.0014652014652015, -0.001])
+    assert np.allclose(
+        msh._Dcheck(0.0, qi, D, b, 0.0, t),
+        [-0.002, -0.0018181818181818, -0.0014652014652015, -0.001],
+    )
 
     # b is carried through unchanged
     assert np.all(msh._bcheck(0.0, qi, D, b, 0.0, t) == b)
@@ -1624,8 +1745,7 @@ def test_inclining_segment_math_through_the_base_statics() -> None:
 def test_decline_conversions_round_trip_for_negative_declines() -> None:
     msh = dca.MultisegmentHyperbolic
     assert msh.nominal_from_secant(-0.2, -0.5) == pytest.approx(-0.19089023)
-    assert msh.secant_from_nominal(msh.nominal_from_secant(-0.2, -0.5), -0.5) \
-        == pytest.approx(-0.2)
+    assert msh.secant_from_nominal(msh.nominal_from_secant(-0.2, -0.5), -0.5) == pytest.approx(-0.2)
     assert msh.nominal_from_tangent(-0.2) == pytest.approx(-0.18232156)
     assert msh.tangent_from_nominal(msh.nominal_from_tangent(-0.2)) == pytest.approx(-0.2)
 
@@ -1663,8 +1783,9 @@ def test_hyperbolic_extrapolates_before_zero() -> None:
     assert dca.MH(1000.0, 0.8, 1.5, 0.08).rate(t)[1] == mh.rate(t)[1]
 
     # THM extrapolates too, off its own first segment
-    assert dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0).rate(np.array([-10.0]))[0] \
-        == pytest.approx(1707.67902859)
+    assert dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0).rate(np.array([-10.0]))[0] == pytest.approx(
+        1707.67902859
+    )
 
 
 def test_hyperbolic_is_nan_beyond_the_pole() -> None:
@@ -1675,7 +1796,7 @@ def test_hyperbolic_is_nan_beyond_the_pole() -> None:
     guard at t < 0."""
     mh = dca.MH(1000.0, 0.8, 1.5)
     beyond = np.array([-40.0, -100.0, -1e6])
-    for name in ('rate', 'cum', 'D', 'beta', 'b'):
+    for name in ("rate", "cum", "D", "beta", "b"):
         assert np.all(np.isnan(getattr(mh, name)(beyond))), name
 
     # at the pole itself the divergence is real, and reported as inf rather than nan
@@ -1687,9 +1808,19 @@ def test_hyperbolic_is_nan_beyond_the_pole() -> None:
     assert mh.cum(np.array([pole]))[0] == pytest.approx(1000.0 / ((1.0 - 1.5) * Di_nom))
 
     # and diverges for b <= 1
-    assert np.isneginf(dca.MH(1000.0, 0.8, 1.0).cum(np.array(
-        [-1.0 / (dca.MH(1000.0, 0.8, 1.0).nominal_from_secant(0.8, 1.0)
-                 / dca.base.DAYS_PER_YEAR)]))[0])
+    assert np.isneginf(
+        dca.MH(1000.0, 0.8, 1.0).cum(
+            np.array(
+                [
+                    -1.0
+                    / (
+                        dca.MH(1000.0, 0.8, 1.0).nominal_from_secant(0.8, 1.0)
+                        / dca.base.DAYS_PER_YEAR
+                    )
+                ]
+            )
+        )[0]
+    )
 
 
 def test_backward_extrapolation_emits_no_warnings() -> None:
@@ -1698,12 +1829,16 @@ def test_backward_extrapolation_emits_no_warnings() -> None:
     the way an unguarded np.errstate would let them."""
     t = np.array([-1e6, -40.0, -35.87797696700799, -35.0, -10.0, 0.0, 100.0, 1e6])
     with warnings.catch_warnings():
-        warnings.simplefilter('error', RuntimeWarning)
-        for model in (dca.MH(1000.0, 0.8, 1.5), dca.MH(1000.0, 0.8, 1.5, 0.08),
-                      dca.MH(1000.0, 0.8, 1.0), dca.MH(1000.0, 0.5, 0.0),
-                      dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
-                      dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0)):
-            for name in ('rate', 'cum', 'D', 'beta', 'b'):
+        warnings.simplefilter("error", RuntimeWarning)
+        for model in (
+            dca.MH(1000.0, 0.8, 1.5),
+            dca.MH(1000.0, 0.8, 1.5, 0.08),
+            dca.MH(1000.0, 0.8, 1.0),
+            dca.MH(1000.0, 0.5, 0.0),
+            dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
+            dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0),
+        ):
+            for name in ("rate", "cum", "D", "beta", "b"):
                 getattr(model, name)(t)
 
 
@@ -1715,10 +1850,15 @@ def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
     Di_nom = mh.nominal_from_secant(0.8, 1.5) / dca.base.DAYS_PER_YEAR
 
     # all three slots nan: every one is inherited at t = 365.25
-    filled = mh._fill_segment_chain(np.array([
-        [0.0, 1000.0, Di_nom, 1.5, 0.0],
-        [365.25, np.nan, np.nan, 1.5, np.nan],
-    ], dtype=np.float64))
+    filled = mh._fill_segment_chain(
+        np.array(
+            [
+                [0.0, 1000.0, Di_nom, 1.5, 0.0],
+                [365.25, np.nan, np.nan, 1.5, np.nan],
+            ],
+            dtype=np.float64,
+        )
+    )
     assert filled[1, mh.Q_IDX] == mh.rate(np.array([365.25]))[0]
     assert filled[1, mh.D_IDX] == mh.D(np.array([365.25]))[0]
     assert filled[1, mh.N_IDX] == pytest.approx(mh.cum(np.array([365.25]))[0])
@@ -1726,25 +1866,36 @@ def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
     # an explicit rate survives -- a restimulation doubling the rate -- while volume is
     # still inherited from the decline that preceded it
     inherited_N = filled[1, mh.N_IDX]
-    override = mh._fill_segment_chain(np.array([
-        [0.0, 1000.0, Di_nom, 1.5, 0.0],
-        [365.25, 2000.0, np.nan, 1.5, np.nan],
-    ], dtype=np.float64))
+    override = mh._fill_segment_chain(
+        np.array(
+            [
+                [0.0, 1000.0, Di_nom, 1.5, 0.0],
+                [365.25, 2000.0, np.nan, 1.5, np.nan],
+            ],
+            dtype=np.float64,
+        )
+    )
     assert override[1, mh.Q_IDX] == 2000.0
     assert override[1, mh.N_IDX] == inherited_N
     assert override[1, mh.D_IDX] == filled[1, mh.D_IDX]
 
     # an explicit decline survives too: this is how MH prescribes its terminal segment
-    override_D = mh._fill_segment_chain(np.array([
-        [0.0, 1000.0, Di_nom, 1.5, 0.0],
-        [365.25, np.nan, 1e-4, 0.0, np.nan],
-    ], dtype=np.float64))
+    override_D = mh._fill_segment_chain(
+        np.array(
+            [
+                [0.0, 1000.0, Di_nom, 1.5, 0.0],
+                [365.25, np.nan, 1e-4, 0.0, np.nan],
+            ],
+            dtype=np.float64,
+        )
+    )
     assert override_D[1, mh.D_IDX] == 1e-4
     assert override_D[1, mh.Q_IDX] == filled[1, mh.Q_IDX]
 
     # it mutates in place and returns the same array, so callers can chain the construction
-    seed = np.array([[0.0, 1000.0, Di_nom, 1.5, 0.0],
-                     [365.25, np.nan, np.nan, 1.5, np.nan]], dtype=np.float64)
+    seed = np.array(
+        [[0.0, 1000.0, Di_nom, 1.5, 0.0], [365.25, np.nan, np.nan, 1.5, np.nan]], dtype=np.float64
+    )
     assert mh._fill_segment_chain(seed) is seed
 
 
@@ -1754,17 +1905,18 @@ def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
 
 
 TIME_AT_RATE_MODELS = {
-    'Hyperbolic': dca.Hyperbolic(1000.0, 0.8, 1.5),
-    'Hyperbolic exponential': dca.Hyperbolic(1000.0, 0.5, 0.0),
-    'MH': dca.MH(1000.0, 0.8, 1.5),
-    'MH terminal': dca.MH(1000.0, 0.8, 1.5, 0.08),
-    'MH exponential': dca.MH(1000.0, 0.5, 0.0),
-    'MH harmonic': dca.MH(1000.0, 0.8, 1.0),
-    'THM': dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
-    'THM terminal': dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0),
-    'GeneralizedHyperbolic': dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8)], Dterm=0.08),
-    'IncliningHyperbolic': dca.IncliningHyperbolic(1000.0, -0.5, -1.0),
+    "Hyperbolic": dca.Hyperbolic(1000.0, 0.8, 1.5),
+    "Hyperbolic exponential": dca.Hyperbolic(1000.0, 0.5, 0.0),
+    "MH": dca.MH(1000.0, 0.8, 1.5),
+    "MH terminal": dca.MH(1000.0, 0.8, 1.5, 0.08),
+    "MH exponential": dca.MH(1000.0, 0.5, 0.0),
+    "MH harmonic": dca.MH(1000.0, 0.8, 1.0),
+    "THM": dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
+    "THM terminal": dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.1, 20.0),
+    "GeneralizedHyperbolic": dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8)], Dterm=0.08
+    ),
+    "IncliningHyperbolic": dca.IncliningHyperbolic(1000.0, -0.5, -1.0),
 }
 
 
@@ -1792,14 +1944,22 @@ def test_time_at_rate_brackets_the_segment() -> None:
 
     # what inverting the wrong segment would have given
     initial = model.segment_params[0]
-    naive = initial[model.T_IDX] + dca.MultisegmentHyperbolic._tcheck(
-        initial[model.Q_IDX], initial[model.D_IDX], initial[model.B_IDX], np.array([q]))[0]
+    naive = (
+        initial[model.T_IDX]
+        + dca.MultisegmentHyperbolic._tcheck(
+            initial[model.Q_IDX], initial[model.D_IDX], initial[model.B_IDX], np.array([q])
+        )[0]
+    )
     assert naive == pytest.approx(5990.359705696208)
 
     # every returned time must land in the segment whose rate it inverts, which is what makes
     # the round trip exact rather than merely close
-    for probe in (np.array([900.0]), np.array([100.0]), np.array([32.84892235377094]),
-                  np.array([1.0])):
+    for probe in (
+        np.array([900.0]),
+        np.array([100.0]),
+        np.array([32.84892235377094]),
+        np.array([1.0]),
+    ):
         recovered = model.time_at_rate(probe)
         assert np.allclose(model.rate(recovered), probe, rtol=1e-12)
 
@@ -1821,8 +1981,7 @@ def test_time_at_rate_subsumes_the_pole() -> None:
     assert dca.MH(1000.0, 0.5, 0.0).time_at_rate(np.array([np.inf]))[0] == -np.inf
 
     # an inclining model has no BACKWARD pole; its rate diverges forward instead
-    assert dca.IncliningHyperbolic(1000.0, -0.5, -1.0).time_at_rate(
-        np.array([np.inf]))[0] == np.inf
+    assert dca.IncliningHyperbolic(1000.0, -0.5, -1.0).time_at_rate(np.array([np.inf]))[0] == np.inf
 
 
 def test_time_at_rate_forward_and_backward() -> None:
@@ -1888,7 +2047,8 @@ def test_large_exponents_do_not_overflow_the_forward_product() -> None:
         rate = 1000.0 * np.exp(-log_term / bi)
         coefficient = 1000.0 / ((1.0 - bi) * decline)
         volume = coefficient - np.sign(coefficient) * np.exp(
-            np.log(abs(coefficient)) + (1.0 - 1.0 / bi) * log_term)
+            np.log(abs(coefficient)) + (1.0 - 1.0 / bi) * log_term
+        )
 
         assert np.allclose(model.rate(t), rate, rtol=1e-12), bi
         assert np.all(np.isfinite(model.cum(t))), bi
@@ -1901,8 +2061,9 @@ def test_large_exponents_do_not_overflow_the_forward_product() -> None:
 
     # the threshold slides with Di, which is why bounding b cannot close it
     import math
+
     assert 709.78 / -math.log1p(-0.5) == pytest.approx(1024.0, rel=1e-3)
-    assert 709.78 / -math.log1p(-(1 - 2 ** -53)) == pytest.approx(19.32, rel=1e-3)
+    assert 709.78 / -math.log1p(-(1 - 2**-53)) == pytest.approx(19.32, rel=1e-3)
 
 
 def test_thm_terminal_time_survives_a_zero_decline() -> None:
@@ -1918,12 +2079,13 @@ def test_thm_terminal_time_survives_a_zero_decline() -> None:
     assert np.all(np.diff(thm.cum(dca.get_time())) >= 0.0)
 
     # the Di = 0 route is closed
-    with pytest.raises(ValueError, match='Di <= 0.0'):
+    with pytest.raises(ValueError, match="Di <= 0.0"):
         dca.THM(0.0, 0.0, 2.0, 1.0, 1.0, 1.1125369292536007e-308, 0.0)
 
     # a denormal but non-zero decline still divides, so nothing that worked before changed
-    assert np.all(np.isfinite(dca.THM(1000.0, 1e-300, 2.0, 1.0, 30.0, 0.08, 0.0).rate(
-        dca.get_time())))
+    assert np.all(
+        np.isfinite(dca.THM(1000.0, 1e-300, 2.0, 1.0, 30.0, 0.08, 0.0).rate(dca.get_time()))
+    )
 
 
 def test_a_saturated_decline_is_rejected_rather_than_producing_nan() -> None:
@@ -1935,23 +2097,27 @@ def test_a_saturated_decline_is_rejected_rather_than_producing_nan() -> None:
     Only reachable where |b| is unbounded, i.e. the two models that allow it."""
     # at Di = 0.9 the threshold sits between these two adjacent doubles
     below, above = 308.2547155599167, 308.25471555991675
-    assert np.isfinite(dca.GeneralizedHyperbolic(1000.0, 0.9, below, ()).segment_params[
-        0, dca.GeneralizedHyperbolic.D_IDX])
-    assert dca.GeneralizedHyperbolic(1000.0, 0.9, below, ()).rate(
-        np.array([365.25]))[0] == pytest.approx(100.0)
+    assert np.isfinite(
+        dca.GeneralizedHyperbolic(1000.0, 0.9, below, ()).segment_params[
+            0, dca.GeneralizedHyperbolic.D_IDX
+        ]
+    )
+    assert dca.GeneralizedHyperbolic(1000.0, 0.9, below, ()).rate(np.array([365.25]))[
+        0
+    ] == pytest.approx(100.0)
 
-    with pytest.raises(ValueError, match='the initial conditions converts to a non-finite'):
+    with pytest.raises(ValueError, match="the initial conditions converts to a non-finite"):
         dca.GeneralizedHyperbolic(1000.0, 0.9, above, ())
 
     # the inclining mirror, and via IncliningHyperbolic
     for Di, bi in ((-0.5, -1e4), (-1e6, -1000.0), (-9.0, -1000.0)):
-        with pytest.raises(ValueError, match='non-finite nominal decline'):
+        with pytest.raises(ValueError, match="non-finite nominal decline"):
             dca.GeneralizedHyperbolic(1000.0, Di, bi, ())
-        with pytest.raises(ValueError, match='non-finite nominal decline'):
+        with pytest.raises(ValueError, match="non-finite nominal decline"):
             dca.IncliningHyperbolic(1000.0, Di, bi)
 
     # named by segment index when it is a segment rather than the initial conditions
-    with pytest.raises(ValueError, match='segment 0 converts to a non-finite'):
+    with pytest.raises(ValueError, match="segment 0 converts to a non-finite"):
         dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.9, 1000.0)])
 
     # A row that no t can reach is exempt: its parameters never enter a forecast. THM produces
@@ -1968,13 +2134,18 @@ def test_a_saturated_decline_is_rejected_rather_than_producing_nan() -> None:
     # in a reachable row today.
     exempt = dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ())
     params = exempt.segment_params.copy()
-    for decline, exponent, is_fatal in ((np.inf, 0.0, False), (np.inf, 1.5, True),
-                                        (np.nan, 0.0, True), (np.nan, 1.5, True)):
+    for decline, exponent, is_fatal in (
+        (np.inf, 0.0, False),
+        (np.inf, 1.5, True),
+        (np.nan, 0.0, True),
+        (np.nan, 1.5, True),
+    ):
         params[0, exempt.D_IDX], params[0, exempt.B_IDX] = decline, exponent
         reachable = np.isfinite(params[:, exempt.T_IDX])
-        fatal = reachable & (np.isnan(params[:, exempt.D_IDX])
-                             | (np.isinf(params[:, exempt.D_IDX])
-                                & (params[:, exempt.B_IDX] != 0.0)))
+        fatal = reachable & (
+            np.isnan(params[:, exempt.D_IDX])
+            | (np.isinf(params[:, exempt.D_IDX]) & (params[:, exempt.B_IDX] != 0.0))
+        )
         assert bool(fatal[0]) is is_fatal, (decline, exponent)
 
 
@@ -1983,9 +2154,11 @@ def test_time_at_rate_on_a_zero_rate_model() -> None:
     time. Inverting it must say so. The ratio q_target / 0 is inf for every positive target,
     indistinguishable from an infinite target, so without a guard the model reported the pole:
     MH(0.0, 0.8, 1.5).time_at_rate(1.0) gave -35.878, where the rate is in fact nan."""
-    for model in (dca.MH(0.0, 0.8, 1.5),
-                  dca.MH(0.0, 0.8, 1.5, 0.08),
-                  dca.GeneralizedHyperbolic.from_segments(0.0, 0.8, 2.0, [(30.0, 1.2)])):
+    for model in (
+        dca.MH(0.0, 0.8, 1.5),
+        dca.MH(0.0, 0.8, 1.5, 0.08),
+        dca.GeneralizedHyperbolic.from_segments(0.0, 0.8, 2.0, [(30.0, 1.2)]),
+    ):
         assert np.all(model.rate(dca.get_time()) == 0.0)
 
         recovered = model.time_at_rate(np.array([0.0, 1.0, 1000.0, np.inf]))
@@ -1999,8 +2172,8 @@ def test_time_at_rate_on_a_zero_rate_model() -> None:
 def test_time_at_rate_edge_shapes() -> None:
     model = dca.MH(1000.0, 0.8, 1.5, 0.08)
 
-    assert model.time_at_rate(100.0).shape == (1,)          # a scalar is accepted
-    assert model.time_at_rate(np.array([])).shape == (0,)   # and an empty array
+    assert model.time_at_rate(100.0).shape == (1,)  # a scalar is accepted
+    assert model.time_at_rate(np.array([])).shape == (0,)  # and an empty array
     assert np.isnan(model.time_at_rate(np.array([np.nan]))[0])
 
     # a constant-rate model is at its rate for all time, or never
@@ -2011,9 +2184,9 @@ def test_time_at_rate_edge_shapes() -> None:
     # nothing warns, over the whole range including the degenerate ends
     probe = np.array([np.inf, 1e6, 1000.0, 1.0, 1e-30, 0.0, -1.0, np.nan])
     with warnings.catch_warnings():
-        warnings.simplefilter('error', RuntimeWarning)
-        for model in TIME_AT_RATE_MODELS.values():
-            model.time_at_rate(probe)
+        warnings.simplefilter("error", RuntimeWarning)
+        for fixture_model in TIME_AT_RATE_MODELS.values():
+            fixture_model.time_at_rate(probe)
 
 
 # ---------------------------------------------------------------------------------------
@@ -2026,8 +2199,7 @@ def test_time_at_rate_edge_shapes() -> None:
     Di=st.floats(1e-300, 1.0, exclude_max=True),
     bi=st.floats(0.0, 2.0),
 )
-def test_hyperbolic_equals_MH_without_a_terminal_decline(qi: float, Di: float,
-                                                        bi: float) -> None:
+def test_hyperbolic_equals_MH_without_a_terminal_decline(qi: float, Di: float, bi: float) -> None:
     """A plain hyperbolic is what MH already produces when given no terminal decline, so the two
     must be bit-for-bit identical. Hyperbolic exists to say that in its type rather than leave it
     implied by an omitted argument."""
@@ -2037,20 +2209,22 @@ def test_hyperbolic_equals_MH_without_a_terminal_decline(qi: float, Di: float,
     modified = dca.MH(qi, Di, bi)
 
     assert np.array_equal(hyperbolic.segment_params, modified.segment_params, equal_nan=True)
-    for name in ('rate', 'cum', 'D', 'beta', 'b', 'time_at_rate'):
-        assert np.array_equal(getattr(hyperbolic, name)(t), getattr(modified, name)(t),
-                              equal_nan=True), name
+    for name in ("rate", "cum", "D", "beta", "b", "time_at_rate"):
+        assert np.array_equal(
+            getattr(hyperbolic, name)(t), getattr(modified, name)(t), equal_nan=True
+        ), name
 
     # explicitly passing Dterm = 0 is the same thing
-    assert np.array_equal(hyperbolic.segment_params,
-                          dca.MH(qi, Di, bi, 0.0).segment_params, equal_nan=True)
+    assert np.array_equal(
+        hyperbolic.segment_params, dca.MH(qi, Di, bi, 0.0).segment_params, equal_nan=True
+    )
 
 
 def test_hyperbolic_is_a_single_segment() -> None:
     """One row, no terminal segment, declining for all time."""
     model = dca.Hyperbolic(1000.0, 0.8, 1.5)
     assert model.segment_params.shape[0] == 1
-    assert [desc.name for desc in dca.Hyperbolic.get_param_descs()] == ['qi', 'Di', 'bi']
+    assert [desc.name for desc in dca.Hyperbolic.get_param_descs()] == ["qi", "Di", "bi"]
 
     # the secant definition, exactly: Di = 0.8 leaves a fifth of the rate after a year
     assert model.rate(np.array([0.0]))[0] == 1000.0
@@ -2103,12 +2277,12 @@ def test_hyperbolic_EUR_converges_only_below_a_bi_of_one(bi: float) -> None:
     # it the tail is already exponential, Dterm is ignored with a warning, and that primary
     # segment converges on its own.
     with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter('always')
+        warnings.simplefilter("always")
         modified = dca.MH(1000.0, 0.8, bi, 0.08)
     assert np.isfinite(modified.cum(np.array([np.inf]))[0])
     assert bool(caught) == (bi <= dca.MH.B_EPSILON)
     if caught:
-        assert 'Dterm ignored' in str(caught[0].message)
+        assert "Dterm ignored" in str(caught[0].message)
 
 
 def test_hyperbolic_documented_EUR_values() -> None:
@@ -2116,8 +2290,9 @@ def test_hyperbolic_documented_EUR_values() -> None:
     slow = dca.Hyperbolic(1000.0, 0.8, 0.5).cum(np.array([1e4 * dca.DAYS_PER_YEAR, np.inf]))
     assert slow == pytest.approx([295469.553, 295493.457])
     assert slow[0] < slow[1]  # a bi of 0.5 is slow enough that 1e4 years still falls short
-    assert dca.Hyperbolic(1000.0, 0.8, 1.5).cum(np.array([1e4 * dca.DAYS_PER_YEAR]))[0] \
-        == pytest.approx(4918160.446)
+    assert dca.Hyperbolic(1000.0, 0.8, 1.5).cum(np.array([1e4 * dca.DAYS_PER_YEAR]))[
+        0
+    ] == pytest.approx(4918160.446)
     thirty_years = np.array([30.0 * dca.DAYS_PER_YEAR])
     assert dca.Hyperbolic(1000.0, 0.8, 1.5).cum(thirty_years)[0] == pytest.approx(617998.926)
     assert dca.MH(1000.0, 0.8, 1.5, 0.08).cum(thirty_years)[0] == pytest.approx(555127.614)
@@ -2127,14 +2302,16 @@ def test_hyperbolic_rejects_what_MH_rejects() -> None:
     """The bounds are MH's, minus Dterm: a rate cannot be negative, a decline cannot reach 100%
     per year or fail to decline at all, and the exponent stays within [0, 2] as it does for the
     other two published hyperbolic models."""
-    for args, message in (((-1000.0, 0.8, 1.5), 'qi < 0.0'),
-                          ((1000.0, 0.0, 1.5), 'Di <= 0.0'),
-                          ((1000.0, 1.0, 1.5), 'Di >= 1.0'),
-                          ((1000.0, 5e-324, 1.5), 'converts to a zero nominal decline'),
-                          ((1000.0, 0.8, -0.1), 'bi < 0.0'),
-                          ((1000.0, 0.8, 2.5), 'bi > 2.0'),
-                          ((1000.0, np.nan, 1.5), 'Di is not finite'),
-                          ((1000.0, 0.8, np.inf), 'bi is not finite')):
+    for args, message in (
+        ((-1000.0, 0.8, 1.5), "qi < 0.0"),
+        ((1000.0, 0.0, 1.5), "Di <= 0.0"),
+        ((1000.0, 1.0, 1.5), "Di >= 1.0"),
+        ((1000.0, 5e-324, 1.5), "converts to a zero nominal decline"),
+        ((1000.0, 0.8, -0.1), "bi < 0.0"),
+        ((1000.0, 0.8, 2.5), "bi > 2.0"),
+        ((1000.0, np.nan, 1.5), "Di is not finite"),
+        ((1000.0, 0.8, np.inf), "bi is not finite"),
+    ):
         with pytest.raises(ValueError) as e:
             dca.Hyperbolic(*args)
         assert message in str(e.value), args
@@ -2150,12 +2327,19 @@ def test_hyperbolic_rejects_what_MH_rejects() -> None:
     assert generalized.segment_params[0, generalized.B_IDX] == 5.0
 
 
-def _desc_contract(desc: 'dca.base.ParamDesc') -> Tuple[str, str, Optional[float],
-                                                        Optional[float], bool, bool]:
+def _desc_contract(
+    desc: "dca.base.ParamDesc",
+) -> Tuple[str, str, Optional[float], Optional[float], bool, bool]:
     """Everything a ParamDesc validates on. Excludes ``naive_gen``, which is a fresh lambda per
     call and so compares by identity."""
-    return (desc.name, desc.description, desc.lower_bound, desc.upper_bound,
-            desc.exclude_lower_bound, desc.exclude_upper_bound)
+    return (
+        desc.name,
+        desc.description,
+        desc.lower_bound,
+        desc.upper_bound,
+        desc.exclude_lower_bound,
+        desc.exclude_upper_bound,
+    )
 
 
 def test_shared_param_descs_are_single_sourced() -> None:
@@ -2169,19 +2353,24 @@ def test_shared_param_descs_are_single_sourced() -> None:
     inclining = dca.IncliningHyperbolic.get_param_descs()
 
     # qi -- four models
-    assert (_desc_contract(hyperbolic[0]) == _desc_contract(modified[0])
-            == _desc_contract(generalized[0]) == _desc_contract(inclining[0]))
+    assert (
+        _desc_contract(hyperbolic[0])
+        == _desc_contract(modified[0])
+        == _desc_contract(generalized[0])
+        == _desc_contract(inclining[0])
+    )
 
     # Di, strictly declining -- three models
-    assert (_desc_contract(hyperbolic[1]) == _desc_contract(modified[1])
-            == _desc_contract(transient[1]))
+    assert (
+        _desc_contract(hyperbolic[1]) == _desc_contract(modified[1]) == _desc_contract(transient[1])
+    )
 
     # bi, bounded to [0, 2] -- two models
     assert _desc_contract(hyperbolic[2]) == _desc_contract(modified[2])
 
     # Dterm -- two models. MH's is last of four, GeneralizedHyperbolic's last of five.
     assert _desc_contract(modified[3]) == _desc_contract(generalized[4])
-    assert modified[3].name == generalized[4].name == 'Dterm'
+    assert modified[3].name == generalized[4].name == "Dterm"
 
     # THM deliberately does NOT share qi or bi: same bounds, narrower generators. Pin the
     # difference, so replacing either with the shared call is caught rather than passing quietly.
@@ -2198,7 +2387,7 @@ def test_shared_param_descs_are_single_sourced() -> None:
 def test_hyperbolic_param_descs_and_phases() -> None:
     rng = np.random.default_rng(20260804)
     generated = [desc.naive_gen(rng, 6) for desc in dca.Hyperbolic.get_param_descs()]
-    assert np.all(generated[1] > 0.0)                  # Di must decline
+    assert np.all(generated[1] > 0.0)  # Di must decline
     assert np.all((generated[2] >= 0.0) & (generated[2] <= 2.0))
     for params in zip(*generated):
         assert np.all(np.isfinite(dca.Hyperbolic(*params).rate(dca.get_time())))
@@ -2226,7 +2415,8 @@ def test_hyperbolic_param_descs_and_phases() -> None:
     bi=st.floats(-2.0, 0.0, exclude_max=True),
 )
 def test_inclining_hyperbolic_equals_generalized_with_no_segments(
-        qi: float, Di: float, bi: float) -> None:
+    qi: float, Di: float, bi: float
+) -> None:
     """IncliningHyperbolic is the named, bound-checked case of a segment-free
     GeneralizedHyperbolic -- bit-for-bit, the mirror of what MH is for a declining forecast.
     Both take the same row 0 through the same conversion.
@@ -2241,9 +2431,10 @@ def test_inclining_hyperbolic_equals_generalized_with_no_segments(
     generalized = dca.GeneralizedHyperbolic(qi, Di, bi, ())
 
     assert np.array_equal(inclining.segment_params, generalized.segment_params, equal_nan=True)
-    for name in ('rate', 'cum', 'D', 'beta', 'b'):
-        assert np.array_equal(getattr(inclining, name)(t), getattr(generalized, name)(t),
-                              equal_nan=True), name
+    for name in ("rate", "cum", "D", "beta", "b"):
+        assert np.array_equal(
+            getattr(inclining, name)(t), getattr(generalized, name)(t), equal_nan=True
+        ), name
 
 
 def test_inclining_hyperbolic_rises() -> None:
@@ -2253,9 +2444,9 @@ def test_inclining_hyperbolic_rises() -> None:
 
     assert model.rate(np.array([0.0]))[0] == 1000.0
     assert model.rate(np.array([365.25]))[0] == pytest.approx(1500.0)
-    assert np.all(np.diff(model.rate(t)) > 0.0)      # the rate rises throughout
+    assert np.all(np.diff(model.rate(t)) > 0.0)  # the rate rises throughout
     assert np.all(np.diff(model.cum(t)) > 0.0)
-    assert np.all(model.D(t) < 0.0)                  # the decline stays negative
+    assert np.all(model.D(t) < 0.0)  # the decline stays negative
     assert np.all(model.b(t) == -1.0)
 
     # against the closed form, evaluated the way the model does
@@ -2263,8 +2454,9 @@ def test_inclining_hyperbolic_rises() -> None:
     assert np.allclose(model.rate(t), 1000.0 * np.exp(-np.log1p(Di_nom * -1.0 * t) / -1.0))
 
     # an arbitrarily steep incline: Di = -9 is a tenfold rise
-    assert dca.IncliningHyperbolic(100.0, -9.0, -1.0).rate(
-        np.array([365.25]))[0] == pytest.approx(1000.0)
+    assert dca.IncliningHyperbolic(100.0, -9.0, -1.0).rate(np.array([365.25]))[0] == pytest.approx(
+        1000.0
+    )
 
     assert check_model(model, 1000.0)
 
@@ -2275,11 +2467,10 @@ def test_inclining_hyperbolic_has_no_terminal_decline() -> None:
     are therefore unbounded -- it models one period, not a whole well."""
     model = dca.IncliningHyperbolic(1000.0, -0.5, -1.0)
     assert model.segment_params.shape[0] == 1
-    assert [desc.name for desc in dca.IncliningHyperbolic.get_param_descs()] \
-        == ['qi', 'Di', 'bi']
+    assert [desc.name for desc in dca.IncliningHyperbolic.get_param_descs()] == ["qi", "Di", "bi"]
 
     with pytest.raises(TypeError):
-        dca.IncliningHyperbolic(1000.0, -0.5, -1.0, 0.08)  # type: ignore[call-arg]
+        dca.IncliningHyperbolic(1000.0, -0.5, -1.0, 0.08)  # type: ignore[arg-type]
 
     # unbounded, and it says so by growing without limit rather than by returning inf early
     far = model.rate(np.array([1e6, 1e9]))
@@ -2287,7 +2478,8 @@ def test_inclining_hyperbolic_has_no_terminal_decline() -> None:
 
     # to incline and then decline, GeneralizedHyperbolic takes both signs
     both = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, -0.5, -1.0, [(730.5, 0.3, 0.8)], Dterm=0.08)
+        1000.0, -0.5, -1.0, [(730.5, 0.3, 0.8)], Dterm=0.08
+    )
     assert both.D(np.array([365.25]))[0] < 0.0
     assert both.D(np.array([1095.75]))[0] > 0.0
     assert np.all(np.diff(both.cum(dca.get_time())) >= 0.0)
@@ -2296,13 +2488,15 @@ def test_inclining_hyperbolic_has_no_terminal_decline() -> None:
 def test_inclining_hyperbolic_requires_both_negative() -> None:
     """An inclining model that does not incline is a declining one, and belongs to MH. A mixed
     pair would drive the decline through zero rather than describing a build-up."""
-    for args, message in (((1000.0, 0.5, -1.0), 'Di >= 0.0'),
-                          ((1000.0, 0.0, -1.0), 'Di >= 0.0'),
-                          ((1000.0, -0.5, 1.0), 'bi >= 0.0'),
-                          ((1000.0, -0.5, 0.0), 'bi >= 0.0'),
-                          ((-1000.0, -0.5, -1.0), 'qi < 0.0'),
-                          ((1000.0, np.nan, -1.0), 'Di is not finite'),
-                          ((1000.0, -0.5, np.inf), 'bi is not finite')):
+    for args, message in (
+        ((1000.0, 0.5, -1.0), "Di >= 0.0"),
+        ((1000.0, 0.0, -1.0), "Di >= 0.0"),
+        ((1000.0, -0.5, 1.0), "bi >= 0.0"),
+        ((1000.0, -0.5, 0.0), "bi >= 0.0"),
+        ((-1000.0, -0.5, -1.0), "qi < 0.0"),
+        ((1000.0, np.nan, -1.0), "Di is not finite"),
+        ((1000.0, -0.5, np.inf), "bi is not finite"),
+    ):
         with pytest.raises(ValueError) as e:
             dca.IncliningHyperbolic(*args)
         assert message in str(e.value), args
@@ -2317,11 +2511,11 @@ def test_inclining_hyperbolic_requires_an_incline_that_survives_conversion() -> 
     inclining one -- and GeneralizedHyperbolic rejects that same pair through its
     (D == 0 implies b == 0) rule, so accepting it here would break the equivalence."""
     for Di in (-1e-320, -1.1125369292536007e-308, -5e-324, -8.0e-306):
-        with pytest.raises(ValueError, match='too small in magnitude to incline'):
+        with pytest.raises(ValueError, match="too small in magnitude to incline"):
             dca.IncliningHyperbolic(1000.0, Di, -1.0)
 
         # the generalized model rejects the same parameters, for the same underlying reason
-        with pytest.raises(ValueError, match='D == 0, which requires b == 0'):
+        with pytest.raises(ValueError, match="D == 0, which requires b == 0"):
             dca.GeneralizedHyperbolic(1000.0, Di, -1.0, ())
 
     # a Di just above the threshold is accepted and does incline
@@ -2332,8 +2526,7 @@ def test_inclining_hyperbolic_requires_an_incline_that_survives_conversion() -> 
 def test_inclining_hyperbolic_param_descs_and_phases() -> None:
     # naive_gen must emit values the constructor accepts -- both strictly negative
     rng = np.random.default_rng(20260803)
-    generated = [desc.naive_gen(rng, 6)
-                 for desc in dca.IncliningHyperbolic.get_param_descs()]
+    generated = [desc.naive_gen(rng, 6) for desc in dca.IncliningHyperbolic.get_param_descs()]
     assert np.all(generated[1] < 0.0) and np.all(generated[2] < 0.0)
     for params in zip(*generated):
         model = dca.IncliningHyperbolic(*params)
@@ -2355,15 +2548,16 @@ def test_inclining_hyperbolic_param_descs_and_phases() -> None:
 # ---------------------------------------------------------------------------------------
 
 
-@pytest.mark.filterwarnings('ignore:Dterm ignored')  # bi = 0 with Dterm > 0 is in range here
+@pytest.mark.filterwarnings("ignore:Dterm ignored")  # bi = 0 with Dterm > 0 is in range here
 @given(
     qi=st.floats(1e-10, 1e6),
     Di=st.floats(0.0, 1.0, exclude_max=True),
     bi=st.floats(0.0, 2.0),
     Dterm=st.floats(0.0, 1.0, exclude_max=True),
 )
-def test_generalized_hyperbolic_reduces_to_MH(qi: float, Di: float, bi: float,
-                                              Dterm: float) -> None:
+def test_generalized_hyperbolic_reduces_to_MH(
+    qi: float, Di: float, bi: float, Dterm: float
+) -> None:
     """With no segments, GeneralizedHyperbolic must be bit-for-bit identical to MH --
     array_equal, not allclose. Row 0 is the same expression and the terminal row goes
     through the same _fill_segment_chain calls at the same derived time. Restricted to
@@ -2383,16 +2577,15 @@ def test_generalized_hyperbolic_reduces_to_MH(qi: float, Di: float, bi: float,
     gh = dca.GeneralizedHyperbolic(qi, Di, bi, (), Dterm)
 
     assert np.array_equal(mh.segment_params, gh.segment_params, equal_nan=True)
-    for name in ('rate', 'cum', 'D', 'beta', 'b'):
-        assert np.array_equal(getattr(mh, name)(t), getattr(gh, name)(t), equal_nan=True), \
-            name
+    for name in ("rate", "cum", "D", "beta", "b"):
+        assert np.array_equal(getattr(mh, name)(t), getattr(gh, name)(t), equal_nan=True), name
 
 
 def test_generalized_hyperbolic_model() -> None:
     """The generic model invariants, on a model with every kind of segment override."""
     gh = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0,
-        [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08)
+        1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08
+    )
     assert check_model(gh, 1000.0)
 
 
@@ -2411,14 +2604,14 @@ def test_hyperbolic_segment_from_tuple_arities() -> None:
 
     with pytest.raises(ValueError) as e:
         HS.from_tuple((30.0,))
-    assert 'must be (t, b), (t, D, b) or (t, q, D, b)' in str(e.value)
+    assert "must be (t, b), (t, D, b) or (t, q, D, b)" in str(e.value)
 
     with pytest.raises(ValueError) as e:
         HS.from_tuple((30.0, 1.0, 2.0, 3.0, 4.0))
 
     with pytest.raises(ValueError) as e:
         HS.from_tuple((None, 1.2))
-    assert 'segment t must be given' in str(e.value)
+    assert "segment t must be given" in str(e.value)
 
 
 def test_hyperbolic_segment_is_keyword_only() -> None:
@@ -2426,7 +2619,7 @@ def test_hyperbolic_segment_is_keyword_only() -> None:
     (365.0, 0.3) means b -- the same values meaning different things by entry point. The
     optional fields are keyword-only so that ambiguity cannot be expressed."""
     with pytest.raises(TypeError):
-        dca.HyperbolicSegment(365.0, 0.3)  # type: ignore[misc]
+        dca.HyperbolicSegment(365.0, 0.3)  # type: ignore[call-arg]
 
     assert dca.HyperbolicSegment(365.0, b=0.3).b == 0.3
     assert dca.HyperbolicSegment(365.0).q is None
@@ -2435,11 +2628,15 @@ def test_hyperbolic_segment_is_keyword_only() -> None:
 def test_generalized_hyperbolic_builder_matches_dataclasses() -> None:
     HS = dca.HyperbolicSegment
     built = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0,
-        [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08)
+        1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08
+    )
     explicit = dca.GeneralizedHyperbolic(
-        1000.0, 0.8, 2.0,
-        (HS(30.0, b=1.2), HS(365.0, D=0.3, b=0.8), HS(730.0, q=250.0, b=0.5)), 0.08)
+        1000.0,
+        0.8,
+        2.0,
+        (HS(30.0, b=1.2), HS(365.0, D=0.3, b=0.8), HS(730.0, q=250.0, b=0.5)),
+        0.08,
+    )
     assert built == explicit
     assert np.array_equal(built.segment_params, explicit.segment_params)
 
@@ -2454,8 +2651,8 @@ def test_generalized_hyperbolic_continuity_and_overrides() -> None:
     """Rate and decline are continuous across a boundary unless overridden; cumulative
     volume is continuous always, including across a rate jump."""
     gh = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0,
-        [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08)
+        1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8), (730.0, 250.0, None, 0.5)], Dterm=0.08
+    )
 
     # Continuity is exact by construction, not merely numerical: _fill_segment_chain seeds
     # each row from the previous segment evaluated at the boundary. Assert that directly --
@@ -2473,10 +2670,12 @@ def test_generalized_hyperbolic_continuity_and_overrides() -> None:
     # and numerically, to within the decline over a 1e-6 day step
     for t_bound in (30.0, 365.0):
         assert gh.rate(np.array([t_bound]))[0] == pytest.approx(
-            gh.rate(np.array([t_bound - 1e-6]))[0], rel=1e-7)
+            gh.rate(np.array([t_bound - 1e-6]))[0], rel=1e-7
+        )
     for t_bound in (30.0, 365.0, 730.0):
         assert gh.cum(np.array([t_bound]))[0] == pytest.approx(
-            gh.cum(np.array([t_bound - 1e-6]))[0], abs=1e-3)
+            gh.cum(np.array([t_bound - 1e-6]))[0], abs=1e-3
+        )
 
     # the rate override steps the rate at 730 and nowhere else
     assert gh.rate(np.array([730.0]))[0] == 250.0
@@ -2486,8 +2685,7 @@ def test_generalized_hyperbolic_continuity_and_overrides() -> None:
     assert gh.D(np.array([365.0]))[0] != pytest.approx(gh.D(np.array([364.999999]))[0])
 
     # b steps at every boundary, taking each segment's value from its start onward
-    assert np.array_equal(gh.b(np.array([1.0, 30.0, 365.0, 730.0, 1e5])),
-                          [2.0, 1.2, 0.8, 0.5, 0.0])
+    assert np.array_equal(gh.b(np.array([1.0, 30.0, 365.0, 730.0, 1e5])), [2.0, 1.2, 0.8, 0.5, 0.0])
 
 
 def test_generalized_hyperbolic_decline_is_secant_effective() -> None:
@@ -2500,17 +2698,18 @@ def test_generalized_hyperbolic_decline_is_secant_effective() -> None:
 
     # b given on the same segment: the conversion must use 0.8, not the inherited 2.0
     given_b = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 2.0, [(365.0, 0.3, 0.8)])
-    assert given_b.segment_params[1, D_IDX] == \
-        msh.nominal_from_secant(0.3, 0.8) / dca.DAYS_PER_YEAR
+    assert given_b.segment_params[1, D_IDX] == msh.nominal_from_secant(0.3, 0.8) / dca.DAYS_PER_YEAR
     assert msh.secant_from_nominal(
-        given_b.segment_params[1, D_IDX] * dca.DAYS_PER_YEAR, 0.8) == pytest.approx(0.3)
+        given_b.segment_params[1, D_IDX] * dca.DAYS_PER_YEAR, 0.8
+    ) == pytest.approx(0.3)
 
     # b inherited, D given: the conversion must use the inherited 2.0
-    inherited_b = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0, [(365.0, 0.3, None)])
+    inherited_b = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 2.0, [(365.0, 0.3, None)])
     assert inherited_b.segment_params[1, B_IDX] == 2.0
-    assert inherited_b.segment_params[1, D_IDX] == \
-        msh.nominal_from_secant(0.3, 2.0) / dca.DAYS_PER_YEAR
+    assert (
+        inherited_b.segment_params[1, D_IDX]
+        == msh.nominal_from_secant(0.3, 2.0) / dca.DAYS_PER_YEAR
+    )
 
 
 def test_generalized_hyperbolic_noop_segment_is_permitted() -> None:
@@ -2528,7 +2727,7 @@ def test_generalized_hyperbolic_noop_segment_is_permitted() -> None:
     assert noop.segment_params[1, noop.Q_IDX] == base.rate(np.array([365.0]))[0]
     assert noop.segment_params[1, noop.D_IDX] == base.D(np.array([365.0]))[0]
 
-    for name in ('rate', 'cum', 'D', 'beta', 'b'):
+    for name in ("rate", "cum", "D", "beta", "b"):
         assert np.allclose(getattr(noop, name)(t), getattr(base, name)(t), rtol=1e-12), name
 
 
@@ -2541,8 +2740,8 @@ def test_generalized_hyperbolic_inclines() -> None:
 
     model = dca.GeneralizedHyperbolic(1000.0, -0.5, -1.0, ())
     assert model.rate(np.array([365.25]))[0] == pytest.approx(1500.0)
-    assert np.all(np.diff(model.rate(t)) > 0.0)      # the rate rises throughout
-    assert np.all(model.D(t) < 0.0)                  # and the decline stays negative
+    assert np.all(np.diff(model.rate(t)) > 0.0)  # the rate rises throughout
+    assert np.all(model.D(t) < 0.0)  # and the decline stays negative
     assert np.all(model.b(t) == -1.0)
     assert np.all(np.diff(model.cum(t)) > 0.0)
 
@@ -2551,12 +2750,12 @@ def test_generalized_hyperbolic_inclines() -> None:
     assert np.allclose(model.rate(t), 1000.0 * np.exp(-np.log1p(Di_nom * -1.0 * t) / -1.0))
 
     # an arbitrarily steep incline is permitted
-    assert dca.GeneralizedHyperbolic(100.0, -9.0, -1.0, ()).rate(
-        np.array([365.25]))[0] == pytest.approx(1000.0)
+    assert dca.GeneralizedHyperbolic(100.0, -9.0, -1.0, ()).rate(np.array([365.25]))[
+        0
+    ] == pytest.approx(1000.0)
 
     # a forecast may decline and then incline, which is what a restimulation looks like
-    restimulated = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 1.5, [(730.5, -0.3, -0.5)])
+    restimulated = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 1.5, [(730.5, -0.3, -0.5)])
     assert restimulated.D(np.array([365.25]))[0] > 0.0
     assert restimulated.D(np.array([1095.75]))[0] < 0.0
     assert np.all(np.diff(restimulated.cum(t)) >= 0.0)
@@ -2573,8 +2772,7 @@ def test_generalized_hyperbolic_is_flat_when_D_is_zero() -> None:
     assert np.all(flat.D(t) == 0.0)
 
     # a flat segment after a declining one holds the rate it inherits
-    plateau = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 1.5, [(365.25, 0.0, 0.0)])
+    plateau = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 1.5, [(365.25, 0.0, 0.0)])
     held = plateau.rate(np.array([365.25]))[0]
     assert np.allclose(plateau.rate(np.array([365.25, 1e4, 1e6])), held)
     assert held == pytest.approx(200.0, rel=1e-6)
@@ -2589,11 +2787,11 @@ def test_generalized_hyperbolic_requires_D_and_b_to_agree_in_sign() -> None:
     GH, HS = dca.GeneralizedHyperbolic, dca.HyperbolicSegment
 
     for args, message in (
-            ((1000.0, 0.8, -1.0, ()), 'initial conditions has D and b of opposing signs'),
-            ((1000.0, -0.8, 1.0, ()), 'initial conditions has D and b of opposing signs'),
-            ((1000.0, 0.0, 1.5, ()), 'initial conditions has D == 0, which requires b == 0'),
-            ((1000.0, -0.5, 0.0, ()), None),   # an inclining exponential is legal
-            ((1000.0, 0.8, 0.0, ()), None),    # so is a declining one
+        ((1000.0, 0.8, -1.0, ()), "initial conditions has D and b of opposing signs"),
+        ((1000.0, -0.8, 1.0, ()), "initial conditions has D and b of opposing signs"),
+        ((1000.0, 0.0, 1.5, ()), "initial conditions has D == 0, which requires b == 0"),
+        ((1000.0, -0.5, 0.0, ()), None),  # an inclining exponential is legal
+        ((1000.0, 0.8, 0.0, ()), None),  # so is a declining one
     ):
         if message is None:
             GH(*args)
@@ -2603,28 +2801,31 @@ def test_generalized_hyperbolic_requires_D_and_b_to_agree_in_sign() -> None:
         assert message in str(e.value), args
 
     # given b, inherited D
-    with pytest.raises(ValueError, match='segments.0. has D and b of opposing signs'):
+    with pytest.raises(ValueError, match="segments.0. has D and b of opposing signs"):
         GH.from_segments(1000.0, 0.8, 1.5, [(365.0, -0.5)])
 
     # given D, inherited b
-    with pytest.raises(ValueError, match='segments.0. has D and b of opposing signs'):
+    with pytest.raises(ValueError, match="segments.0. has D and b of opposing signs"):
         GH.from_segments(1000.0, 0.8, 1.5, [(365.0, -0.3, None)])
 
     # given D == 0, inherited non-zero b
-    with pytest.raises(ValueError, match='segments.0. has D == 0, which requires b == 0'):
+    with pytest.raises(ValueError, match="segments.0. has D == 0, which requires b == 0"):
         GH.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.0, None)])
 
     # the index in the message points at the offending segment, not the initial conditions
-    with pytest.raises(ValueError, match='segments.1. has D and b of opposing signs'):
+    with pytest.raises(ValueError, match="segments.1. has D and b of opposing signs"):
         GH.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.3, 0.8), (730.0, -0.2, None)])
 
     # inheriting a sign-consistent pair is fine, in both directions
-    assert GH.from_segments(1000.0, -0.5, -1.0, [(365.0, -0.2, None)]
-                            ).segment_params.shape[0] == 2
+    assert GH.from_segments(1000.0, -0.5, -1.0, [(365.0, -0.2, None)]).segment_params.shape[0] == 2
     assert GH(1000.0, 0.8, 1.5, (HS(365.0, q=500.0),)).segment_params.shape[0] == 2
     # and a flat segment may inherit b == 0 from an exponential one
-    assert GH.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.3, 0.0), (730.0, 0.0, None)]
-                            ).segment_params.shape[0] == 3
+    assert (
+        GH.from_segments(
+            1000.0, 0.8, 1.5, [(365.0, 0.3, 0.0), (730.0, 0.0, None)]
+        ).segment_params.shape[0]
+        == 3
+    )
 
 
 def test_the_two_models_diverge_only_on_a_flat_forecast() -> None:
@@ -2634,9 +2835,9 @@ def test_the_two_models_diverge_only_on_a_flat_forecast() -> None:
     a matching b of 0: an exponent has nothing to act on when the decline is zero.
 
     This is why the reduction test restricts itself to Di > 0."""
-    with pytest.raises(ValueError, match='Di <= 0.0'):
+    with pytest.raises(ValueError, match="Di <= 0.0"):
         dca.MH(1000.0, 0.0, 1.5)
-    with pytest.raises(ValueError, match='Di <= 0.0'):
+    with pytest.raises(ValueError, match="Di <= 0.0"):
         dca.MH(1000.0, 0.0, 0.0)
 
     # the generalized model takes it with a zero exponent, and only then
@@ -2644,7 +2845,7 @@ def test_the_two_models_diverge_only_on_a_flat_forecast() -> None:
     assert np.all(flat.rate(dca.get_time()) == 1000.0)
     assert flat.cum(np.array([365.25]))[0] == pytest.approx(365250.0)
 
-    with pytest.raises(ValueError, match='D == 0, which requires b == 0'):
+    with pytest.raises(ValueError, match="D == 0, which requires b == 0"):
         dca.GeneralizedHyperbolic(1000.0, 0.0, 1.5, ())
 
 
@@ -2664,7 +2865,7 @@ def test_generalized_hyperbolic_terminal_clamps_instead_of_raising() -> None:
     segment's own start time."""
     with pytest.raises(ValueError) as e:
         dca.MH(1000.0, 0.5, 1.0, 0.9)
-    assert 'Di < Dterm' in str(e.value)
+    assert "Di < Dterm" in str(e.value)
 
     # with no segments the tail starts at t = 0, giving a pure exponential at Dterm
     steep = dca.GeneralizedHyperbolic(1000.0, 0.5, 1.0, (), 0.9)
@@ -2675,9 +2876,13 @@ def test_generalized_hyperbolic_terminal_clamps_instead_of_raising() -> None:
 
     # the clamped terminal row is zero-width and inert: rate and cum stay continuous
     clamped = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0, [(3650.0, 0.05, 1.0)], Dterm=0.5)
-    assert clamped.segment_params[-1, clamped.T_IDX] == \
-        clamped.segment_params[-2, clamped.T_IDX] == 3650.0
+        1000.0, 0.8, 2.0, [(3650.0, 0.05, 1.0)], Dterm=0.5
+    )
+    assert (
+        clamped.segment_params[-1, clamped.T_IDX]
+        == clamped.segment_params[-2, clamped.T_IDX]
+        == 3650.0
+    )
     around = np.array([3649.999, 3650.0, 3650.001])
     assert np.allclose(clamped.rate(around), 64.4376, rtol=1e-4)
     assert np.all(np.diff(clamped.cum(around)) > 0.0)
@@ -2693,11 +2898,14 @@ def test_generalized_hyperbolic_skips_the_terminal_row_when_nothing_to_cap() -> 
     # ignored -- with a warning, asserted in
     # test_terminal_decline_is_ignored_with_a_warning_on_a_constant_decline_tail.
     with pytest.warns(RuntimeWarning):
-        assert dca.GeneralizedHyperbolic(
-            1000.0, 0.8, 0.0, (), 0.08).segment_params.shape[0] == 1
+        assert dca.GeneralizedHyperbolic(1000.0, 0.8, 0.0, (), 0.08).segment_params.shape[0] == 1
     with pytest.warns(RuntimeWarning):
-        assert dca.GeneralizedHyperbolic.from_segments(
-            1000.0, 0.8, 1.5, [(365.0, 0.0)], Dterm=0.08).segment_params.shape[0] == 2
+        assert (
+            dca.GeneralizedHyperbolic.from_segments(
+                1000.0, 0.8, 1.5, [(365.0, 0.0)], Dterm=0.08
+            ).segment_params.shape[0]
+            == 2
+        )
 
 
 def test_generalized_hyperbolic_errors() -> None:
@@ -2705,27 +2913,27 @@ def test_generalized_hyperbolic_errors() -> None:
     GH = dca.GeneralizedHyperbolic
 
     for segments, message in (
-            ((HS(0.0, b=1.0),), 'segments t must be finite and > 0'),
-            ((HS(-5.0, b=1.0),), 'segments t must be finite and > 0'),
-            ((HS(np.nan, b=1.0),), 'segments t must be finite and > 0'),
-            ((HS(np.inf, b=1.0),), 'segments t must be finite and > 0'),
-            ((HS(100.0, b=1.0), HS(50.0, b=1.0)), 'segments t not strictly increasing'),
-            ((HS(100.0, b=1.0), HS(100.0, b=1.0)), 'segments t not strictly increasing'),
-            ((HS(100.0, q=0.0),), 'segments q must be finite and > 0'),
-            ((HS(100.0, q=-1.0),), 'segments q must be finite and > 0'),
-            ((HS(100.0, q=np.nan),), 'segments q must be finite and > 0'),
-            ((HS(100.0, q=np.inf),), 'segments q must be finite and > 0'),
-            ((HS(100.0, D=1.0),), 'segments D must be finite and < 1'),
-            ((HS(100.0, D=np.inf),), 'segments D must be finite and < 1'),
-            ((HS(100.0, D=np.nan),), 'segments D must be finite and < 1'),
-            ((HS(100.0, b=np.nan),), 'segments b must be finite'),
-            ((HS(100.0, b=np.inf),), 'segments b must be finite'),
-            (((100.0, 1.0),), 'segments entries must be HyperbolicSegment'),
-            # a negative D or b is legal on its own but not against a declining model: the
-            # inherited counterpart has the opposing sign
-            ((HS(100.0, D=-0.1),), 'D and b of opposing signs'),
-            ((HS(100.0, b=-0.1),), 'D and b of opposing signs'),
-            ((HS(100.0, D=0.0),), 'D == 0, which requires b == 0'),
+        ((HS(0.0, b=1.0),), "segments t must be finite and > 0"),
+        ((HS(-5.0, b=1.0),), "segments t must be finite and > 0"),
+        ((HS(np.nan, b=1.0),), "segments t must be finite and > 0"),
+        ((HS(np.inf, b=1.0),), "segments t must be finite and > 0"),
+        ((HS(100.0, b=1.0), HS(50.0, b=1.0)), "segments t not strictly increasing"),
+        ((HS(100.0, b=1.0), HS(100.0, b=1.0)), "segments t not strictly increasing"),
+        ((HS(100.0, q=0.0),), "segments q must be finite and > 0"),
+        ((HS(100.0, q=-1.0),), "segments q must be finite and > 0"),
+        ((HS(100.0, q=np.nan),), "segments q must be finite and > 0"),
+        ((HS(100.0, q=np.inf),), "segments q must be finite and > 0"),
+        ((HS(100.0, D=1.0),), "segments D must be finite and < 1"),
+        ((HS(100.0, D=np.inf),), "segments D must be finite and < 1"),
+        ((HS(100.0, D=np.nan),), "segments D must be finite and < 1"),
+        ((HS(100.0, b=np.nan),), "segments b must be finite"),
+        ((HS(100.0, b=np.inf),), "segments b must be finite"),
+        (((100.0, 1.0),), "segments entries must be HyperbolicSegment"),
+        # a negative D or b is legal on its own but not against a declining model: the
+        # inherited counterpart has the opposing sign
+        ((HS(100.0, D=-0.1),), "D and b of opposing signs"),
+        ((HS(100.0, b=-0.1),), "D and b of opposing signs"),
+        ((HS(100.0, D=0.0),), "D == 0, which requires b == 0"),
     ):
         with pytest.raises(ValueError) as e:
             GH(1000.0, 0.8, 1.5, segments)  # type: ignore[arg-type]
@@ -2750,10 +2958,10 @@ def test_generalized_hyperbolic_errors() -> None:
 
 def test_generalized_hyperbolic_param_descs() -> None:
     descs = dca.GeneralizedHyperbolic.get_param_descs()
-    assert [d.name for d in descs] == ['qi', 'Di', 'bi', 'segments', 'Dterm']
+    assert [d.name for d in descs] == ["qi", "Di", "bi", "segments", "Dterm"]
 
     # segments carries no scalar bounds, so the generic loop in __post_init__ skips it
-    segments_desc = dca.GeneralizedHyperbolic.get_param_desc('segments')
+    segments_desc = dca.GeneralizedHyperbolic.get_param_desc("segments")
     assert segments_desc.lower_bound is None and segments_desc.upper_bound is None
 
     # naive_gen must emit rows a constructor actually accepts -- nothing else in the suite
@@ -2762,8 +2970,7 @@ def test_generalized_hyperbolic_param_descs() -> None:
     raw = segments_desc.naive_gen(rng, 5)
     assert raw.shape == (5, 3)
     assert np.all(np.diff(raw[:, 0]) > 0.0)
-    model = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0, [tuple(row) for row in raw])
+    model = dca.GeneralizedHyperbolic.from_segments(1000.0, 0.8, 2.0, [tuple(row) for row in raw])
     assert model.segment_params.shape[0] == 6
     assert np.all(np.isfinite(model.rate(dca.get_time())))
 
@@ -2772,7 +2979,8 @@ def test_generalized_hyperbolic_many_segments() -> None:
     """A long chain must stay finite and monotonic: each segment re-anchors from the one
     before it, so round-off accumulates across the chain rather than being reset."""
     gh = dca.GeneralizedHyperbolic.from_segments(
-        1000.0, 0.8, 2.0, [(30.0 * i, 2.0 - 0.1 * i) for i in range(1, 16)], Dterm=0.06)
+        1000.0, 0.8, 2.0, [(30.0 * i, 2.0 - 0.1 * i) for i in range(1, 16)], Dterm=0.06
+    )
     assert gh.segment_params.shape[0] == 17
 
     t = np.concatenate([[0.0], dca.get_time(1e-8, 1e6, 401)])
@@ -2799,10 +3007,8 @@ def test_generalized_segments_accept_a_generator() -> None:
     segments at all, silently: an empty sequence is legal there and reduces to MH, so the
     model constructed cleanly and returned a plausible single-segment forecast."""
     HS = dca.HyperbolicSegment
-    generated = dca.GeneralizedHyperbolic(
-        1000.0, 0.8, 1.5, (HS(t, b=1.0) for t in (100.0, 200.0)))
-    explicit = dca.GeneralizedHyperbolic(
-        1000.0, 0.8, 1.5, (HS(100.0, b=1.0), HS(200.0, b=1.0)))
+    generated = dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (HS(t, b=1.0) for t in (100.0, 200.0)))  # type: ignore[arg-type]
+    explicit = dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (HS(100.0, b=1.0), HS(200.0, b=1.0)))
     assert len(generated.segments) == 2
     assert generated == explicit
     assert np.array_equal(generated.segment_params, explicit.segment_params)
@@ -2810,21 +3016,26 @@ def test_generalized_segments_accept_a_generator() -> None:
     # GeneralizedPLYield only escaped this by accident -- its empty check raised TypeError
     # from len() before the exhaustion could matter
     generated_yield = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(t, m=0.5) for t in (180.0, 365.0)))
+        1.2, 0.0, (dca.PLYieldSegment(t, m=0.5) for t in (180.0, 365.0))
+    )  # type: ignore[arg-type]
     explicit_yield = dca.GeneralizedPLYield(
-        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.5), dca.PLYieldSegment(365.0, m=0.5)))
+        1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.5), dca.PLYieldSegment(365.0, m=0.5))
+    )
     assert len(generated_yield.segments) == 2
     assert generated_yield == explicit_yield
     assert np.array_equal(generated_yield.segment_params, explicit_yield.segment_params)
 
     # an empty generator still reaches the empty check rather than a TypeError
     with pytest.raises(ValueError) as e:
-        dca.GeneralizedPLYield(1.2, 0.0, (segment for segment in ()))
-    assert 'at least one segment' in str(e.value)
+        empty: Tuple[dca.PLYieldSegment, ...] = ()
+        dca.GeneralizedPLYield(1.2, 0.0, (segment for segment in empty))  # type: ignore[arg-type]
+    assert "at least one segment" in str(e.value)
 
     # a list is still accepted, and normalizing to a tuple keeps the instance hashable
-    for model in (dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, [HS(100.0, b=1.0)]),
-                  dca.GeneralizedPLYield(1.2, 0.0, [dca.PLYieldSegment(180.0, m=0.5)])):
+    for model in (
+        dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, [HS(100.0, b=1.0)]),
+        dca.GeneralizedPLYield(1.2, 0.0, [dca.PLYieldSegment(180.0, m=0.5)]),
+    ):
         assert isinstance(model.segments, tuple)
         assert isinstance(hash(model), int)
 
@@ -2844,7 +3055,7 @@ def test_validate_params_is_normalized_to_a_tuple() -> None:
     # the opt-out is still honoured: bi = 2.5 is above the descriptor bound
     with pytest.raises(ValueError) as e:
         dca.MH(1000.0, 0.8, 2.5, 0.0)
-    assert 'bi > 2.0' in str(e.value)
+    assert "bi > 2.0" in str(e.value)
 
     # a generator survives a rebuild
     flags = (flag for flag in (False, True, True, True, True, True))
@@ -2853,12 +3064,16 @@ def test_validate_params_is_normalized_to_a_tuple() -> None:
     assert y.shift(30.0).validate_params == (False, True, True, True, True, True)
 
     # every model normalizes it, and the default is already a tuple
-    for model in (dca.MH(1000.0, 0.8, 1.5), dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
-                  dca.PLE(1000.0, 0.8, 0.0, 0.5), dca.SE(1000.0, 100.0, 0.5),
-                  dca.Duong(1000.0, 1.5, 1.2),
-                  dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ()),
-                  dca.PLYield(c=1.2, m0=0.0, m=0.6, t0=180.0),
-                  dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.5),))):
+    for model in (
+        dca.MH(1000.0, 0.8, 1.5),
+        dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),
+        dca.PLE(1000.0, 0.8, 0.0, 0.5),
+        dca.SE(1000.0, 100.0, 0.5),
+        dca.Duong(1000.0, 1.5, 1.2),
+        dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ()),
+        dca.PLYield(c=1.2, m0=0.0, m=0.6, t0=180.0),
+        dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.5),)),
+    ):
         assert isinstance(model.validate_params, tuple), type(model).__name__
 
 
@@ -2869,41 +3084,40 @@ def test_terminal_decline_is_ignored_with_a_warning_on_a_constant_decline_tail()
     caller asked for a cap the model will not deliver, and for a flat tail the consequence is
     a forecast that produces volume forever."""
     cases = [
-        ('is exponential', dca.GeneralizedHyperbolic, (1000.0, 0.8, 0.0, (), 0.08), 1),
+        ("is exponential", dca.GeneralizedHyperbolic, (1000.0, 0.8, 0.0, (), 0.08), 1),
         # a flat model needs b == 0 too: D == 0 leaves no decline for an exponent to act on
-        ('is flat', dca.GeneralizedHyperbolic, (1000.0, 0.0, 0.0, (), 0.08), 1),
-        ('is inclining', dca.GeneralizedHyperbolic, (1000.0, -0.5, -1.0, (), 0.08), 1),
+        ("is flat", dca.GeneralizedHyperbolic, (1000.0, 0.0, 0.0, (), 0.08), 1),
+        ("is inclining", dca.GeneralizedHyperbolic, (1000.0, -0.5, -1.0, (), 0.08), 1),
         # MH shares the helper, so it reports the same thing
-        ('is exponential', dca.MH, (1000.0, 0.8, 0.0, 0.08), 1),
+        ("is exponential", dca.MH, (1000.0, 0.8, 0.0, 0.08), 1),
     ]
     for reason, model_type, args, rows in cases:
-        with pytest.warns(RuntimeWarning, match=f'Dterm ignored: the last segment {reason}'):
+        with pytest.warns(RuntimeWarning, match=f"Dterm ignored: the last segment {reason}"):
             model = model_type(*args)
         assert model.segment_params.shape[0] == rows, (model_type.__name__, args)
 
     # a flat *segment* tail, not just a flat model
-    with pytest.warns(RuntimeWarning, match='the last segment is flat'):
+    with pytest.warns(RuntimeWarning, match="the last segment is flat"):
         flat_segment = dca.GeneralizedHyperbolic.from_segments(
-            1000.0, 0.8, 2.0, [(365.0, 0.0, 0.0)], Dterm=0.08)
+            1000.0, 0.8, 2.0, [(365.0, 0.0, 0.0)], Dterm=0.08
+        )
     assert flat_segment.segment_params.shape[0] == 2
 
     # a hyperbolic tail is capped as normal, and says nothing
     with warnings.catch_warnings():
-        warnings.simplefilter('error', RuntimeWarning)
+        warnings.simplefilter("error", RuntimeWarning)
         capped = dca.GeneralizedHyperbolic.from_segments(
-            1000.0, 0.8, 2.0, [(365.0, 0.3, 0.8)], Dterm=0.08)
+            1000.0, 0.8, 2.0, [(365.0, 0.3, 0.8)], Dterm=0.08
+        )
     assert capped.segment_params.shape[0] == 3
     assert capped.segment_params[-1, capped.T_IDX] > capped.segment_params[-2, capped.T_IDX]
 
     # no terminal decline asked for is a silent no-op: there is nothing to report
     with warnings.catch_warnings():
-        warnings.simplefilter('error', RuntimeWarning)
-        assert dca.GeneralizedHyperbolic(
-            1000.0, 0.8, 1.5, (), 0.0).segment_params.shape[0] == 1
-        assert dca.GeneralizedHyperbolic(
-            1000.0, 0.0, 0.0, (), 0.0).segment_params.shape[0] == 1
-        assert dca.GeneralizedHyperbolic(
-            1000.0, -0.5, -1.0, (), 0.0).segment_params.shape[0] == 1
+        warnings.simplefilter("error", RuntimeWarning)
+        assert dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (), 0.0).segment_params.shape[0] == 1
+        assert dca.GeneralizedHyperbolic(1000.0, 0.0, 0.0, (), 0.0).segment_params.shape[0] == 1
+        assert dca.GeneralizedHyperbolic(1000.0, -0.5, -1.0, (), 0.0).segment_params.shape[0] == 1
 
 
 def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
@@ -2914,12 +3128,18 @@ def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
     perfectly finite rate, which _integrate_with would then read as a definite zero."""
     # The tail's b is below B_EPSILON, so the terminal cap is dropped with a warning -- that
     # is incidental here, not the subject of the test.
-    with pytest.warns(RuntimeWarning, match='the last segment is exponential'):
+    with pytest.warns(RuntimeWarning, match="the last segment is exponential"):
         model = dca.GeneralizedHyperbolic(
-            9235.481100137427, 1e-12, 1.0097199755572828,
+            9235.481100137427,
+            1e-12,
+            1.0097199755572828,
             # D == 0 requires b == 0; the flat segment drives the coefficient infinite
-            (dca.HyperbolicSegment(18839.180085839886, D=0.0, b=0.0),
-             dca.HyperbolicSegment(92952.86641079251, D=1e-300, b=1e-300)), 0.06)
+            (
+                dca.HyperbolicSegment(18839.180085839886, D=0.0, b=0.0),
+                dca.HyperbolicSegment(92952.86641079251, D=1e-300, b=1e-300),
+            ),
+            0.06,
+        )
     t = np.array([1e3, 9.2e4, 9.3e4, 1e5, 1e6])
 
     assert np.isfinite(model.segment_params[-1, model.N_IDX])
@@ -2929,10 +3149,11 @@ def test_cum_is_finite_when_the_volume_coefficient_overflows() -> None:
 
     # and it must not warn
     with warnings.catch_warnings():
-        warnings.simplefilter('error', RuntimeWarning)
+        warnings.simplefilter("error", RuntimeWarning)
         model.cum(t)
         dca.GeneralizedHyperbolic.from_segments(
-            1e4, 0.9, 1.9, [(10.0, 1e-303, 1.9)], Dterm=0.0).cum(np.array([100.0, 1e5]))
+            1e4, 0.9, 1.9, [(10.0, 1e-303, 1.9)], Dterm=0.0
+        ).cum(np.array([100.0, 1e5]))
 
 
 def test_numerical_integration_isolates_negative_time() -> None:
@@ -2941,8 +3162,11 @@ def test_numerical_integration_isolates_negative_time() -> None:
     including the positive ones -- picked up the area over [min(t), 0]. The NaN zeroing made
     that area a definite number rather than a visible failure. Every model that integrates
     numerically raises time to a non-integer power, so none is real-valued before 0."""
-    models = (dca.PLE(1000.0, 0.8, 0.1, 0.5), dca.SE(1000.0, 100.0, 0.5),
-              dca.Duong(1000.0, 1.5, 1.2))
+    models = (
+        dca.PLE(1000.0, 0.8, 0.1, 0.5),
+        dca.SE(1000.0, 100.0, 0.5),
+        dca.Duong(1000.0, 1.5, 1.2),
+    )
     positive = np.array([30.0, 100.0, 365.0, 1000.0])
 
     for model in models:
@@ -2972,7 +3196,7 @@ def test_numerical_integration_isolates_negative_time() -> None:
 
     # and none of it warns: an unanswerable time is an expected outcome of a valid call
     with warnings.catch_warnings():
-        warnings.simplefilter('error', RuntimeWarning)
+        warnings.simplefilter("error", RuntimeWarning)
         for model in models:
             model.cum(np.concatenate([[-30.0], positive]))
 
@@ -2992,14 +3216,15 @@ def test_numerical_integration_isolates_infinite_time() -> None:
     # the finite entries are unharmed either way.
     mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
     mh.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0))
-    for model in (ple, dca.SE(1000.0, 100.0, 0.5), dca.Duong(1000.0, 1.5, 1.2),
-                  mh.secondary):
+    for model in (ple, dca.SE(1000.0, 100.0, 0.5), dca.Duong(1000.0, 1.5, 1.2), mh.secondary):
         baseline = model.cum(positive)
 
         # an inf in any position, leading or interior, and alongside a negative
-        for probe in (np.concatenate([[np.inf], positive]),
-                      np.array([30.0, np.inf, 100.0, 365.0, 1000.0]),
-                      np.concatenate([[-30.0, np.inf], positive])):
+        for probe in (
+            np.concatenate([[np.inf], positive]),
+            np.array([30.0, np.inf, 100.0, 365.0, 1000.0]),
+            np.concatenate([[-30.0, np.inf], positive]),
+        ):
             usable = np.isfinite(probe) & (probe >= 0.0)
             result = model.cum(probe)
             assert np.array_equal(result[usable], baseline), (type(model).__name__, probe)
@@ -3022,7 +3247,7 @@ def test_numerical_integration_isolates_infinite_time() -> None:
 
     # and none of it warns
     with warnings.catch_warnings():
-        warnings.simplefilter('error', RuntimeWarning)
+        warnings.simplefilter("error", RuntimeWarning)
         ple.cum(np.concatenate([[np.inf], positive]))
 
 
@@ -3047,7 +3272,7 @@ def test_decline_conversions_saturate_instead_of_overflowing() -> None:
     # saturation is that the conversion functions themselves stay usable, not that such a
     # model is constructible.
     for args in ((1000.0, 0.9, 1000.0), (1000.0, 0.999, 1000.0), (1000.0, -9.0, -1000.0)):
-        with pytest.raises(ValueError, match='non-finite nominal decline'):
+        with pytest.raises(ValueError, match="non-finite nominal decline"):
             dca.GeneralizedHyperbolic(*args, ())
 
     # the ordinary range is untouched
@@ -3062,7 +3287,7 @@ def test_terminal_decline_reports_an_exponential_tail_at_the_rate_threshold() ->
     row at t ~ 1e14 days and said nothing -- the same discarded cap, invisible."""
     reference = None
     for bi in (0.0, 1e-300, 1e-11, 1e-10):
-        with pytest.warns(RuntimeWarning, match='the last segment is exponential'):
+        with pytest.warns(RuntimeWarning, match="the last segment is exponential"):
             model = dca.GeneralizedHyperbolic(1000.0, 0.6, bi, (), 0.08)
         assert model.segment_params.shape[0] == 1, bi
 
@@ -3074,9 +3299,8 @@ def test_terminal_decline_reports_an_exponential_tail_at_the_rate_threshold() ->
 
     # just above the threshold it is genuinely hyperbolic, and the cap applies silently
     with warnings.catch_warnings():
-        warnings.simplefilter('error', RuntimeWarning)
-        assert dca.GeneralizedHyperbolic(
-            1000.0, 0.6, 1e-9, (), 0.08).segment_params.shape[0] == 2
+        warnings.simplefilter("error", RuntimeWarning)
+        assert dca.GeneralizedHyperbolic(1000.0, 0.6, 1e-9, (), 0.08).segment_params.shape[0] == 2
 
 
 def test_decline_sign_check_uses_sign_tests_and_effective_zero() -> None:
@@ -3088,18 +3312,18 @@ def test_decline_sign_check_uses_sign_tests_and_effective_zero() -> None:
 
     # the product underflows but the signs still oppose
     for Di, bi in ((-1e-200, 1e-200), (1e-200, -1e-200)):
-        assert Di * bi == 0.0                      # the product form saw nothing wrong
-        with pytest.raises(ValueError, match='D and b of opposing signs'):
+        assert Di * bi == 0.0  # the product form saw nothing wrong
+        with pytest.raises(ValueError, match="D and b of opposing signs"):
             GH(1000.0, Di, bi, ())
 
     # a denormal Di is effectively zero, so it needs a zero bi
     for Di in (1e-320, -1e-320, 5e-324):
-        with pytest.raises(ValueError, match='D == 0, which requires b == 0'):
+        with pytest.raises(ValueError, match="D == 0, which requires b == 0"):
             GH(1000.0, Di, 1.5, ())
         assert GH(1000.0, Di, 0.0, ()).segment_params[0, GH.D_IDX] == 0.0
 
     # and the same on a segment rather than the initial conditions
-    with pytest.raises(ValueError, match=r'segments\[0\] has D == 0'):
+    with pytest.raises(ValueError, match=r"segments\[0\] has D == 0"):
         GH(1000.0, 0.8, 1.5, (dca.HyperbolicSegment(365.0, D=1e-320, b=1.5),))
 
 
@@ -3112,8 +3336,15 @@ def test_transient_rate_saturates_instead_of_crashing() -> None:
 
     # this parameterization raised
     # "cannot assign 255 input values to the 228 output values where the mask is true"
-    thm = dca.THM(76520.64380248457, 0.23561519442070544, 0.238060355116956,
-                  0.002107455621978992, 77.03798026204845, 0.9, 0.0)
+    thm = dca.THM(
+        76520.64380248457,
+        0.23561519442070544,
+        0.238060355116956,
+        0.002107455621978992,
+        77.03798026204845,
+        0.9,
+        0.0,
+    )
     rate = thm.transient_rate(t)
     assert np.all(np.isfinite(rate)) and np.all(rate >= 0.0)
     assert np.all(np.isfinite(thm.transient_cum(t)))
@@ -3139,13 +3370,14 @@ def test_an_underflowed_decline_zeroes_its_exponent() -> None:
     non-zero exponent beside it changes neither rate nor volume, but `b(t)` would still report
     it, contradicting the (D == 0 implies b == 0) rule the constructor enforces on inputs."""
     with warnings.catch_warnings():
-        warnings.simplefilter('ignore', RuntimeWarning)
+        warnings.simplefilter("ignore", RuntimeWarning)
         model = dca.GeneralizedHyperbolic(
-            1000.0, 0.5, 1000.0, (dca.HyperbolicSegment(1e10, b=1.0),), 0.08)
+            1000.0, 0.5, 1000.0, (dca.HyperbolicSegment(1e10, b=1.0),), 0.08
+        )
 
     params = model.segment_params
-    assert params[1, model.D_IDX] == 0.0        # the decline underflowed
-    assert params[1, model.B_IDX] == 0.0        # so its exponent was normalized from 1.0
+    assert params[1, model.D_IDX] == 0.0  # the decline underflowed
+    assert params[1, model.B_IDX] == 0.0  # so its exponent was normalized from 1.0
     assert model.b(np.array([2e10]))[0] == 0.0
     assert model.D(np.array([2e10]))[0] == 0.0
 
@@ -3165,12 +3397,15 @@ def test_nan_time_propagates_for_any_segment_count() -> None:
     unanswerable time, the silent-zero-EUR failure the non-finite parameter checks exist to
     prevent, and it disagreed with single-segment models, which have no upper mask."""
     nan_t = np.array([np.nan])
-    for model in (dca.MH(1000.0, 0.8, 1.5),                       # 1 row
-                  dca.MH(1000.0, 0.8, 1.5, 0.08),                 # 2 rows
-                  dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),           # 3 rows
-                  dca.GeneralizedHyperbolic.from_segments(
-                      1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8)], Dterm=0.08)):
-        for name in ('rate', 'cum', 'D', 'beta', 'b'):
+    for model in (
+        dca.MH(1000.0, 0.8, 1.5),  # 1 row
+        dca.MH(1000.0, 0.8, 1.5, 0.08),  # 2 rows
+        dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0),  # 3 rows
+        dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 2.0, [(30.0, 1.2), (365.0, 0.3, 0.8)], Dterm=0.08
+        ),
+    ):
+        for name in ("rate", "cum", "D", "beta", "b"):
             assert np.isnan(getattr(model, name)(nan_t)[0]), (type(model).__name__, name)
 
     # an infinite time is NOT nan: b is still the last segment's exponent in the limit,

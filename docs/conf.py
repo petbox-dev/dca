@@ -13,18 +13,18 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath(".."))
 from importlib.metadata import version as _get_version
 
 
 # -- Project information -----------------------------------------------------
 
-project = 'petbox-dca'
-copyright = '2023, David S. Fulford'
-author = 'David S. Fulford'
+project = "petbox-dca"
+copyright = "2023, David S. Fulford"
+author = "David S. Fulford"
 
 # The full version, including alpha/beta/rc tags
-release = _get_version('petbox-dca')
+release = _get_version("petbox-dca")
 
 
 # -- General configuration ---------------------------------------------------
@@ -32,26 +32,26 @@ release = _get_version('petbox-dca')
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.coverage',
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.coverage",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # The suffix of source filenames.
-source_suffix = '.rst'
+source_suffix = ".rst"
 
 # The master toctree document.
-master_doc = 'index'
+master_doc = "index"
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -59,18 +59,18 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_rtd_theme'
+html_theme = "sphinx_rtd_theme"
 
 # A list of paths that contain custom static files (such as style sheets or
 # script files). Relative paths are taken as relative to the configuration
 # directory. They are copied to the output’s _static directory after the
 # theme’s static files, so a file named default.css will overwrite the theme’s
 # default.css.
-html_static_path = ['_static']
+html_static_path = ["_static"]
 
 # A list of CSS files. The entry must be a filename string or a tuple
 # containing the filename string and the attributes dictionary. The filename
 # must be relative to the html_static_path, or a full URI with scheme like
 # https://example.org/style.css. The attributes is used for attributes of
 # <link> tag. It defaults to an empty list.
-html_css_files = ['theme_override.css']
+html_css_files = ["theme_override.css"]

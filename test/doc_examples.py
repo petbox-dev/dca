@@ -15,12 +15,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-plt.style.use('seaborn-v0_8-white')
-plt.rcParams['font.size'] = 16
+plt.style.use("seaborn-v0_8-white")
+plt.rcParams["font.size"] = 16
 # [end example-00]
 
 
-img_path = Path(__file__).parent.parent / 'docs/img'
+img_path = Path(__file__).parent.parent / "docs/img"
 
 
 # [begin example-01]
@@ -41,7 +41,7 @@ data_b = dca.bourdet(1 / data_D, data_t, L=0.25, xlog=False, ylog=False)
 
 # Primary Phase Decline Curve Models
 # ==================================
-print('Primary Phase Decline Curve Models...')
+print("Primary Phase Decline Curve Models...")
 
 # Modified Hyperbolic Model
 # -------------------------
@@ -69,7 +69,7 @@ N_mh *= data_N[-1] / mh.cum(data_t[-1])
 # https://doi.org/10.2118/167242-MS.
 
 # [begin example-03]
-thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
+thm = dca.THM(qi=750, Di=0.8, bi=2, bf=0.5, telf=28)
 q_trans = thm.transient_rate(t)
 N_trans = thm.transient_cum(t)
 D_trans = thm.transient_D(t)
@@ -111,7 +111,7 @@ N_thm *= data_N[-1] / thm.cum(data_t[-1])
 # SPE-125031-MS. https://doi.org/10.2118/125031-MS.
 
 # [begin example-07]
-ple = dca.PLE(qi=750, Di=.1, Dinf=.00001, n=.5)
+ple = dca.PLE(qi=750, Di=0.1, Dinf=0.00001, n=0.5)
 q_ple = ple.rate(t)
 N_ple = ple.cum(t)
 D_ple = ple.D(t)
@@ -130,7 +130,7 @@ N_ple *= data_N[-1] / ple.cum(data_t[-1])
 # Texas, USA, 19–21 January. SPE-119369-MS. https://doi.org/10.2118/119369-MS.
 
 # [begin example-08]
-se = dca.SE(qi=715, tau=90.0, n=.5)
+se = dca.SE(qi=715, tau=90.0, n=0.5)
 q_se = se.rate(t)
 N_se = se.cum(t)
 D_se = se.D(t)
@@ -159,7 +159,7 @@ N_dg *= data_N[-1] / dg.cum(data_t[-1])
 
 # Primary Phase Diagnostic Plots
 # ==============================
-print('Primary Phase Model Plots...')
+print("Primary Phase Model Plots...")
 
 # Rate and Cumulative Production Plots
 # ------------------------------------
@@ -170,41 +170,41 @@ fig = plt.figure(figsize=(15, 7.5))
 ax1 = fig.add_subplot(121)
 ax2 = fig.add_subplot(122)
 
-ax1.plot(data_t, data_q, 'o', mfc='w', label='Data')
-ax1.plot(t, q_trans, label='THM Transient')
-ax1.plot(t, q_thm, ls='--', label='THM Approx')
-ax1.plot(t, q_mh, label='MH')
-ax1.plot(t, q_ple, label='PLE')
-ax1.plot(t, q_se, label='SE')
-ax1.plot(t, q_dg, label='Duong')
+ax1.plot(data_t, data_q, "o", mfc="w", label="Data")
+ax1.plot(t, q_trans, label="THM Transient")
+ax1.plot(t, q_thm, ls="--", label="THM Approx")
+ax1.plot(t, q_mh, label="MH")
+ax1.plot(t, q_ple, label="PLE")
+ax1.plot(t, q_se, label="SE")
+ax1.plot(t, q_dg, label="Duong")
 
-ax1.set(xscale='log', yscale='log', ylabel='Rate, BPD', xlabel='Time, Days')
+ax1.set(xscale="log", yscale="log", ylabel="Rate, BPD", xlabel="Time, Days")
 ax1.set(ylim=(1e0, 1e4), xlim=(1e0, 1e4))
 ax1.set_aspect(1)
 ax1.grid()
 ax1.legend()
 
 # Cumulative Volume vs Time
-ax2.plot(data_t, data_N, 'o', mfc='w', label='Data')
-ax2.plot(t, N_trans, label='THM Transient')
-ax2.plot(t, N_thm, ls='--', label='THM Approx')
-ax2.plot(t, N_mh, label='MH')
-ax2.plot(t, N_ple, label='PLE')
-ax2.plot(t, N_se, label='SE')
-ax2.plot(t, N_dg, label='Duong')
+ax2.plot(data_t, data_N, "o", mfc="w", label="Data")
+ax2.plot(t, N_trans, label="THM Transient")
+ax2.plot(t, N_thm, ls="--", label="THM Approx")
+ax2.plot(t, N_mh, label="MH")
+ax2.plot(t, N_ple, label="PLE")
+ax2.plot(t, N_se, label="SE")
+ax2.plot(t, N_dg, label="Duong")
 
-ax2.set(xscale='log', yscale='log', ylim=(1e2, 1e6), xlim=(1e0, 1e4))
-ax2.set(ylabel='Cumulative Volume, MBbl', xlabel='Time, Days')
+ax2.set(xscale="log", yscale="log", ylim=(1e2, 1e6), xlim=(1e0, 1e4))
+ax2.set(ylabel="Cumulative Volume, MBbl", xlabel="Time, Days")
 ax2.set_aspect(1)
 ax2.grid()
 ax2.legend()
 
-plt.savefig(img_path / 'model.png')
+plt.savefig(img_path / "model.png")
 # [end example-10]
 
 # Diagnostic Function Plots
 # -------------------------
-print('Primary Phase Diagnostic Function Plots...')
+print("Primary Phase Diagnostic Function Plots...")
 
 # [begin example-11]
 fig = plt.figure(figsize=(15, 15))
@@ -214,48 +214,48 @@ ax3 = fig.add_subplot(223)
 ax4 = fig.add_subplot(224)
 
 # D-parameter vs Time
-ax1.plot(data_t, data_D, 'o', mfc='w', label='Data')
-ax1.plot(t, D_trans, label='THM Transient')
-ax1.plot(t, D_thm, ls='--', label='THM Approx')
-ax1.plot(t, D_mh, label='MH')
-ax1.plot(t, D_ple, label='PLE')
-ax1.plot(t, D_se, label='SE')
-ax1.plot(t, D_dg, label='Duong')
-ax1.set(xscale='log', yscale='log', ylim=(1e-4, 1e0))
-ax1.set(ylabel='$D$-parameter, Days$^{-1}$', xlabel='Time, Days')
+ax1.plot(data_t, data_D, "o", mfc="w", label="Data")
+ax1.plot(t, D_trans, label="THM Transient")
+ax1.plot(t, D_thm, ls="--", label="THM Approx")
+ax1.plot(t, D_mh, label="MH")
+ax1.plot(t, D_ple, label="PLE")
+ax1.plot(t, D_se, label="SE")
+ax1.plot(t, D_dg, label="Duong")
+ax1.set(xscale="log", yscale="log", ylim=(1e-4, 1e0))
+ax1.set(ylabel="$D$-parameter, Days$^{-1}$", xlabel="Time, Days")
 
 # beta-parameter vs Time
-ax2.plot(data_t, data_D * data_t, 'o', mfc='w', label='Data')
-ax2.plot(t, beta_trans, label='THM Transient')
-ax2.plot(t, beta_thm, ls='--', label='THM Approx')
-ax2.plot(t, beta_mh, label='MH')
-ax2.plot(t, beta_ple, label='PLE')
-ax2.plot(t, beta_se, label='SE')
-ax2.plot(t, beta_dg, label='Duong')
-ax2.set(xscale='log', yscale='log', ylim=(1e-2, 1e2))
-ax2.set(ylabel=r'$\beta$-parameter, Dimensionless', xlabel='Time, Days')
+ax2.plot(data_t, data_D * data_t, "o", mfc="w", label="Data")
+ax2.plot(t, beta_trans, label="THM Transient")
+ax2.plot(t, beta_thm, ls="--", label="THM Approx")
+ax2.plot(t, beta_mh, label="MH")
+ax2.plot(t, beta_ple, label="PLE")
+ax2.plot(t, beta_se, label="SE")
+ax2.plot(t, beta_dg, label="Duong")
+ax2.set(xscale="log", yscale="log", ylim=(1e-2, 1e2))
+ax2.set(ylabel=r"$\beta$-parameter, Dimensionless", xlabel="Time, Days")
 
 # b-parameter vs Time
-ax3.plot(data_t, data_b, 'o', mfc='w', label='Data')
-ax3.plot(t, b_trans, label='THM Transient')
-ax3.plot(t, b_thm, ls='--', label='THM Approx')
-ax3.plot(t, b_mh, label='MH')
-ax3.plot(t, b_ple, label='PLE')
-ax3.plot(t, b_se, label='SE')
-ax3.plot(t, b_dg, label='Duong')
-ax3.set(xscale='log', yscale='linear', ylim=(0., 4.))
-ax3.set(ylabel='$b$-parameter, Dimensionless', xlabel='Time, Days')
+ax3.plot(data_t, data_b, "o", mfc="w", label="Data")
+ax3.plot(t, b_trans, label="THM Transient")
+ax3.plot(t, b_thm, ls="--", label="THM Approx")
+ax3.plot(t, b_mh, label="MH")
+ax3.plot(t, b_ple, label="PLE")
+ax3.plot(t, b_se, label="SE")
+ax3.plot(t, b_dg, label="Duong")
+ax3.set(xscale="log", yscale="linear", ylim=(0.0, 4.0))
+ax3.set(ylabel="$b$-parameter, Dimensionless", xlabel="Time, Days")
 
 # q/N vs Time
-ax4.plot(data_t, data_q / data_N, 'o', mfc='w', label='Data')
-ax4.plot(t, q_trans / N_trans, label='THM Transient')
-ax4.plot(t, q_thm / N_thm, ls='--', label='THM Approx')
-ax4.plot(t, q_mh / N_mh, label='MH')
-ax4.plot(t, q_ple / N_ple, label='PLE')
-ax4.plot(t, q_se / N_se, label='SE')
-ax4.plot(t, q_dg / N_dg, label='Duong')
-ax4.set(xscale='log', yscale='log', ylim=(1e-7, 1e0), xlim=(1e0, 1e7))
-ax4.set(ylabel='$q_o / N_p$, Days$^{-1}$', xlabel='Time, Days')
+ax4.plot(data_t, data_q / data_N, "o", mfc="w", label="Data")
+ax4.plot(t, q_trans / N_trans, label="THM Transient")
+ax4.plot(t, q_thm / N_thm, ls="--", label="THM Approx")
+ax4.plot(t, q_mh / N_mh, label="MH")
+ax4.plot(t, q_ple / N_ple, label="PLE")
+ax4.plot(t, q_se / N_se, label="SE")
+ax4.plot(t, q_dg / N_dg, label="Duong")
+ax4.set(xscale="log", yscale="log", ylim=(1e-7, 1e0), xlim=(1e0, 1e7))
+ax4.set(ylabel="$q_o / N_p$, Days$^{-1}$", xlabel="Time, Days")
 
 for ax in [ax1, ax2, ax3, ax4]:
     if ax != ax4:
@@ -266,13 +266,13 @@ for ax in [ax1, ax2, ax3, ax4]:
     ax.legend()
 
 
-plt.savefig(img_path / 'diagnostics.png')
+plt.savefig(img_path / "diagnostics.png")
 # [end example-11]
 
 
 # Secondary Phase Decline Curve Models
 # ====================================
-print('Secondary Phase Decline Curve Models...')
+print("Secondary Phase Decline Curve Models...")
 
 # Power-Law GOR/CGR Model
 # -----------------------
@@ -283,14 +283,14 @@ print('Secondary Phase Decline Curve Models...')
 # https://doi.org/10.15530/urtec-2018-2903036.
 
 # [begin example-12]
-thm = dca.THM(qi=750, Di=.8, bi=2, bf=.5, telf=28)
+thm = dca.THM(qi=750, Di=0.8, bi=2, bf=0.5, telf=28)
 thm.add_secondary(dca.PLYield(c=1.0, m0=-0.1, m=0.8, t0=2 * 365.25 / 12, max=10.0))
 # [end example-12]
 
 
 # Secondary Phase Diagnostic Plots
 # ================================
-print('Secondary Phase Model Plots...')
+print("Secondary Phase Model Plots...")
 
 # Rate and Cumluative Production Plots
 # ------------------------------------
@@ -310,11 +310,11 @@ q = thm.rate(t)
 g = thm.secondary.rate(t)
 y = thm.secondary.gor(t)
 
-ax1.plot(t, q, c='C2', label='Oil')
-ax1.plot(t, g, c='C3', label='Gas')
-ax1.plot(t, y, c='C1', label='GOR')
-ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-ax1.set(ylabel='Rate or GOR, BPD, MCFD, or Mscf/Bbl', xlabel='Time, Days')
+ax1.plot(t, q, c="C2", label="Oil")
+ax1.plot(t, g, c="C3", label="Gas")
+ax1.plot(t, y, c="C1", label="GOR")
+ax1.set(xscale="log", yscale="log", xlim=(1e0, 1e5), ylim=(1e0, 1e5))
+ax1.set(ylabel="Rate or GOR, BPD, MCFD, or Mscf/Bbl", xlabel="Time, Days")
 
 
 # Cumulative Volume vs Time
@@ -322,27 +322,30 @@ q_N = thm.cum(t)
 g_N = thm.secondary.cum(t) / 1000.0
 _g_N = np.cumsum(g * np.diff(t, prepend=0))
 
-ax2.plot(t, q_N, c='C2', label='Oil')
-ax2.plot(t, g_N, c='C3', label='Gas')
-ax2.plot(t, _g_N, c='k', ls=':', label='Gas (numeric)')
-ax2.plot(t, y, c='C1', label='GOR')
-ax2.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e2, 1e7))
-ax2.set(ylabel='Rate, Dimensionless', xlabel='Time, Days')
-ax2.set(ylabel='Cumulative Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
+ax2.plot(t, q_N, c="C2", label="Oil")
+ax2.plot(t, g_N, c="C3", label="Gas")
+ax2.plot(t, _g_N, c="k", ls=":", label="Gas (numeric)")
+ax2.plot(t, y, c="C1", label="GOR")
+ax2.set(xscale="log", yscale="log", xlim=(1e0, 1e5), ylim=(1e2, 1e7))
+ax2.set(ylabel="Rate, Dimensionless", xlabel="Time, Days")
+ax2.set(ylabel="Cumulative Volume or GOR, MBbl, MMcf, or Mscf/Bbl", xlabel="Time, Days")
 
 
 # Time vs Monthly Volume
 q_MN = thm.monthly_vol_equiv(t)
 g_MN = thm.secondary.monthly_vol_equiv(t) / 1000.0
-_g_MN = np.diff(np.cumsum(g * np.diff(t, prepend=0)), prepend=0) \
-    / np.diff(t, prepend=0) * dca.DAYS_PER_MONTH
+_g_MN = (
+    np.diff(np.cumsum(g * np.diff(t, prepend=0)), prepend=0)
+    / np.diff(t, prepend=0)
+    * dca.DAYS_PER_MONTH
+)
 
-ax3.plot(t, q_MN, c='C2', label='Oil')
-ax3.plot(t, g_MN, c='C3', label='Gas')
-ax3.plot(t, _g_MN, c='k', ls=':', label='Gas (numeric)')
-ax3.plot(t, y, c='C1', label='GOR')
-ax3.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-ax3.set(ylabel='Monthly Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
+ax3.plot(t, q_MN, c="C2", label="Oil")
+ax3.plot(t, g_MN, c="C3", label="Gas")
+ax3.plot(t, _g_MN, c="k", ls=":", label="Gas (numeric)")
+ax3.plot(t, y, c="C1", label="GOR")
+ax3.set(xscale="log", yscale="log", xlim=(1e0, 1e5), ylim=(1e0, 1e5))
+ax3.set(ylabel="Monthly Volume or GOR, MBbl, MMcf, or Mscf/Bbl", xlabel="Time, Days")
 
 
 # Time vs Interval Volume
@@ -350,25 +353,25 @@ q_IN = thm.interval_vol(t, t0=0.0)
 g_IN = thm.secondary.interval_vol(t, t0=0.0) / 1000.0
 _g_IN = np.diff(np.cumsum(g * np.diff(t, prepend=0)), prepend=0)
 
-ax4.plot(t, q_IN, c='C2', label='Oil')
-ax4.plot(t, g_IN, c='C3', label='Gas')
-ax4.plot(t, _g_IN, c='k', ls=':', label='Gas (numeric)')
-ax4.plot(t, y, c='C1', label='GOR')
-ax4.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-ax4.set(ylabel='$\Delta$Volume or GOR, MBbl, MMcf, or Mscf/Bbl', xlabel='Time, Days')
+ax4.plot(t, q_IN, c="C2", label="Oil")
+ax4.plot(t, g_IN, c="C3", label="Gas")
+ax4.plot(t, _g_IN, c="k", ls=":", label="Gas (numeric)")
+ax4.plot(t, y, c="C1", label="GOR")
+ax4.set(xscale="log", yscale="log", xlim=(1e0, 1e5), ylim=(1e0, 1e5))
+ax4.set(ylabel="$\Delta$Volume or GOR, MBbl, MMcf, or Mscf/Bbl", xlabel="Time, Days")
 
 for ax in [ax1, ax2, ax3, ax4]:
     ax.set_aspect(1)
     ax.grid()
     ax.legend()
 
-plt.savefig(img_path / 'secondary_model.png')
+plt.savefig(img_path / "secondary_model.png")
 # [end example-13]
 
 
 # Diagnostic Function Plots
 # ------------------------
-print('Secondary Model Diagnostic Function Plots...')
+print("Secondary Model Diagnostic Function Plots...")
 
 # [begin example-14]
 fig = plt.figure(figsize=(15, 15))
@@ -382,44 +385,44 @@ q_D = thm.D(t)
 g_D = thm.secondary.D(t)
 _g_D = -np.gradient(np.log(thm.secondary.rate(t)), t)
 
-ax1.plot(t, q_D, c='C2', label='Oil')
-ax1.plot(t, g_D, c='C3', label='Gas')
-ax1.plot(t, _g_D, c='k', ls=':', label='Gas (numeric)')
-ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e4), ylim=(1e-4, 1e0))
-ax1.set(ylabel='$D$-parameter, Days$^{-1}$', xlabel='Time, Days')
+ax1.plot(t, q_D, c="C2", label="Oil")
+ax1.plot(t, g_D, c="C3", label="Gas")
+ax1.plot(t, _g_D, c="k", ls=":", label="Gas (numeric)")
+ax1.set(xscale="log", yscale="log", xlim=(1e0, 1e4), ylim=(1e-4, 1e0))
+ax1.set(ylabel="$D$-parameter, Days$^{-1}$", xlabel="Time, Days")
 
 # beta-parameter vs Time
 q_beta = thm.beta(t)
 g_beta = thm.secondary.beta(t)
 _g_beta = _g_D * t
 
-ax2.plot(t, q_beta, c='C2', label='Oil')
-ax2.plot(t, g_beta, c='C3', label='Gas')
-ax2.plot(t, _g_beta, c='k', ls=':', label='Gas (numeric)')
-ax2.set(xscale='log', yscale='log', xlim=(1e0, 1e4), ylim=(1e-2, 1e2))
-ax2.set(ylabel=r'$\beta$-parameter, Dimensionless', xlabel='Time, Days')
+ax2.plot(t, q_beta, c="C2", label="Oil")
+ax2.plot(t, g_beta, c="C3", label="Gas")
+ax2.plot(t, _g_beta, c="k", ls=":", label="Gas (numeric)")
+ax2.set(xscale="log", yscale="log", xlim=(1e0, 1e4), ylim=(1e-2, 1e2))
+ax2.set(ylabel=r"$\beta$-parameter, Dimensionless", xlabel="Time, Days")
 
 # b-parameter vs Time
 q_b = thm.b(t)
 g_b = thm.secondary.b(t)
 _g_b = np.gradient(1.0 / _g_D, t)
 
-ax3.plot(t, q_b, c='C2', label='Oil')
-ax3.plot(t, g_b, c='C3', label='Gas')
-ax3.plot(t, _g_b, c='k', ls=':', label='Gas (numeric)')
-ax3.set(xscale='log', yscale='linear', xlim=(1e0, 1e4), ylim=(-2, 4))
-ax3.set(ylabel='$b$-parameter, Dimensionless', xlabel='Time, Days')
+ax3.plot(t, q_b, c="C2", label="Oil")
+ax3.plot(t, g_b, c="C3", label="Gas")
+ax3.plot(t, _g_b, c="k", ls=":", label="Gas (numeric)")
+ax3.set(xscale="log", yscale="linear", xlim=(1e0, 1e4), ylim=(-2, 4))
+ax3.set(ylabel="$b$-parameter, Dimensionless", xlabel="Time, Days")
 
 # q/N vs Time
 q_Ng = thm.rate(t) / thm.cum(t)
 g_Ng = thm.secondary.rate(t) / thm.secondary.cum(t)
 _g_Ng = thm.secondary.rate(t) / np.cumsum(thm.secondary.rate(t) * np.diff(t, prepend=0))
 
-ax4.plot(t, q_Ng, c='C2', label='Oil')
-ax4.plot(t, g_Ng, c='C3', ls='--', label='Gas')
-ax4.plot(t, _g_Ng, c='k', ls=':', label='Gas (numeric)')
-ax4.set(xscale='log', yscale='log', ylim=(1e-7, 1e0), xlim=(1e0, 1e7))
-ax4.set(ylabel='$q_o / N_p$, Days$^{-1}$', xlabel='Time, Days')
+ax4.plot(t, q_Ng, c="C2", label="Oil")
+ax4.plot(t, g_Ng, c="C3", ls="--", label="Gas")
+ax4.plot(t, _g_Ng, c="k", ls=":", label="Gas (numeric)")
+ax4.set(xscale="log", yscale="log", ylim=(1e-7, 1e0), xlim=(1e0, 1e7))
+ax4.set(ylabel="$q_o / N_p$, Days$^{-1}$", xlabel="Time, Days")
 
 for ax in [ax1, ax2, ax3, ax4]:
     if ax != ax3:
@@ -427,13 +430,13 @@ for ax in [ax1, ax2, ax3, ax4]:
     ax.grid()
     ax.legend()
 
-plt.savefig(img_path / 'sec_diagnostic_funs.png')
+plt.savefig(img_path / "sec_diagnostic_funs.png")
 # [end example-14]
 
 
 # Additional Diagnostic Plots
 # ---------------------------
-print('Additional Diagnostic Plots...')
+print("Additional Diagnostic Plots...")
 
 # Numeric calculation provided to verify analytic relationships
 
@@ -449,11 +452,11 @@ q_D = thm.D(t)
 g_D = thm.secondary.D(t)
 _g_D = -np.gradient(np.log(thm.secondary.rate(t)), t)
 
-ax1.plot(t, q_D, c='C2', label='Oil')
-ax1.plot(t, g_D, c='C3', label='Gas')
-ax1.plot(t, _g_D, c='k', ls=':', label='Gas(numeric)')
-ax1.set(xscale='log', yscale='linear', xlim=(1e0, 1e5), ylim=(None, None))
-ax1.set(ylabel='$D$-parameter, 1 / Days', xlabel='Time, Days')
+ax1.plot(t, q_D, c="C2", label="Oil")
+ax1.plot(t, g_D, c="C3", label="Gas")
+ax1.plot(t, _g_D, c="k", ls=":", label="Gas(numeric)")
+ax1.set(xscale="log", yscale="linear", xlim=(1e0, 1e5), ylim=(None, None))
+ax1.set(ylabel="$D$-parameter, 1 / Days", xlabel="Time, Days")
 
 # Secant Effective Decline vs Time
 secant_from_nominal = dca.MultisegmentHyperbolic.secant_from_nominal
@@ -463,32 +466,32 @@ q_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(q_D, thm.b(t))]
 g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(g_D, thm.secondary.b(t))]
 _g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(_g_D, np.gradient(1 / _g_D, t))]
 
-ax2.plot(t, q_Dn, c='C2', label='Oil')
-ax2.plot(t, g_Dn, c='C3', label='Gas')
-ax2.plot(t, _g_Dn, c='k', ls=':', label='Gas (numeric)')
-ax2.set(xscale='log', yscale='linear', xlim=(1e0, 1e5), ylim=(-.5, 1.025))
+ax2.plot(t, q_Dn, c="C2", label="Oil")
+ax2.plot(t, g_Dn, c="C3", label="Gas")
+ax2.plot(t, _g_Dn, c="k", ls=":", label="Gas (numeric)")
+ax2.set(xscale="log", yscale="linear", xlim=(1e0, 1e5), ylim=(-0.5, 1.025))
 ax2.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(xmax=1))
-ax2.set(ylabel='Secant Effective Decline, % / Year', xlabel='Time, Days')
+ax2.set(ylabel="Secant Effective Decline, % / Year", xlabel="Time, Days")
 
 # Tangent Effective Decline vs Time
-ax3.plot(t, 1 - np.exp(-q_D * dpy), c='C2', label='Oil')
-ax3.plot(t, 1 - np.exp(-g_D * dpy), c='C3', label='Gas')
-ax3.plot(t, 1 - np.exp(-_g_D * dpy), c='k', ls=':', label='Gas (numeric)')
-ax3.set(xscale='log', yscale='linear', xlim=(1e0, 1e5), ylim=(-1.025, 1.025))
+ax3.plot(t, 1 - np.exp(-q_D * dpy), c="C2", label="Oil")
+ax3.plot(t, 1 - np.exp(-g_D * dpy), c="C3", label="Gas")
+ax3.plot(t, 1 - np.exp(-_g_D * dpy), c="k", ls=":", label="Gas (numeric)")
+ax3.set(xscale="log", yscale="linear", xlim=(1e0, 1e5), ylim=(-1.025, 1.025))
 ax3.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(xmax=1))
-ax3.set(ylabel='Tangent Effective Decline, % / Day', xlabel='Time, Days')
+ax3.set(ylabel="Tangent Effective Decline, % / Day", xlabel="Time, Days")
 
 for ax in [ax1, ax2, ax3]:
     ax.grid()
     ax.legend()
 
-plt.savefig(img_path / 'sec_decline_diagnostics.png')
+plt.savefig(img_path / "sec_decline_diagnostics.png")
 # [end example-15]
 
 
 # Generalized and Inclining Models
 # ================================
-print('Generalized and Inclining Model Plots...')
+print("Generalized and Inclining Model Plots...")
 
 # A `GeneralizedHyperbolic` takes an arbitrary number of segments, each continuous in rate and
 # decline with the one before it unless it overrides them. `MH` is its no-segment case.
@@ -499,11 +502,16 @@ mh_base = dca.MH(qi=725, Di=0.85, bi=0.6, Dterm=0.2)
 # Segment tuples are length-disambiguated: (t, b), (t, D, b), or (t, q, D, b). The third
 # segment below resets the rate to 120 BPD -- a restimulation -- while inheriting the decline.
 gh = dca.GeneralizedHyperbolic.from_segments(
-    725, 0.85, 1.8,
-    [(90.0, 1.2),                  # exponent only
-     (730.0, 0.35, 0.8),           # decline and exponent
-     (1825.0, 120.0, None, 0.5)],  # rate reset, decline inherited
-    Dterm=0.06)
+    725,
+    0.85,
+    1.8,
+    [
+        (90.0, 1.2),  # exponent only
+        (730.0, 0.35, 0.8),  # decline and exponent
+        (1825.0, 120.0, None, 0.5),
+    ],  # rate reset, decline inherited
+    Dterm=0.06,
+)
 
 # A flat segment holds the rate; D == 0 requires b == 0.
 gh_flat = dca.GeneralizedHyperbolic.from_segments(725, 0.85, 1.8, [(730.0, 0.0, 0.0)])
@@ -513,8 +521,7 @@ gh_flat = dca.GeneralizedHyperbolic.from_segments(725, 0.85, 1.8, [(730.0, 0.0, 
 ih = dca.IncliningHyperbolic(qi=300, Di=-0.9, bi=-1.0)
 
 # For the physical case, incline to a peak and then decline, using both signs of segment.
-peak = dca.GeneralizedHyperbolic.from_segments(
-    300, -0.9, -1.0, [(365.25, 0.75, 1.2)], Dterm=0.08)
+peak = dca.GeneralizedHyperbolic.from_segments(300, -0.9, -1.0, [(365.25, 0.75, 1.2)], Dterm=0.08)
 
 # `time_at_rate` inverts the rate function, bracketing each segment before inverting it. The
 # pole is simply the infinite-rate limit, so it needs no separate accessor.
@@ -529,55 +536,61 @@ ax3 = fig.add_subplot(223)
 ax4 = fig.add_subplot(224)
 
 # Rate vs Time -- segmented against the MH baseline
-ax1.plot(data_t, data_q, 'o', mfc='w', label='Data')
-ax1.plot(t, mh_base.rate(t), c='C0', ls='--', label='MH (no segments)')
-ax1.plot(t, gh.rate(t), c='C1', label='GeneralizedHyperbolic')
-ax1.plot(t, gh_flat.rate(t), c='C4', ls='-.', label='flat segment at 730 d')
-ax1.plot(t_econ, econ_limit, '*', c='k', ms=18, label=f'time_at_rate({econ_limit:.0f})')
+ax1.plot(data_t, data_q, "o", mfc="w", label="Data")
+ax1.plot(t, mh_base.rate(t), c="C0", ls="--", label="MH (no segments)")
+ax1.plot(t, gh.rate(t), c="C1", label="GeneralizedHyperbolic")
+ax1.plot(t, gh_flat.rate(t), c="C4", ls="-.", label="flat segment at 730 d")
+ax1.plot(t_econ, econ_limit, "*", c="k", ms=18, label=f"time_at_rate({econ_limit:.0f})")
 for t_seg in (90.0, 730.0, 1825.0):
-    ax1.axvline(t_seg, c='k', lw=0.5, alpha=0.4)
-ax1.set(xscale='log', yscale='log', xlim=(1e0, 1e4), ylim=(1e0, 1e4))
-ax1.set(ylabel='Rate, BPD', xlabel='Time, Days')
+    ax1.axvline(t_seg, c="k", lw=0.5, alpha=0.4)
+ax1.set(xscale="log", yscale="log", xlim=(1e0, 1e4), ylim=(1e0, 1e4))
+ax1.set(ylabel="Rate, BPD", xlabel="Time, Days")
 ax1.set_aspect(1)
 
 # The exponent steps at every segment boundary
-ax2.plot(t, mh_base.b(t), c='C0', ls='--', label='MH (no segments)')
-ax2.plot(t, gh.b(t), c='C1', label='GeneralizedHyperbolic')
-ax2.plot(t, gh_flat.b(t), c='C4', ls='-.', label='flat segment at 730 d')
+ax2.plot(t, mh_base.b(t), c="C0", ls="--", label="MH (no segments)")
+ax2.plot(t, gh.b(t), c="C1", label="GeneralizedHyperbolic")
+ax2.plot(t, gh_flat.b(t), c="C4", ls="-.", label="flat segment at 730 d")
 for t_seg in (90.0, 730.0, 1825.0):
-    ax2.axvline(t_seg, c='k', lw=0.5, alpha=0.4)
-ax2.set(xscale='log', yscale='linear', xlim=(1e0, 1e4), ylim=(-0.1, 2.1))
-ax2.set(ylabel='b Parameter', xlabel='Time, Days')
+    ax2.axvline(t_seg, c="k", lw=0.5, alpha=0.4)
+ax2.set(xscale="log", yscale="linear", xlim=(1e0, 1e4), ylim=(-0.1, 2.1))
+ax2.set(ylabel="b Parameter", xlabel="Time, Days")
 
 # Inclining: the pure build-up, and the physical incline-peak-decline
-ax3.plot(t, ih.rate(t), c='C2', label='IncliningHyperbolic')
-ax3.plot(t, peak.rate(t), c='C3', label='incline, peak, then decline')
-ax3.axvline(365.25, c='k', lw=0.5, alpha=0.4)
-ax3.set(xscale='log', yscale='log', xlim=(1e0, 1e4), ylim=(1e1, 1e4))
-ax3.set(ylabel='Rate, BPD', xlabel='Time, Days')
+ax3.plot(t, ih.rate(t), c="C2", label="IncliningHyperbolic")
+ax3.plot(t, peak.rate(t), c="C3", label="incline, peak, then decline")
+ax3.axvline(365.25, c="k", lw=0.5, alpha=0.4)
+ax3.set(xscale="log", yscale="log", xlim=(1e0, 1e4), ylim=(1e1, 1e4))
+ax3.set(ylabel="Rate, BPD", xlabel="Time, Days")
 ax3.set_aspect(1)
 
 # A `GeneralizedPLYield` takes arbitrary breakpoints, and a segment may step the yield
 gh_gor = dca.GeneralizedHyperbolic.from_segments(725, 0.85, 1.8, [(90.0, 1.2)])
-gh_gor.add_secondary(dca.GeneralizedPLYield(
-    c=1.2, m0=0.0, segments=(
-        dca.PLYieldSegment(180.0, m=0.6),
-        dca.PLYieldSegment(1095.0, c=4.0, m=-0.2)),  # a workover steps the GOR to 4.0
-    max=20.0))
-ax4.plot(t, gh_gor.secondary.gor(t), c='C3', label='GeneralizedPLYield')
+gh_gor.add_secondary(
+    dca.GeneralizedPLYield(
+        c=1.2,
+        m0=0.0,
+        segments=(
+            dca.PLYieldSegment(180.0, m=0.6),
+            dca.PLYieldSegment(1095.0, c=4.0, m=-0.2),
+        ),  # a workover steps the GOR to 4.0
+        max=20.0,
+    )
+)
+ax4.plot(t, gh_gor.secondary.gor(t), c="C3", label="GeneralizedPLYield")
 for t_seg in (180.0, 1095.0):
-    ax4.axvline(t_seg, c='k', lw=0.5, alpha=0.4)
-ax4.set(xscale='log', yscale='log', xlim=(1e0, 1e5), ylim=(1e0, 1e1))
-ax4.set(ylabel='GOR, Mscf / Bbl', xlabel='Time, Days')
+    ax4.axvline(t_seg, c="k", lw=0.5, alpha=0.4)
+ax4.set(xscale="log", yscale="log", xlim=(1e0, 1e5), ylim=(1e0, 1e1))
+ax4.set(ylabel="GOR, Mscf / Bbl", xlabel="Time, Days")
 
 for ax in [ax1, ax2, ax3, ax4]:
     ax.grid()
     ax.legend()
 
-plt.savefig(img_path / 'generalized_models.png')
+plt.savefig(img_path / "generalized_models.png")
 # [end example-16]
 
 # Progress output, deliberately outside the marker above: it is scaffolding for running this
 # script, not part of the example the documentation shows.
-print(f'  GeneralizedHyperbolic reaches {econ_limit:.0f} BPD at {t_econ:,.1f} days')
-print(f'  its pole -- the earliest evaluable time -- is {t_pole:,.4f} days')
+print(f"  GeneralizedHyperbolic reaches {econ_limit:.0f} BPD at {t_econ:,.1f} days")
+print(f"  its pole -- the earliest evaluable time -- is {t_pole:,.4f} days")

@@ -24,12 +24,26 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.random import Generator
 
-from scipy.special import expi as ei, gammainc  # type: ignore
-from scipy.integrate import cumulative_trapezoid  # type: ignore
+from scipy.special import expi as ei, gammainc
+from scipy.integrate import cumulative_trapezoid
 
 from abc import ABC, abstractmethod
-from typing import (TypeVar, Type, List, Dict, Tuple, Any, Literal, NoReturn,
-                    Sequence, Iterable, Optional, Callable, ClassVar, Union)
+from typing import (
+    TypeVar,
+    Type,
+    List,
+    Dict,
+    Tuple,
+    Any,
+    Literal,
+    NoReturn,
+    Sequence,
+    Iterable,
+    Optional,
+    Callable,
+    ClassVar,
+    Union,
+)
 from numpy.typing import NDArray
 from typing import cast
 
@@ -42,17 +56,17 @@ LOG_EPSILON = log(sys.float_info.max)
 MIN_EPSILON = sys.float_info.min
 
 
-_Self = TypeVar('_Self', bound='DeclineCurve')
+_Self = TypeVar("_Self", bound="DeclineCurve")
 
 # Accessors that belong to the OTHER phase and must be disabled when a model is attached as
 # one phase or the other: a secondary phase has no water-oil ratio, and vice versa. Read by
 # `PrimaryPhase.add_secondary`/`add_water` and by `AssociatedPhase._adopt_attachment`, so a
 # new accessor is picked up by every site at once rather than needing three edits.
-_Phase = Literal['secondary', 'water']
+_Phase = Literal["secondary", "water"]
 
 _REMOVED_ACCESSORS: Dict[_Phase, Tuple[str, ...]] = {
-    'secondary': ('wor', 'wgr'),
-    'water': ('gor', 'cgr'),
+    "secondary": ("wor", "wgr"),
+    "water": ("gor", "cgr"),
 }
 
 
@@ -84,14 +98,14 @@ def _validate_segment_times(times: NDFloat) -> None:
             increasing.
     """
     if not np.all(np.isfinite(times) & (times > 0.0)):
-        raise ValueError('segments t must be finite and > 0')
+        raise ValueError("segments t must be finite and > 0")
 
     # np.diff of a single element is empty, and np.all of empty is True
     if not np.all(np.diff(times) > 0.0):
-        raise ValueError('segments t not strictly increasing')
+        raise ValueError("segments t not strictly increasing")
 
 
-def _disable_other_phase_accessors(model: 'AssociatedPhase', phase: _Phase) -> None:
+def _disable_other_phase_accessors(model: "AssociatedPhase", phase: _Phase) -> None:
     """
     Replace the accessors belonging to the other phase with a stub that raises.
 
@@ -123,12 +137,13 @@ def _disable_other_phase_accessors(model: 'AssociatedPhase', phase: _Phase) -> N
     for method in _REMOVED_ACCESSORS[phase]:
         if hasattr(model, method):
             # bypass the "frozen" protection, as the rest of the attach path does
-            object.__setattr__(model, method, partial(
-                PrimaryPhase.removed_method, phase=phase, method=method))
+            object.__setattr__(
+                model, method, partial(PrimaryPhase.removed_method, phase=phase, method=method)
+            )
 
 
 @dataclass(frozen=True)
-class ParamDesc():
+class ParamDesc:
     name: str
     description: str
     lower_bound: Optional[float]
@@ -186,6 +201,7 @@ class DeclineCurve(ABC):
     Base class for decline curve models. Each model must implement the defined
     abstract methods.
     """
+
     validate_params: Iterable[bool] = [True]
 
     def rate(self, t: Union[float, NDFloat]) -> NDFloat:
@@ -237,8 +253,9 @@ class DeclineCurve(ABC):
         t = self._validate_ndarray(t)
         return self._Nfn(t, **kwargs)
 
-    def interval_vol(self, t: Union[float, NDFloat], t0: Optional[Union[float, NDFloat]] = None,
-                     **kwargs: Any) -> NDFloat:
+    def interval_vol(
+        self, t: Union[float, NDFloat], t0: Optional[Union[float, NDFloat]] = None, **kwargs: Any
+    ) -> NDFloat:
         """
         Defines the model interval volume function:
 
@@ -269,7 +286,7 @@ class DeclineCurve(ABC):
         if t0 is None:
             t0 = t[0]
         t0 = np.atleast_1d(t0).astype(np.float64)
-        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))  # type: ignore
+        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
 
     def monthly_vol(self, t: Union[float, NDFloat], **kwargs: Any) -> NDFloat:
         """
@@ -294,11 +311,13 @@ class DeclineCurve(ABC):
             monthly equivalent volume: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
-        return self._Nfn(t, **kwargs) \
-            - np.where(t < DAYS_PER_MONTH, 0, self._Nfn(t - DAYS_PER_MONTH, **kwargs))
+        return self._Nfn(t, **kwargs) - np.where(
+            t < DAYS_PER_MONTH, 0, self._Nfn(t - DAYS_PER_MONTH, **kwargs)
+        )
 
-    def monthly_vol_equiv(self, t: Union[float, NDFloat],
-                          t0: Optional[Union[float, NDFloat]] = None, **kwargs: Any) -> NDFloat:
+    def monthly_vol_equiv(
+        self, t: Union[float, NDFloat], t0: Optional[Union[float, NDFloat]] = None, **kwargs: Any
+    ) -> NDFloat:
         """
         Defines the model equivalent monthly interval volume function:
 
@@ -325,8 +344,11 @@ class DeclineCurve(ABC):
         """
         t = self._validate_ndarray(t)
         t0 = np.atleast_1d(0.0).astype(np.float64)
-        return (np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))  # type: ignore
-                / np.diff(t, prepend=t0) * DAYS_PER_MONTH)  # type: ignore
+        return (
+            np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
+            / np.diff(t, prepend=t0)
+            * DAYS_PER_MONTH
+        )
 
     def D(self, t: Union[float, NDFloat]) -> NDFloat:
         """
@@ -433,14 +455,15 @@ class DeclineCurve(ABC):
         #     the caller had opted out of.
         #
         # bypass the "frozen" protection, as `_validate` does for its own caching
-        object.__setattr__(self, 'validate_params', tuple(self.validate_params))
+        object.__setattr__(self, "validate_params", tuple(self.validate_params))
 
         # pad the flags with True: a model that under-sizes `validate_params` must not
         # silently skip its remaining bound checks. `zip` still truncates an over-long
         # flags list -- `zip_longest` would instead yield `desc=True` and blow up on
         # `desc.name`.
-        for desc, do_validate in zip(self.get_param_descs(),
-                                     chain(self.validate_params, repeat(True))):
+        for desc, do_validate in zip(
+            self.get_param_descs(), chain(self.validate_params, repeat(True))
+        ):
             if not do_validate:
                 continue
             param = getattr(self, desc.name)
@@ -454,22 +477,22 @@ class DeclineCurve(ABC):
             # `GeneralizedPLYield.segments`) are skipped here and validate their own
             # contents; `None` means "unset" for the optional bounds and is also skipped.
             if isinstance(param, (int, float, np.floating)) and not isfinite(param):
-                raise ValueError(f'{desc.name} is not finite')
+                raise ValueError(f"{desc.name} is not finite")
 
             if param is not None and desc.lower_bound is not None:
                 if desc.exclude_lower_bound:
                     if param <= desc.lower_bound:
-                        raise ValueError(f'{desc.name} <= {desc.lower_bound}')
+                        raise ValueError(f"{desc.name} <= {desc.lower_bound}")
                 else:
                     if param < desc.lower_bound:
-                        raise ValueError(f'{desc.name} < {desc.lower_bound}')
+                        raise ValueError(f"{desc.name} < {desc.lower_bound}")
             if param is not None and desc.upper_bound is not None:
                 if desc.exclude_upper_bound:
                     if param >= desc.upper_bound:
-                        raise ValueError(f'{desc.name} >= {desc.upper_bound}')
+                        raise ValueError(f"{desc.name} >= {desc.upper_bound}")
                 else:
                     if param > desc.upper_bound:
-                        raise ValueError(f'{desc.name} > {desc.upper_bound}')
+                        raise ValueError(f"{desc.name} > {desc.upper_bound}")
         self._validate()
 
     @abstractmethod
@@ -531,7 +554,7 @@ class DeclineCurve(ABC):
                 The constructed decline curve model class.
         """
         if len(cls.get_param_descs()) != len(params):
-            raise ValueError('Params sequence does not have required length')
+            raise ValueError("Params sequence does not have required length")
         return cls(*params)
 
     @staticmethod
@@ -541,8 +564,9 @@ class DeclineCurve(ABC):
         """
         return np.atleast_1d(x).astype(np.float64)
 
-    def _integrate_with(self, fn: Callable[[NDFloat], NDFloat],
-                        t: NDFloat, **kwargs: Any) -> NDFloat:
+    def _integrate_with(
+        self, fn: Callable[[NDFloat], NDFloat], t: NDFloat, **kwargs: Any
+    ) -> NDFloat:
         """
         Numerically integrate ``fn`` from 0 to each value in ``t``, returning
         the cumulative integral at each point.
@@ -574,9 +598,9 @@ class DeclineCurve(ABC):
         -------
             cumulative integral: NDFloat
         """
-        n_grid = int(kwargs.get('n_grid', 10_000))
+        n_grid = int(kwargs.get("n_grid", 10_000))
         if n_grid < 2:
-            raise ValueError(f'n_grid must be >= 2, got {n_grid}')
+            raise ValueError(f"n_grid must be >= 2, got {n_grid}")
 
         if len(t) == 0:
             return np.array([], dtype=np.float64)
@@ -612,7 +636,7 @@ class DeclineCurve(ABC):
         grid = np.unique(np.concatenate([[0.0], log_grid, forward]))
 
         # evaluate fn on the full grid in one vectorized call
-        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
             y = fn(grid)
 
         # A single NaN would otherwise poison every later trapezoid, so degenerate grid
@@ -641,23 +665,24 @@ class PrimaryPhase(DeclineCurve):
     Extends :class:`DeclineCurve` for a primary phase forecast.
     Adds the capability to link a secondary (associated) phase model.
     """
-    secondary: 'SecondaryPhase'
-    water: 'WaterPhase'
+
+    secondary: "SecondaryPhase"
+    water: "WaterPhase"
 
     @staticmethod
     def removed_method(t: Union[float, NDFloat], phase: str, method: str) -> NoReturn:
-        raise ValueError(f'This instance is a {phase} phase and has no `{method}` method.')
+        raise ValueError(f"This instance is a {phase} phase and has no `{method}` method.")
 
     def _set_defaults(self) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
         secondary = NullAssociatedPhase()
-        object.__setattr__(secondary, 'primary', self)
-        object.__setattr__(self, 'secondary', secondary)
-        object.__setattr__(secondary, 'water', self)
-        object.__setattr__(self, 'water', secondary)
+        object.__setattr__(secondary, "primary", self)
+        object.__setattr__(self, "secondary", secondary)
+        object.__setattr__(secondary, "water", self)
+        object.__setattr__(self, "water", secondary)
 
-    def add_secondary(self, secondary: 'SecondaryPhase') -> None:
+    def add_secondary(self, secondary: "SecondaryPhase") -> None:
         """
         Attach a secondary phase model to this primary phase model.
 
@@ -669,13 +694,13 @@ class PrimaryPhase(DeclineCurve):
         Returns
         -------
         """
-        _disable_other_phase_accessors(secondary, 'secondary')
+        _disable_other_phase_accessors(secondary, "secondary")
 
         # bypass the "frozen" protection to link to the secondary phase
-        object.__setattr__(secondary, 'primary', self)
-        object.__setattr__(self, 'secondary', secondary)
+        object.__setattr__(secondary, "primary", self)
+        object.__setattr__(self, "secondary", secondary)
 
-    def add_water(self, water: 'WaterPhase') -> None:
+    def add_water(self, water: "WaterPhase") -> None:
         """
         Attach a water phase model to this primary phase model.
 
@@ -687,11 +712,11 @@ class PrimaryPhase(DeclineCurve):
         Returns
         -------
         """
-        _disable_other_phase_accessors(water, 'water')
+        _disable_other_phase_accessors(water, "water")
 
         # bypass the "frozen" protection to link to the water phase
-        object.__setattr__(water, 'primary', self)
-        object.__setattr__(self, 'water', water)
+        object.__setattr__(water, "primary", self)
+        object.__setattr__(self, "water", water)
 
 
 class AssociatedPhase(DeclineCurve):
@@ -699,19 +724,20 @@ class AssociatedPhase(DeclineCurve):
     Extends :class:`DeclineCurve` for an associated phase forecast.
     Each model must implement the defined abstract :meth:`_yieldfn` method.
     """
-    primary: 'PrimaryPhase'
 
-    def _set_default(self, model: 'AssociatedPhase', name: str) -> None:
+    primary: "PrimaryPhase"
+
+    def _set_default(self, model: "AssociatedPhase", name: str) -> None:
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        if hasattr(model, 'primary'):
-            primary = getattr(model, 'primary')
+        if hasattr(model, "primary"):
+            primary = getattr(model, "primary")
         else:
             primary = NullPrimaryPhase()
         object.__setattr__(primary, name, model)
-        object.__setattr__(model, 'primary', primary)
+        object.__setattr__(model, "primary", primary)
 
-    def _adopt_attachment(self, other: 'AssociatedPhase') -> None:
+    def _adopt_attachment(self, other: "AssociatedPhase") -> None:
         """
         Copy ``other``'s primary-phase attachment onto this instance.
 
@@ -740,13 +766,13 @@ class AssociatedPhase(DeclineCurve):
         """
         primary = other.primary
         # bypass the "frozen" protection, as the add_secondary/add_water path does
-        object.__setattr__(self, 'primary', primary)
+        object.__setattr__(self, "primary", primary)
 
         phase: _Phase
-        if getattr(primary, 'secondary', None) is other:
-            phase = 'secondary'
-        elif getattr(primary, 'water', None) is other:
-            phase = 'water'
+        if getattr(primary, "secondary", None) is other:
+            phase = "secondary"
+        elif getattr(primary, "water", None) is other:
+            phase = "water"
         else:
             # `other` was never attached, so there is no guard to mirror
             return
@@ -767,7 +793,7 @@ class SecondaryPhase(AssociatedPhase):
     """
 
     def _set_defaults(self) -> None:
-        super()._set_default(self, 'secondary')  # pragma: no cover
+        super()._set_default(self, "secondary")  # pragma: no cover
 
     def gor(self, t: Union[float, NDFloat]) -> NDFloat:
         """
@@ -815,7 +841,7 @@ class WaterPhase(AssociatedPhase):
     """
 
     def _set_defaults(self) -> None:
-        super()._set_default(self, 'water')  # pragma: no cover
+        super()._set_default(self, "water")  # pragma: no cover
 
     def wor(self, t: Union[float, NDFloat]) -> NDFloat:
         """
@@ -859,8 +885,8 @@ class BothAssociatedPhase(SecondaryPhase, WaterPhase):
     """
 
     def _set_defaults(self) -> None:
-        super()._set_default(self, 'secondary')
-        super()._set_default(self, 'water')
+        super()._set_default(self, "secondary")
+        super()._set_default(self, "water")
 
 
 # Must import these here to avoid circular dependency

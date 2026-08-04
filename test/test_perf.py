@@ -1,43 +1,49 @@
 """
 Performance regression tests for numerical integration and bourdet derivative.
 """
+
 from typing import Callable, Sequence
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from scipy.integrate import quad
 from petbox import dca
 
 
-def _quad_cum(rate_fn: Callable[[float], float], t: np.ndarray) -> np.ndarray:
+def _quad_cum(
+    rate_fn: Callable[[float], float], t: npt.NDArray[np.float64]
+) -> npt.NDArray[np.float64]:
     """Trusted reference: cumulative volume by adaptive quadrature of the rate."""
     return np.array([quad(rate_fn, 0.0, float(ti))[0] for ti in t])
 
 
-def _quad_cum_piecewise(rate_fn: Callable[[float], float], t: np.ndarray,
-                        breakpoints: Sequence[float]) -> np.ndarray:
+def _quad_cum_piecewise(
+    rate_fn: Callable[[float], float], t: npt.NDArray[np.float64], breakpoints: Sequence[float]
+) -> npt.NDArray[np.float64]:
     """Trusted reference for a piecewise rate: integrate across each kink separately,
     so adaptive quadrature never straddles a slope discontinuity."""
     cumulative = []
     for ti in t:
         nodes = [0.0] + [b for b in breakpoints if b < float(ti)] + [float(ti)]
-        cumulative.append(sum(quad(rate_fn, nodes[i], nodes[i + 1])[0]
-                              for i in range(len(nodes) - 1)))
+        cumulative.append(
+            sum(quad(rate_fn, nodes[i], nodes[i + 1])[0] for i in range(len(nodes) - 1))
+        )
     return np.array(cumulative)
 
 
-@pytest.mark.parametrize('n', [0.3, 0.4, 0.5, 0.6, 0.8])
+@pytest.mark.parametrize("n", [0.3, 0.4, 0.5, 0.6, 0.8])
 def test_SE_cum_matches_integral(n: float) -> None:
     """SE.cum must equal the integral of SE.rate. Regression for the missing
     gamma(1/n) factor, which made cum/EUR wrong by a factor of gamma(1/n)."""
     qi, tau = 1000.0, 30.0
     se = dca.SE(qi, tau, n)
     t = dca.get_time(1.0, 5000.0, 60)
-    ref = _quad_cum(lambda s: qi * np.exp(-(s / tau) ** n), t)
+    ref = _quad_cum(lambda s: qi * np.exp(-((s / tau) ** n)), t)
     assert np.allclose(se.cum(t), ref, rtol=1e-4)
 
 
-@pytest.mark.parametrize('n', [0.005, 0.003])
+@pytest.mark.parametrize("n", [0.005, 0.003])
 def test_SE_cum_small_n_fallback(n: float) -> None:
     """For very small n, gamma(1/n) overflows and SE.cum falls back to the
     numerical integrator; the result must still match the integral of the rate."""
@@ -46,7 +52,7 @@ def test_SE_cum_small_n_fallback(n: float) -> None:
     t = dca.get_time(1.0, 5000.0, 40)
     cum = se.cum(t)
     assert np.all(np.isfinite(cum))
-    ref = _quad_cum(lambda s: qi * np.exp(-(s / tau) ** n), t)
+    ref = _quad_cum(lambda s: qi * np.exp(-((s / tau) ** n)), t)
     assert np.allclose(cum, ref, rtol=1e-4)
 
 
@@ -82,10 +88,14 @@ def test_integrate_with_PLYield_accuracy() -> None:
 def test_integrate_with_GeneralizedPLYield_accuracy() -> None:
     """_integrate_with must reproduce the integral of a multi-segment yield rate."""
     yield_model = dca.GeneralizedPLYield(
-        c=1.2, m0=-0.1,
-        segments=(dca.PLYieldSegment(90.0, m=0.8),
-                  dca.PLYieldSegment(365.0, m=0.2),
-                  dca.PLYieldSegment(1825.0, m=-0.3)))
+        c=1.2,
+        m0=-0.1,
+        segments=(
+            dca.PLYieldSegment(90.0, m=0.8),
+            dca.PLYieldSegment(365.0, m=0.2),
+            dca.PLYieldSegment(1825.0, m=-0.3),
+        ),
+    )
     mh = dca.MH(qi=1000.0, Di=0.8, bi=1.5, Dterm=0.05)
     mh.add_secondary(yield_model)
     secondary = mh.secondary
@@ -100,8 +110,9 @@ def test_integrate_with_GeneralizedPLYield_accuracy() -> None:
     # derive the kinks from the model rather than restating them, so the reference
     # integral cannot drift out of sync with the segments above
     breakpoints = tuple(segment.t for segment in yield_model.segments)
-    reference = _quad_cum_piecewise(lambda s: float(secondary.rate(np.array([s]))[0]),
-                                    t, breakpoints)
+    reference = _quad_cum_piecewise(
+        lambda s: float(secondary.rate(np.array([s]))[0]), t, breakpoints
+    )
     assert np.allclose(cum, reference, rtol=1e-3)
 
 
@@ -157,7 +168,7 @@ def test_PLE_cum_matches_integral() -> None:
     qi, Di, Dinf, n = 1000.0, 0.5, 0.1, 0.6
     ple = dca.PLE(qi, Di, Dinf, n)
     t = dca.get_time(1.0, 5000.0, 60)
-    ref = _quad_cum(lambda s: qi * np.exp(-Di * s ** n - Dinf * s), t)
+    ref = _quad_cum(lambda s: qi * np.exp(-Di * s**n - Dinf * s), t)
     assert np.allclose(ple.cum(t), ref, rtol=1e-3)
 
 
@@ -170,7 +181,7 @@ def test_integrate_with_n_grid_parameter() -> None:
     assert np.allclose(coarse, fine, rtol=1e-3)
 
 
-@pytest.mark.parametrize('n_grid', [1, 0, -5])
+@pytest.mark.parametrize("n_grid", [1, 0, -5])
 def test_integrate_with_n_grid_too_small_raises(n_grid: int) -> None:
     """n_grid < 2 is a degenerate integration grid and must raise, not silently
     produce garbage."""
