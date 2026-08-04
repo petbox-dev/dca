@@ -34,6 +34,7 @@ Analytic functions are implemented wherever possible. When not possible, numeric
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 | Primary Phase              | `Transient Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.THM>`_,                                  |
 |                            | `Modified Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.MH>`_,                                    |
+|                            | `Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.Hyperbolic>`_,                                     |
 |                            | `Generalized Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.GeneralizedHyperbolic>`_,              |
 |                            | `Inclining Hyperbolic <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.IncliningHyperbolic>`_,                  |
 |                            | `Power-Law Exponential <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.PLE>`_,                                 |
@@ -243,6 +244,41 @@ A terminal decline only caps a *hyperbolic* tail, whose decline falls until it r
 ``Dterm``. If the last segment is exponential, flat, or inclining, its decline never reaches
 ``Dterm``, so the cap is ignored and a ``RuntimeWarning`` says which case applied. For a flat
 tail that means the forecast produces volume forever.
+
+
+``Hyperbolic`` is the plain single-segment Arps hyperbolic — ``qi``, ``Di``, ``bi``, and
+nothing else. Two other models express the same forecast, but only by omitting an argument
+— ``MH(qi, Di, bi)`` and ``GeneralizedHyperbolic(qi, Di, bi)``, both bit-for-bit identical
+to it. This one says so in its type. (``THM`` cannot: ``bf`` and ``telf`` are required, and
+even ``bf = bi`` builds three segments rather than one. ``IncliningHyperbolic`` rejects a
+positive ``Di`` outright.)
+
+.. code-block:: python
+
+    >>> hyp = dca.Hyperbolic(qi=1000.0, Di=0.8, bi=1.5)
+    >>> hyp.rate([0.0, 365.25, 730.5, 3652.5])
+    array([1000.000, 200.000, 129.894, 45.568])
+
+It takes no ``Dterm``, which is the whole difference from ``MH``: the decline falls forever
+rather than flattening onto a terminal exponential, so ``Hyperbolic(qi, Di, bi)`` is
+bit-for-bit ``MH(qi, Di, bi)``. Against an ``MH`` *given* a terminal decline the two agree
+exactly up to that model's terminal time and diverge after it: ``MH(1000, 0.8, 1.5, 0.08)``
+begins its terminal segment at 2884.43 days, where both have recovered 358,827.905; by 30
+years it is 617,999 against 555,128, and the gap keeps widening.
+
+Whether the uncapped tail leaves an EUR depends on ``bi``. The cumulative volume converges to
+``qi / ((1 - bi) * Dnom)`` for ``bi < 1`` — 295,493.457 at ``Hyperbolic(1000.0, 0.8, 0.5)`` —
+but for ``bi >= 1`` the integral of the tail does not converge and there is no EUR at all:
+
+.. code-block:: python
+
+    >>> dca.Hyperbolic(1000.0, 0.8, 0.5).cum([1e4 * 365.25, np.inf])
+    array([295469.553, 295493.457])
+    >>> dca.Hyperbolic(1000.0, 0.8, 1.5).cum([1e4 * 365.25, np.inf])
+    array([4918160.446, inf])
+
+Use it for the segment you are actually fitting, ``MH`` when the tail has to terminate, or
+``time_at_rate`` to find the economic limit that bounds it.
 
 
 ``IncliningHyperbolic`` is the named case of a build-up: an Arps hyperbolic with both ``Di``

@@ -12,6 +12,7 @@ Notes
 -----
 Created on August 5, 2019
 """
+import inspect
 import re
 import sys
 import warnings
@@ -20,7 +21,7 @@ from pathlib import Path
 import pytest # type: ignore
 import hypothesis
 from hypothesis import assume, given, settings, note, strategies as st
-from typing import Any, Type, TypeVar, Union
+from typing import Any, Optional, Tuple, Type, TypeVar, Union
 
 from math import isnan
 import numpy as np
@@ -1435,11 +1436,15 @@ def test_non_finite_params_are_rejected_on_every_model() -> None:
 def test_every_model_is_hashable() -> None:
     """A list default for validate_params makes a frozen dataclass unhashable, because the
     generated __hash__ hashes the field tuple. Every model must stay usable as a dict key,
-    a set member, and an lru_cache argument -- and all seven must agree, not just the two
-    that happened to be edited."""
+    a set member, and an lru_cache argument -- and all of them must agree, not just the two
+    that happened to be edited. The count is asserted against the module, so a model added
+    later cannot quietly skip this."""
     models = [
+        dca.Hyperbolic(1000.0, 0.5, 1.2),
         dca.MH(1000.0, 0.5, 1.2, 0.08),
         dca.THM(1000.0, 0.5, 2.0, 0.8, 30.0, 0.1, 20.0),
+        dca.GeneralizedHyperbolic(1000.0, 0.5, 1.2, (dca.HyperbolicSegment(365.0, b=0.8),)),
+        dca.IncliningHyperbolic(1000.0, -0.5, -1.0),
         dca.PLE(1000.0, 0.5, 0.05, 0.5),
         dca.SE(1000.0, 100.0, 0.5),
         dca.Duong(1000.0, 1.5, 1.2),
@@ -1448,9 +1453,21 @@ def test_every_model_is_hashable() -> None:
     ]
     assert len(set(models)) == len(models)
 
+    # every concrete model in the package is represented. The Null* models take no parameters
+    # and so cannot carry the mutable-default bug this guards, but are counted anyway.
+    covered = {type(model) for model in models} | {dca.NullPrimaryPhase, dca.NullAssociatedPhase}
+    concrete = {obj for obj in vars(dca).values()
+                if isinstance(obj, type) and issubclass(obj, dca.DeclineCurve)
+                and not inspect.isabstract(obj)
+                and obj.__name__ not in ('MultisegmentHyperbolic', 'MultisegmentPLYield')}
+    assert concrete == covered, f'not covered: {sorted(c.__name__ for c in concrete - covered)}'
+    assert isinstance(hash(dca.NullPrimaryPhase()), int)
+    assert isinstance(hash(dca.NullAssociatedPhase()), int)
+
     # equal models must hash equal, or dict lookup silently misses
-    assert {models[5]: 'a'}[dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)] == 'a'
-    assert {models[0]: 'b'}[dca.MH(1000.0, 0.5, 1.2, 0.08)] == 'b'
+    assert {models[8]: 'a'}[dca.PLYield(c=1.2, m0=-0.1, m=0.6, t0=180.0)] == 'a'
+    assert {models[1]: 'b'}[dca.MH(1000.0, 0.5, 1.2, 0.08)] == 'b'
+    assert {models[0]: 'c'}[dca.Hyperbolic(1000.0, 0.5, 1.2)] == 'c'
 
 
 def test_segments_naive_gen_is_usable() -> None:
@@ -1737,6 +1754,8 @@ def test_fill_segment_chain_inherits_nan_slots_and_keeps_overrides() -> None:
 
 
 TIME_AT_RATE_MODELS = {
+    'Hyperbolic': dca.Hyperbolic(1000.0, 0.8, 1.5),
+    'Hyperbolic exponential': dca.Hyperbolic(1000.0, 0.5, 0.0),
     'MH': dca.MH(1000.0, 0.8, 1.5),
     'MH terminal': dca.MH(1000.0, 0.8, 1.5, 0.08),
     'MH exponential': dca.MH(1000.0, 0.5, 0.0),
@@ -1995,6 +2014,205 @@ def test_time_at_rate_edge_shapes() -> None:
         warnings.simplefilter('error', RuntimeWarning)
         for model in TIME_AT_RATE_MODELS.values():
             model.time_at_rate(probe)
+
+
+# ---------------------------------------------------------------------------------------
+# Hyperbolic
+# ---------------------------------------------------------------------------------------
+
+
+@given(
+    qi=st.floats(1e-10, 1e6),
+    Di=st.floats(1e-300, 1.0, exclude_max=True),
+    bi=st.floats(0.0, 2.0),
+)
+def test_hyperbolic_equals_MH_without_a_terminal_decline(qi: float, Di: float,
+                                                        bi: float) -> None:
+    """A plain hyperbolic is what MH already produces when given no terminal decline, so the two
+    must be bit-for-bit identical. Hyperbolic exists to say that in its type rather than leave it
+    implied by an omitted argument."""
+    t = np.concatenate([[0.0], dca.get_time()])
+
+    hyperbolic = dca.Hyperbolic(qi, Di, bi)
+    modified = dca.MH(qi, Di, bi)
+
+    assert np.array_equal(hyperbolic.segment_params, modified.segment_params, equal_nan=True)
+    for name in ('rate', 'cum', 'D', 'beta', 'b', 'time_at_rate'):
+        assert np.array_equal(getattr(hyperbolic, name)(t), getattr(modified, name)(t),
+                              equal_nan=True), name
+
+    # explicitly passing Dterm = 0 is the same thing
+    assert np.array_equal(hyperbolic.segment_params,
+                          dca.MH(qi, Di, bi, 0.0).segment_params, equal_nan=True)
+
+
+def test_hyperbolic_is_a_single_segment() -> None:
+    """One row, no terminal segment, declining for all time."""
+    model = dca.Hyperbolic(1000.0, 0.8, 1.5)
+    assert model.segment_params.shape[0] == 1
+    assert [desc.name for desc in dca.Hyperbolic.get_param_descs()] == ['qi', 'Di', 'bi']
+
+    # the secant definition, exactly: Di = 0.8 leaves a fifth of the rate after a year
+    assert model.rate(np.array([0.0]))[0] == 1000.0
+    assert model.rate(np.array([365.25]))[0] == pytest.approx(200.0)
+
+    t = dca.get_time()
+    assert np.all(np.diff(model.rate(t)) < 0.0)
+    assert np.all(model.D(t) > 0.0)
+    assert np.all(model.b(t) == 1.5)
+
+    # against the closed form, evaluated the way the model does
+    Di_nom = dca.MultisegmentHyperbolic._nominal_per_day_from_secant(0.8, 1.5)
+    assert np.allclose(model.rate(t), 1000.0 * np.exp(-np.log1p(Di_nom * 1.5 * t) / 1.5))
+
+    assert check_model(model, 1000.0)
+
+    # there is no Dterm to give it -- a fourth positional argument is validate_params
+    with pytest.raises(TypeError):
+        dca.Hyperbolic(1000.0, 0.8, 1.5, 0.08)  # type: ignore[arg-type]
+
+
+@given(bi=st.floats(0.0, 2.0))
+def test_hyperbolic_EUR_converges_only_below_a_bi_of_one(bi: float) -> None:
+    """An uncapped hyperbolic tail is not automatically EUR-less. The Arps cumulative integrates
+    to ``qi / ((1 - b) Dnom)`` for ``b < 1`` and diverges for ``b >= 1``, so the docs cannot say
+    'produces volume forever' without qualifying it by ``bi`` -- which they did until this test
+    was written."""
+    model = dca.Hyperbolic(1000.0, 0.8, bi)
+    eur = model.cum(np.array([np.inf]))[0]
+    Dnom = dca.MH._nominal_per_day_from_secant(0.8, bi)
+
+    if bi < 1.0:
+        assert np.isfinite(eur)
+        # The closed form carries a 1/(1 - bi) factor the model does not: below B_EPSILON the
+        # rate function switches to the exponential form, where the limit is qi/Dnom. Asserting
+        # the hyperbolic form there would agree only to ~bi in relative terms -- 1.0e-10 at
+        # bi = B_EPSILON exactly -- so a tolerance loose enough to pass would be silently tied
+        # to B_EPSILON's value. Assert the form the model actually uses in each band instead.
+        limit = 1000.0 / Dnom if bi <= dca.MH.B_EPSILON else 1000.0 / ((1.0 - bi) * Dnom)
+        assert eur == pytest.approx(limit, rel=1e-13)
+        # A limit approached from below, never exceeded. Not strictly less: for a fast decline
+        # -- bi at or near 0, the exponential limit -- 1e4 years is already enough to reach it
+        # to double precision, so `<` would fail there while `<=` holds for every bi.
+        assert model.cum(np.array([1e4 * dca.DAYS_PER_YEAR]))[0] <= eur
+    else:
+        assert eur == np.inf
+
+    # MH converges for every bi in range, which is the contrast worth drawing -- but not always
+    # for the same reason. Above B_EPSILON the appended terminal exponential does it; at or below
+    # it the tail is already exponential, Dterm is ignored with a warning, and that primary
+    # segment converges on its own.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        modified = dca.MH(1000.0, 0.8, bi, 0.08)
+    assert np.isfinite(modified.cum(np.array([np.inf]))[0])
+    assert bool(caught) == (bi <= dca.MH.B_EPSILON)
+    if caught:
+        assert 'Dterm ignored' in str(caught[0].message)
+
+
+def test_hyperbolic_documented_EUR_values() -> None:
+    """The three figures README.rst, versions.rst and the class docstring all quote."""
+    slow = dca.Hyperbolic(1000.0, 0.8, 0.5).cum(np.array([1e4 * dca.DAYS_PER_YEAR, np.inf]))
+    assert slow == pytest.approx([295469.553, 295493.457])
+    assert slow[0] < slow[1]  # a bi of 0.5 is slow enough that 1e4 years still falls short
+    assert dca.Hyperbolic(1000.0, 0.8, 1.5).cum(np.array([1e4 * dca.DAYS_PER_YEAR]))[0] \
+        == pytest.approx(4918160.446)
+    thirty_years = np.array([30.0 * dca.DAYS_PER_YEAR])
+    assert dca.Hyperbolic(1000.0, 0.8, 1.5).cum(thirty_years)[0] == pytest.approx(617998.926)
+    assert dca.MH(1000.0, 0.8, 1.5, 0.08).cum(thirty_years)[0] == pytest.approx(555127.614)
+
+
+def test_hyperbolic_rejects_what_MH_rejects() -> None:
+    """The bounds are MH's, minus Dterm: a rate cannot be negative, a decline cannot reach 100%
+    per year or fail to decline at all, and the exponent stays within [0, 2] as it does for the
+    other two published hyperbolic models."""
+    for args, message in (((-1000.0, 0.8, 1.5), 'qi < 0.0'),
+                          ((1000.0, 0.0, 1.5), 'Di <= 0.0'),
+                          ((1000.0, 1.0, 1.5), 'Di >= 1.0'),
+                          ((1000.0, 5e-324, 1.5), 'converts to a zero nominal decline'),
+                          ((1000.0, 0.8, -0.1), 'bi < 0.0'),
+                          ((1000.0, 0.8, 2.5), 'bi > 2.0'),
+                          ((1000.0, np.nan, 1.5), 'Di is not finite'),
+                          ((1000.0, 0.8, np.inf), 'bi is not finite')):
+        with pytest.raises(ValueError) as e:
+            dca.Hyperbolic(*args)
+        assert message in str(e.value), args
+
+        # and MH rejects it identically -- the parity this test's name claims. Without this,
+        # the test would pass unchanged if MH's bounds diverged from Hyperbolic's.
+        with pytest.raises(ValueError) as mh_error:
+            dca.MH(*args)
+        assert str(mh_error.value) == str(e.value), args
+
+    # an unbounded exponent is GeneralizedHyperbolic's business, not this model's
+    generalized = dca.GeneralizedHyperbolic(1000.0, 0.8, 5.0, ())
+    assert generalized.segment_params[0, generalized.B_IDX] == 5.0
+
+
+def _desc_contract(desc: 'dca.base.ParamDesc') -> Tuple[str, str, Optional[float],
+                                                        Optional[float], bool, bool]:
+    """Everything a ParamDesc validates on. Excludes ``naive_gen``, which is a fresh lambda per
+    call and so compares by identity."""
+    return (desc.name, desc.description, desc.lower_bound, desc.upper_bound,
+            desc.exclude_lower_bound, desc.exclude_upper_bound)
+
+
+def test_shared_param_descs_are_single_sourced() -> None:
+    """Four descriptors are written once on ``MultisegmentHyperbolic`` and shared. A ParamDesc is
+    a validation contract -- bounds and exclusions -- so a re-inlined copy that drifts silently
+    widens or narrows one model's accepted domain relative to its siblings. This pins the
+    sharing: it fails if someone replaces a call with a literal that disagrees."""
+    hyperbolic, modified = dca.Hyperbolic.get_param_descs(), dca.MH.get_param_descs()
+    transient = dca.THM.get_param_descs()
+    generalized = dca.GeneralizedHyperbolic.get_param_descs()
+    inclining = dca.IncliningHyperbolic.get_param_descs()
+
+    # qi -- four models
+    assert (_desc_contract(hyperbolic[0]) == _desc_contract(modified[0])
+            == _desc_contract(generalized[0]) == _desc_contract(inclining[0]))
+
+    # Di, strictly declining -- three models
+    assert (_desc_contract(hyperbolic[1]) == _desc_contract(modified[1])
+            == _desc_contract(transient[1]))
+
+    # bi, bounded to [0, 2] -- two models
+    assert _desc_contract(hyperbolic[2]) == _desc_contract(modified[2])
+
+    # Dterm -- two models. MH's is last of four, GeneralizedHyperbolic's last of five.
+    assert _desc_contract(modified[3]) == _desc_contract(generalized[4])
+    assert modified[3].name == generalized[4].name == 'Dterm'
+
+    # THM deliberately does NOT share qi or bi: same bounds, narrower generators. Pin the
+    # difference, so replacing either with the shared call is caught rather than passing quietly.
+    assert _desc_contract(transient[0]) == _desc_contract(hyperbolic[0])
+    assert _desc_contract(transient[2])[2:] == _desc_contract(hyperbolic[2])[2:]
+
+    transient_qi = transient[0].naive_gen(np.random.default_rng(0), 500)
+    shared_qi = hyperbolic[0].naive_gen(np.random.default_rng(0), 500)
+    assert transient_qi.max() <= 2e4 and shared_qi.max() > 2e4
+    assert np.all(transient[2].naive_gen(np.random.default_rng(0), 500) == 2.0)
+    assert not np.all(hyperbolic[2].naive_gen(np.random.default_rng(0), 500) == 2.0)
+
+
+def test_hyperbolic_param_descs_and_phases() -> None:
+    rng = np.random.default_rng(20260804)
+    generated = [desc.naive_gen(rng, 6) for desc in dca.Hyperbolic.get_param_descs()]
+    assert np.all(generated[1] > 0.0)                  # Di must decline
+    assert np.all((generated[2] >= 0.0) & (generated[2] <= 2.0))
+    for params in zip(*generated):
+        assert np.all(np.isfinite(dca.Hyperbolic(*params).rate(dca.get_time())))
+
+    model = dca.Hyperbolic(1000.0, 0.8, 1.5)
+    assert isinstance(hash(model), int)
+    assert model == dca.Hyperbolic(1000.0, 0.8, 1.5)
+    assert dca.Hyperbolic.from_params([1000.0, 0.8, 1.5]).segment_params.shape[0] == 1
+
+    model.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=-0.2, t0=180.0))
+    model.add_water(dca.PLYield(c=0.5, m0=0.1, m=0.1, t0=180.0))
+    t = dca.get_time()
+    assert np.all(np.isfinite(model.secondary.gor(t)))
+    assert np.all(np.isfinite(model.water.wor(t)))
 
 
 # ---------------------------------------------------------------------------------------

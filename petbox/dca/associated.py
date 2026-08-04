@@ -33,7 +33,7 @@ from .base import (DeclineCurve, PrimaryPhase,
 NDFloat = NDArray[np.float64]
 
 
-@dataclass
+@dataclass(frozen=True)
 class NullAssociatedPhase(SecondaryPhase, WaterPhase):
     """
     A null :class:`AssociatedPhase` that always returns zeroes.

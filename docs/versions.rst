@@ -15,6 +15,29 @@ forecasts to 2.1.0 for ``t >= 0``; their accepted parameter *domain* narrows, an
 of every model at ``t < 0`` changes --- see the breaking changes.
 
 * New Models
+    * ``Hyperbolic`` --- the plain single-segment Arps hyperbolic, taking ``qi``, ``Di``, ``bi``
+      and nothing else. It is bit-for-bit ``MH(qi, Di, bi)``: a modified hyperbolic given no
+      terminal decline *is* a hyperbolic, and this states that in the type rather than leaving it
+      implied by an omitted argument. Verified identical across ``segment_params``, ``rate``,
+      ``cum``, ``D``, ``beta``, ``b`` and ``time_at_rate``.
+
+        * It takes **no** ``Dterm``, which is the only difference from ``MH``. The decline falls
+          for all time instead of flattening onto a terminal exponential: over 30 years
+          ``Hyperbolic(1000, 0.8, 1.5)`` recovers 617,999 against 555,128 for
+          ``MH(1000, 0.8, 1.5, 0.08)``, and the gap keeps widening.
+        * Whether the uncapped tail leaves an EUR depends on ``bi``, which is *not* the same as
+          for ``MH``. The Arps cumulative converges to ``qi / ((1 - bi) Dnom)`` for ``bi < 1``
+          --- 295,493.457 for ``Hyperbolic(1000, 0.8, 0.5)``, reached in the limit --- and
+          diverges for ``bi >= 1``, where there is no EUR at all. This is not a difference from
+          ``MH``: ``MH``'s ``Dterm`` defaults to 0, so ``MH(qi, Di, bi)`` diverges identically,
+          as the bit-for-bit equivalence requires. An ``MH`` *given* a non-zero ``Dterm`` has an
+          EUR for every ``bi`` --- above ``B_EPSILON`` because the appended terminal exponential
+          converges, at or below it because the tail is already exponential, ``Dterm`` is
+          ignored with a warning, and the primary segment converges on its own.
+        * Bounds are ``MH``'s minus ``Dterm``: ``qi >= 0``, ``0 < Di < 1``, ``0 <= bi <= 2``. Like
+          ``MH`` and ``THM`` it requires a ``Di`` that actually declines --- see the breaking
+          change below --- and permits ``bi = 0``, the exponential limit.
+
     * ``GeneralizedHyperbolic`` --- an Arps primary-phase model taking an arbitrary number of
       caller-specified segments, given as :class:`HyperbolicSegment` instances. Each segment is
       by default continuous in rate and decline with the one before it; cumulative volume is
@@ -108,10 +131,10 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       parameter is always last and short forms omit the level.
 
 * New Methods
-    * ``MultisegmentHyperbolic.time_at_rate(q)`` inverts the rate function, so ``MH``, ``THM``,
-      ``GeneralizedHyperbolic`` and ``IncliningHyperbolic`` all gain it. It answers both the
-      forward question --- time to an economic limit --- and the backward one --- how far a
-      forecast can be extrapolated --- with the same call.
+    * ``MultisegmentHyperbolic.time_at_rate(q)`` inverts the rate function, so ``Hyperbolic``,
+      ``MH``, ``THM``, ``GeneralizedHyperbolic`` and ``IncliningHyperbolic`` all gain it. It
+      answers both the forward question --- time to an economic limit --- and the backward one
+      --- how far a forecast can be extrapolated --- with the same call.
 
         * Each segment is inverted only over the times it governs, using the same bracketing as
           ``rate``. That is not cosmetic: on ``MH(1000, 0.8, 1.5, 0.08)``, whose terminal segment
@@ -155,8 +178,9 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       zero-filled initial value survived: ``MH(1000, 0.8, 1.5).rate(-500)`` returned ``0``,
       indistinguishable from a dead well. The first segment now claims everything below the next
       boundary, so a forecast fit against a first-production date that was too late can be walked
-      backwards. ``MH``, ``THM``, ``GeneralizedHyperbolic`` and ``IncliningHyperbolic`` are
-      affected; results for ``t >= 0`` are bit-for-bit unchanged.
+      backwards. ``MH`` and ``THM`` change here; results for ``t >= 0`` are bit-for-bit unchanged.
+      The three models added in this release --- ``Hyperbolic``, ``GeneralizedHyperbolic`` and
+      ``IncliningHyperbolic`` --- share the behaviour from the start.
     * ``cum`` before ``t = 0`` is negative, being the volume back to the ``t = 0`` baseline as a
       signed offset.
     * Far enough back, a hyperbolic segment reaches the pole at ``t = -1 / (b D)``, where
@@ -172,6 +196,10 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       change ``MH`` and ``THM`` results for such a ``b`` at every ``t``, not just beyond the pole.
 
 * **Breaking:** ``MH`` and ``THM`` reject a ``Di`` that does not decline
+
+  ``Hyperbolic``, new in this release, is bound the same way --- which is part of what makes it
+  bit-for-bit ``MH``.
+
     * A ``Di`` of 0 gives ``q(t) = qi`` for all ``t``. That is a flat forecast, not a hyperbolic
       model --- every use of ``b`` is multiplied by ``D``, so the exponent has nothing to act on,
       and ``MH`` silently ignored its ``bi`` there. The descriptor bound narrows from ``[0, 1)``
@@ -187,6 +215,19 @@ of every model at ``t < 0`` changes --- see the breaking changes.
     * ``GeneralizedHyperbolic`` deliberately still accepts a flat forecast, with a matching ``b``
       of 0, since flat segments are part of what that model exists to express.
       ``IncliningHyperbolic`` makes the mirror-image check.
+
+* **Bug Fix:** ``NullPrimaryPhase`` and ``NullAssociatedPhase`` are hashable
+    * Both were declared ``@dataclass`` rather than ``@dataclass(frozen=True)``. A non-frozen
+      dataclass gets a generated ``__eq__`` and has its ``__hash__`` set to ``None``, so both
+      raised ``TypeError: unhashable type`` in a ``set``, as a ``dict`` key, or as an
+      ``lru_cache`` argument --- while every other model, being frozen, was hashable. They are
+      now frozen like their siblings, which is what the documented design pattern always claimed.
+      Neither class declares a field, and everything that writes to a model instance already
+      goes through ``object.__setattr__``, so nothing else changes: rate and cumulative volume
+      are still zero for all ``t``, and an unattached secondary or water phase still resolves to
+      one of these and returns zero.
+    * The hashability test now asserts its own coverage against the module, so a model added
+      later cannot skip it. That assertion is what surfaced this.
 
 * **Breaking:** ``PLYield`` now validates all six of its parameters
     * Previously only ``c`` was bound-checked. ``DeclineCurve.validate_params`` defaults to a
@@ -331,7 +372,7 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       is what made an inclining model possible at all; ``MH`` and ``THM`` cannot pass a negative
       ``D`` or ``b`` into the base, so their results are unchanged.
     * ``THM``'s inline segment-chain loop and ``MH``'s hand-computed terminal row are now a shared
-      ``_fill_segment_chain`` and ``_append_terminal_segment``, which the two new models also use.
+      ``_fill_segment_chain`` and ``_append_terminal_segment``, which the new models also use.
       The chain fill is conditional on ``isnan``, so a supplied rate or decline is an override
       rather than being overwritten.
     * ``rate`` and ``time_at_rate`` share one ``_segment_window``. The round trip is exact only
@@ -342,6 +383,22 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       positional literals. Nineteen of those literals stated the column order nowhere, so
       reordering ``T_IDX``..``N_IDX`` would have left every one of them silently wrong. The order
       is now stated once.
+    * The first row of every model in the family --- rate ``qi`` at ``t = 0``, nothing produced
+      yet, ``Di`` converted against the first exponent --- is built by one
+      ``_initial_segment_row``, shared by all five. The secant-to-nominal conversion is the part
+      worth single-sourcing: a call site that omitted it would still produce a plausible forecast,
+      just one wrong by a factor of ``DAYS_PER_YEAR``. ``THM`` reads its ``D1`` back out of that
+      row rather than converting a second time, so its transient boundary walk cannot disagree
+      with the row it starts from. Verified bit-for-bit neutral by sweeping ``MH`` and ``THM``
+      over their full parameter grids --- including denormal and bound-adjacent values --- and
+      comparing ``segment_params`` and every output function against the pre-refactor tree.
+    * The four ``ParamDesc`` descriptors that more than one hyperbolic model declares --- ``qi``
+      (four models), a strictly declining ``Di`` (three), a ``[0, 2]``-bounded ``bi`` (two), and
+      ``Dterm`` (two) --- are written once on ``MultisegmentHyperbolic`` and shared. A
+      ``ParamDesc`` is a validation *contract*, so a copy that drifted would silently widen or
+      narrow one model's accepted domain relative to its siblings. ``THM`` keeps its own ``qi``
+      and ``bi``: same bounds, deliberately narrower generators, now stated as such. A test pins
+      the sharing. Bounds, exclusions and generated values are unchanged for every model.
     * All power-law yield math moved to a new ``MultisegmentPLYield`` base class, which caches
       per-segment anchor conditions and gathers them with ``searchsorted``. ``PLYield`` is now a
       subclass and supplies only its two segments; its results are bit-for-bit unchanged **for**

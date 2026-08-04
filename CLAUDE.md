@@ -43,10 +43,12 @@ Before committing, always update README.rst and any relevant docs in `./docs/` t
 DeclineCurve (ABC)
 ├── PrimaryPhase (ABC)
 │   ├── NullPrimaryPhase
-│   ├── MH (Modified Hyperbolic, extends MultisegmentHyperbolic)
-│   ├── THM (Transient Hyperbolic Model, extends MultisegmentHyperbolic)
-│   ├── GeneralizedHyperbolic (arbitrary segments, HyperbolicSegment)
-│   ├── IncliningHyperbolic (negative D and b, extends MultisegmentHyperbolic)
+│   ├── MultisegmentHyperbolic (shared segment math, time_at_rate)
+│   │   ├── Hyperbolic (single segment: qi, Di, bi -- no Dterm)
+│   │   ├── MH (Modified Hyperbolic, adds a terminal exponential)
+│   │   ├── THM (Transient Hyperbolic Model, 3-4 fitted segments)
+│   │   ├── GeneralizedHyperbolic (arbitrary segments, HyperbolicSegment)
+│   │   └── IncliningHyperbolic (negative D and b -- a build-up)
 │   ├── PLE (Power-Law Exponential)
 │   ├── SE (Stretched Exponential)
 │   └── Duong
@@ -69,7 +71,7 @@ DeclineCurve (ABC)
 ### Design patterns
 
 - **Frozen dataclasses** — All models are immutable (`@dataclass(frozen=True)`)
-- **Composition for phases** — Primary models link secondary/water via `add_secondary(model)` returning a new instance
+- **Composition for phases** — Primary models link secondary/water via `add_secondary(model)`/`add_water(model)`, which return `None` and attach in place through `object.__setattr__` (the models are frozen, so normal assignment would raise)
 - **Vectorized NumPy** — All calculations accept and return `NDArray[np.float64]`
 - **`scipy.integrate.cumulative_trapezoid`** — Numerical integration on a dense log-spaced grid where analytical solutions aren't available
 - **Parameter validation** — `ParamDesc` descriptors with bounds checking on construction via `get_param_descs()`
