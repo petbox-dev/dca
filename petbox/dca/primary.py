@@ -882,6 +882,75 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         return -expm1(-D)
 
+    # ---- parameter descriptors shared by more than one subclass ------------------------------
+    #
+    # Each of the four descriptors below was written out identically in two to four subclasses.
+    # A `ParamDesc` is a validation *contract* -- bounds, exclusions, and the generator
+    # `naive_gen` draws test parameters from -- so a copy that drifts silently widens or narrows
+    # one model's accepted domain relative to its siblings, which is exactly the class of bug
+    # the sign-agreement and flat-forecast work in this release was cleaning up. A subclass
+    # whose bounds genuinely differ writes its own and says why.
+
+    @classmethod
+    def _initial_rate_desc(cls) -> ParamDesc:
+        """
+        ``qi``, unbounded above. Shared by :class:`Hyperbolic`, :class:`MH`,
+        :class:`GeneralizedHyperbolic` and :class:`IncliningHyperbolic`. :class:`THM` writes its
+        own, drawing from a narrower range.
+        """
+        return ParamDesc(
+            'qi', 'Initial rate [vol/day]',
+            0.0, None,
+            lambda r, n: r.uniform(1e-10, 1e6, n))
+
+    @classmethod
+    def _declining_Di_desc(cls) -> ParamDesc:
+        """
+        ``Di``, strictly declining. Shared by :class:`Hyperbolic`, :class:`MH` and
+        :class:`THM` -- the three models that require an actual decline.
+
+        Strictly positive: a ``Di`` of 0 is a flat forecast, ``q(t) = qi`` for all ``t``, which
+        is not a hyperbolic model. :class:`GeneralizedHyperbolic` accepts it -- flat segments are
+        part of what that model exists to express -- and :class:`IncliningHyperbolic` requires a
+        strictly negative ``Di``; both write their own descriptor. See
+        :meth:`_require_a_real_decline` for the companion check on the *stored* decline, which
+        the bound alone cannot make.
+        """
+        return ParamDesc(  # TODO
+            'Di', 'Initial decline [sec. eff. / yr]',
+            0.0, 1.0,
+            lambda r, n: r.uniform(1e-10, 1.0, n),
+            exclude_lower_bound=True, exclude_upper_bound=True)
+
+    @classmethod
+    def _bounded_bi_desc(cls) -> ParamDesc:
+        """
+        ``bi``, bounded to ``[0, 2]``. Shared by :class:`Hyperbolic` and :class:`MH`.
+
+        ``0`` is the exponential limit of the relation and ``2`` the transient-linear-flow
+        limit. :class:`THM` bounds its ``bi`` the same way but generates from a fixed 2.0, and
+        :class:`GeneralizedHyperbolic` bounds ``b`` only by being finite, so both write their
+        own.
+        """
+        return ParamDesc(
+            'bi', 'Hyperbolic exponent',
+            0.0, 2.0,
+            lambda r, n: r.uniform(0.0, 2.0, n))
+
+    @classmethod
+    def _terminal_decline_desc(cls) -> ParamDesc:
+        """
+        ``Dterm``, a tangent effective decline. Shared by :class:`MH` and
+        :class:`GeneralizedHyperbolic` -- the two models that cap a hyperbolic tail.
+
+        Generates zero, i.e. no cap, so a randomly generated model is a plain hyperbolic.
+        """
+        return ParamDesc(  # TODO
+            'Dterm', 'Terminal decline [tan. eff. / yr]',
+            0.0, 1.0,
+            lambda r, n: np.zeros(n, dtype=np.float64),
+            exclude_upper_bound=True)
+
 
 @dataclass(frozen=True)
 class Hyperbolic(MultisegmentHyperbolic):
@@ -947,6 +1016,8 @@ class Hyperbolic(MultisegmentHyperbolic):
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 3)
 
     def _validate(self) -> None:
+        # the only check beyond the descriptor bounds, and the only one MH makes that is not
+        # about Dterm -- which is why this model is bit-for-bit MH with the Dterm omitted
         self._require_a_real_decline(self.Di, self.bi)
         super()._validate()
 
@@ -961,23 +1032,11 @@ class Hyperbolic(MultisegmentHyperbolic):
 
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
+        # exactly MH's list minus Dterm, which is the whole difference between the two models
         return [
-            ParamDesc(
-                'qi', 'Initial rate [vol/day]',
-                0.0, None,
-                lambda r, n: r.uniform(1e-10, 1e6, n)),
-            ParamDesc(
-                # Strictly positive, and the generator starts at 1e-300 rather than 0 for the
-                # reason `_require_a_real_decline` gives: a Di too small to survive the
-                # conversion is a flat forecast, not a hyperbolic one.
-                'Di', 'Initial decline [sec. eff. / yr]',
-                0.0, 1.0,
-                lambda r, n: r.uniform(1e-10, 1.0, n),
-                exclude_lower_bound=True, exclude_upper_bound=True),
-            ParamDesc(
-                'bi', 'Hyperbolic exponent',
-                0.0, 2.0,
-                lambda r, n: r.uniform(0.0, 2.0, n)),
+            cls._initial_rate_desc(),
+            cls._declining_Di_desc(),
+            cls._bounded_bi_desc(),
         ]
 
 
@@ -1049,28 +1108,10 @@ class MH(MultisegmentHyperbolic):
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
-            ParamDesc(
-                'qi', 'Initial rate [vol/day]',
-                0.0, None,
-                lambda r, n: r.uniform(1e-10, 1e6, n)),
-            ParamDesc(  # TODO
-                # Strictly positive: a Di of 0 is a flat forecast, q(t) = qi for all t,
-                # which is not a hyperbolic model. `GeneralizedHyperbolic` accepts it -- flat
-                # segments are part of what that model exists to express -- and
-                # `IncliningHyperbolic` requires a strictly negative Di.
-                'Di', 'Initial decline [sec. eff. / yr]',
-                0.0, 1.0,
-                lambda r, n: r.uniform(1e-10, 1.0, n),
-                exclude_lower_bound=True, exclude_upper_bound=True),
-            ParamDesc(
-                'bi', 'Hyperbolic exponent',
-                0.0, 2.0,
-                lambda r, n: r.uniform(0.0, 2.0, n)),
-            ParamDesc(  # TODO
-                'Dterm', 'Terminal decline [tan. eff. / yr]',
-                0.0, 1.0,
-                lambda r, n: np.zeros(n, dtype=np.float64),
-                exclude_upper_bound=True)
+            cls._initial_rate_desc(),
+            cls._declining_Di_desc(),
+            cls._bounded_bi_desc(),
+            cls._terminal_decline_desc(),
         ]
 
 
@@ -1175,23 +1216,23 @@ class THM(MultisegmentHyperbolic):
 
     def _segments(self) -> NDFloat:
 
-        t1 = 0.0
+        b1 = self.bi
+
+        # Segment 1 is the shared initial-conditions row, which every branch below opens with.
+        # t1, q1 and D1 are read back out of it rather than restated: the exponential-terminal
+        # branch walks the boundary conditions forward from this row, so a disagreement about
+        # where it sits, what rate it starts at, or -- for D1, a secant-to-nominal conversion --
+        # how steeply it declines would walk from the wrong place.
+        row1 = self._initial_segment_row(self.qi, self.Di, b1)
+        t1, q1, D1 = row1[self.T_IDX], row1[self.Q_IDX], row1[self.D_IDX]
+
         t2 = self.telf * (self.EXP_1 - 1.0)
         t3 = self.telf * (self.EXP_1 + 1.0)
         tterm = self.tterm * DAYS_PER_YEAR
 
-        b1 = self.bi
         b2 = self.bi - ((self.bi - self.bf) / self.EXP_1)
         b3 = self.bf
         bterm = self.bterm
-
-        q1 = self.qi
-
-        # every branch below opens with the same initial-conditions row. D1 is read back out of
-        # it rather than converted a second time, so the transient boundary walk further down
-        # cannot disagree with the row about the nominal decline it starts from.
-        row1 = self._initial_segment_row(q1, self.Di, b1)
-        D1 = row1[self.D_IDX]
 
         if tterm == 0.0 and bterm == 0.0:
             # no terminal segment
@@ -1521,19 +1562,16 @@ class THM(MultisegmentHyperbolic):
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
             ParamDesc(
+                # not the shared `_initial_rate_desc`: THM's generator draws from a narrower
+                # range, since its seven parameters interact and a 1e-10 rate makes for a
+                # degenerate transient fit
                 'qi', 'Initial rate [vol/day]',
                 0.0, None,
                 lambda r, n: r.uniform(1.0, 2e4, n)),
-            ParamDesc(  # TODO
-                # Strictly positive: a Di of 0 is a flat forecast, q(t) = qi for all t,
-                # which is not a hyperbolic model. `GeneralizedHyperbolic` accepts it -- flat
-                # segments are part of what that model exists to express -- and
-                # `IncliningHyperbolic` requires a strictly negative Di.
-                'Di', 'Initial decline [sec. eff. / yr]',
-                0.0, 1.0,
-                lambda r, n: r.uniform(1e-10, 1.0, n),
-                exclude_lower_bound=True, exclude_upper_bound=True),
+            cls._declining_Di_desc(),
             ParamDesc(
+                # not the shared `_bounded_bi_desc`: same [0, 2] bound, but THM interpolates
+                # from bi down to bf, so its generator pins the transient-linear-flow limit
                 'bi', 'Initial hyperbolic exponent',
                 0.0, 2.0,
                 lambda r, n: np.full(n, 2.0)),
@@ -1915,10 +1953,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
-            ParamDesc(
-                'qi', 'Initial rate [vol/day]',
-                0.0, None,
-                lambda r, n: r.uniform(1e-10, 1e6, n)),
+            cls._initial_rate_desc(),
             ParamDesc(
                 # No lower bound: a negative decline is an incline, which this model
                 # supports. The upper bound stands -- a decline of 100% per year consumes
@@ -1952,11 +1987,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                     np.sort(r.uniform(1.0, 1e5, n)),
                     r.uniform(0.0, 1.0, n),
                     r.uniform(0.0, 2.0, n)])),
-            ParamDesc(  # TODO
-                'Dterm', 'Terminal decline [tan. eff. / yr]',
-                0.0, 1.0,
-                lambda r, n: np.zeros(n, dtype=np.float64),
-                exclude_upper_bound=True)
+            cls._terminal_decline_desc(),
         ]
 
 
@@ -2056,10 +2087,7 @@ class IncliningHyperbolic(MultisegmentHyperbolic):
     @classmethod
     def get_param_descs(cls) -> List[ParamDesc]:
         return [
-            ParamDesc(
-                'qi', 'Initial rate [vol/day]',
-                0.0, None,
-                lambda r, n: r.uniform(1e-10, 1e6, n)),
+            cls._initial_rate_desc(),
             ParamDesc(
                 # Strictly negative: an inclining model that does not incline is a declining
                 # one, and belongs to MH. No lower bound -- a decline of -900% per year is a

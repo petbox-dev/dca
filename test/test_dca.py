@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest # type: ignore
 import hypothesis
 from hypothesis import assume, given, settings, note, strategies as st
-from typing import Any, Type, TypeVar, Union
+from typing import Any, Optional, Tuple, Type, TypeVar, Union
 
 from math import isnan
 import numpy as np
@@ -2071,6 +2071,47 @@ def test_hyperbolic_rejects_what_MH_rejects() -> None:
 
     # an unbounded exponent is GeneralizedHyperbolic's business, not this model's
     assert dca.GeneralizedHyperbolic(1000.0, 0.8, 5.0, ()).segment_params[0, 3] == 5.0
+
+
+def _desc_contract(desc: 'dca.base.ParamDesc') -> Tuple[str, str, Optional[float],
+                                                        Optional[float], bool, bool]:
+    """Everything a ParamDesc validates on. Excludes ``naive_gen``, which is a fresh lambda per
+    call and so compares by identity."""
+    return (desc.name, desc.description, desc.lower_bound, desc.upper_bound,
+            desc.exclude_lower_bound, desc.exclude_upper_bound)
+
+
+def test_shared_param_descs_are_single_sourced() -> None:
+    """Four descriptors are written once on ``MultisegmentHyperbolic`` and shared. A ParamDesc is
+    a validation contract -- bounds and exclusions -- so a re-inlined copy that drifts silently
+    widens or narrows one model's accepted domain relative to its siblings. This pins the
+    sharing: it fails if someone replaces a call with a literal that disagrees."""
+    hyperbolic, modified = dca.Hyperbolic.get_param_descs(), dca.MH.get_param_descs()
+    transient = dca.THM.get_param_descs()
+    generalized = dca.GeneralizedHyperbolic.get_param_descs()
+    inclining = dca.IncliningHyperbolic.get_param_descs()
+
+    # qi -- four models
+    assert (_desc_contract(hyperbolic[0]) == _desc_contract(modified[0])
+            == _desc_contract(generalized[0]) == _desc_contract(inclining[0]))
+
+    # Di, strictly declining -- three models
+    assert (_desc_contract(hyperbolic[1]) == _desc_contract(modified[1])
+            == _desc_contract(transient[1]))
+
+    # bi, bounded to [0, 2] -- two models
+    assert _desc_contract(hyperbolic[2]) == _desc_contract(modified[2])
+
+    # Dterm -- two models. MH's is last of four, GeneralizedHyperbolic's last of five.
+    assert _desc_contract(modified[3]) == _desc_contract(generalized[4])
+    assert modified[3].name == generalized[4].name == 'Dterm'
+
+    # THM deliberately does NOT share qi or bi: same bounds, narrower generators
+    assert _desc_contract(transient[0]) == _desc_contract(hyperbolic[0])
+    rng_args = (np.random.default_rng(0), 50)
+    assert transient[0].naive_gen(*rng_args).max() <= 2e4 < 1e6
+    assert np.all(transient[2].naive_gen(*rng_args) == 2.0)
+    assert _desc_contract(transient[2])[2:] == _desc_contract(hyperbolic[2])[2:]
 
 
 def test_hyperbolic_param_descs_and_phases() -> None:

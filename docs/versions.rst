@@ -368,6 +368,13 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       just one wrong by a factor of ``DAYS_PER_YEAR``. ``THM`` reads its ``D1`` back out of that
       row rather than converting a second time, so its transient boundary walk cannot disagree
       with the row it starts from. Verified bit-for-bit neutral across 130,192 probes.
+    * The four ``ParamDesc`` descriptors that more than one hyperbolic model declares --- ``qi``
+      (four models), a strictly declining ``Di`` (three), a ``[0, 2]``-bounded ``bi`` (two), and
+      ``Dterm`` (two) --- are written once on ``MultisegmentHyperbolic`` and shared. A
+      ``ParamDesc`` is a validation *contract*, so a copy that drifted would silently widen or
+      narrow one model's accepted domain relative to its siblings. ``THM`` keeps its own ``qi``
+      and ``bi``: same bounds, deliberately narrower generators, now stated as such. A test pins
+      the sharing. Bounds, exclusions and generated values are unchanged for every model.
     * All power-law yield math moved to a new ``MultisegmentPLYield`` base class, which caches
       per-segment anchor conditions and gathers them with ``searchsorted``. ``PLYield`` is now a
       subclass and supplies only its two segments; its results are bit-for-bit unchanged **for**
