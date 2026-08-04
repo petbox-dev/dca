@@ -22,9 +22,18 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       ``cum``, ``D``, ``beta``, ``b`` and ``time_at_rate``.
 
         * It takes **no** ``Dterm``, which is the only difference from ``MH``. The decline falls
-          for all time instead of flattening onto a terminal exponential, so the forecast produces
-          volume forever and has no EUR: over 30 years ``Hyperbolic(1000, 0.8, 1.5)`` recovers
-          617,999 against 555,128 for ``MH(1000, 0.8, 1.5, 0.08)``, and the gap keeps widening.
+          for all time instead of flattening onto a terminal exponential: over 30 years
+          ``Hyperbolic(1000, 0.8, 1.5)`` recovers 617,999 against 555,128 for
+          ``MH(1000, 0.8, 1.5, 0.08)``, and the gap keeps widening.
+        * Whether the uncapped tail leaves an EUR depends on ``bi``, which is *not* the same as
+          for ``MH``. The Arps cumulative converges to ``qi / ((1 - bi) Dnom)`` for ``bi < 1``
+          --- 295,493.457 for ``Hyperbolic(1000, 0.8, 0.5)``, reached in the limit --- and
+          diverges for ``bi >= 1``, where there is no EUR at all. This is not a difference from
+          ``MH``: ``MH``'s ``Dterm`` defaults to 0, so ``MH(qi, Di, bi)`` diverges identically,
+          as the bit-for-bit equivalence requires. An ``MH`` *given* a non-zero ``Dterm`` has an
+          EUR for every ``bi`` --- above ``B_EPSILON`` because the appended terminal exponential
+          converges, at or below it because the tail is already exponential, ``Dterm`` is
+          ignored with a warning, and the primary segment converges on its own.
         * Bounds are ``MH``'s minus ``Dterm``: ``qi >= 0``, ``0 < Di < 1``, ``0 <= bi <= 2``. Like
           ``MH`` and ``THM`` it requires a ``Di`` that actually declines --- see the breaking
           change below --- and permits ``bi = 0``, the exponential limit.
@@ -207,6 +216,19 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       of 0, since flat segments are part of what that model exists to express.
       ``IncliningHyperbolic`` makes the mirror-image check.
 
+* **Bug Fix:** ``NullPrimaryPhase`` and ``NullAssociatedPhase`` are hashable
+    * Both were declared ``@dataclass`` rather than ``@dataclass(frozen=True)``. A non-frozen
+      dataclass gets a generated ``__eq__`` and has its ``__hash__`` set to ``None``, so both
+      raised ``TypeError: unhashable type`` in a ``set``, as a ``dict`` key, or as an
+      ``lru_cache`` argument --- while every other model, being frozen, was hashable. They are
+      now frozen like their siblings, which is what the documented design pattern always claimed.
+      Neither class declares a field, and everything that writes to a model instance already
+      goes through ``object.__setattr__``, so nothing else changes: rate and cumulative volume
+      are still zero for all ``t``, and an unattached secondary or water phase still resolves to
+      one of these and returns zero.
+    * The hashability test now asserts its own coverage against the module, so a model added
+      later cannot skip it. That assertion is what surfaced this.
+
 * **Breaking:** ``PLYield`` now validates all six of its parameters
     * Previously only ``c`` was bound-checked. ``DeclineCurve.validate_params`` defaults to a
       one-element list and ``__post_init__`` zipped it against the descriptor list, so the
@@ -367,7 +389,9 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       worth single-sourcing: a call site that omitted it would still produce a plausible forecast,
       just one wrong by a factor of ``DAYS_PER_YEAR``. ``THM`` reads its ``D1`` back out of that
       row rather than converting a second time, so its transient boundary walk cannot disagree
-      with the row it starts from. Verified bit-for-bit neutral across 130,192 probes.
+      with the row it starts from. Verified bit-for-bit neutral by sweeping ``MH`` and ``THM``
+      over their full parameter grids --- including denormal and bound-adjacent values --- and
+      comparing ``segment_params`` and every output function against the pre-refactor tree.
     * The four ``ParamDesc`` descriptors that more than one hyperbolic model declares --- ``qi``
       (four models), a strictly declining ``Di`` (three), a ``[0, 2]``-bounded ``bi`` (two), and
       ``Dterm`` (two) --- are written once on ``MultisegmentHyperbolic`` and shared. A

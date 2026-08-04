@@ -247,8 +247,11 @@ tail that means the forecast produces volume forever.
 
 
 ``Hyperbolic`` is the plain single-segment Arps hyperbolic — ``qi``, ``Di``, ``bi``, and
-nothing else. The other models in the family can all express it, but only by omitting an
-argument; this one says so in its type.
+nothing else. Two other models express the same forecast, but only by omitting an argument
+— ``MH(qi, Di, bi)`` and ``GeneralizedHyperbolic(qi, Di, bi)``, both bit-for-bit identical
+to it. This one says so in its type. (``THM`` cannot: ``bf`` and ``telf`` are required, and
+even ``bf = bi`` builds three segments rather than one. ``IncliningHyperbolic`` rejects a
+positive ``Di`` outright.)
 
 .. code-block:: python
 
@@ -258,10 +261,24 @@ argument; this one says so in its type.
 
 It takes no ``Dterm``, which is the whole difference from ``MH``: the decline falls forever
 rather than flattening onto a terminal exponential, so ``Hyperbolic(qi, Di, bi)`` is
-bit-for-bit ``MH(qi, Di, bi)``. Because the tail is never capped, the model produces volume
-forever and has no EUR — over 30 years the forecast above recovers 617,999 against 555,128
-for ``MH(1000, 0.8, 1.5, 0.08)``, and the gap keeps widening. Use it for the segment you are
-actually fitting, and ``MH`` when the tail has to terminate.
+bit-for-bit ``MH(qi, Di, bi)``. Against an ``MH`` *given* a terminal decline the two agree
+exactly up to that model's terminal time and diverge after it: ``MH(1000, 0.8, 1.5, 0.08)``
+begins its terminal segment at 2884.43 days, where both have recovered 358,827.905; by 30
+years it is 617,999 against 555,128, and the gap keeps widening.
+
+Whether the uncapped tail leaves an EUR depends on ``bi``. The cumulative volume converges to
+``qi / ((1 - bi) * Dnom)`` for ``bi < 1`` — 295,493.457 at ``Hyperbolic(1000.0, 0.8, 0.5)`` —
+but for ``bi >= 1`` the integral of the tail does not converge and there is no EUR at all:
+
+.. code-block:: python
+
+    >>> dca.Hyperbolic(1000.0, 0.8, 0.5).cum([1e4 * 365.25, np.inf])
+    array([295469.553, 295493.457])
+    >>> dca.Hyperbolic(1000.0, 0.8, 1.5).cum([1e4 * 365.25, np.inf])
+    array([4918160.446, inf])
+
+Use it for the segment you are actually fitting, ``MH`` when the tail has to terminate, or
+``time_at_rate`` to find the economic limit that bounds it.
 
 
 ``IncliningHyperbolic`` is the named case of a build-up: an Arps hyperbolic with both ``Di``

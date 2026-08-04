@@ -37,7 +37,7 @@ NDFloat = NDArray[np.float64]
 NDBool = NDArray[np.bool_]
 
 
-@dataclass
+@dataclass(frozen=True)
 class NullPrimaryPhase(PrimaryPhase):
     """
     A null `PrimaryPhase` class that always returns zeroes.
@@ -152,14 +152,18 @@ class MultisegmentHyperbolic(PrimaryPhase):
         One row of a segment array, placed through the column constants.
 
         Every row in this module used to be written as a bare positional literal --
-        ``[t, q, D, b, N]``, 19 of them across four models. The order was correct but stated
+        ``[t, q, D, b, N]``, 19 of them -- 18 across four models, plus the terminal row here on the
+        base. The order was correct but stated
         nowhere: reordering ``T_IDX``..``N_IDX`` would have left all nineteen silently wrong,
         since nothing tied the literals to the constants. Assembling them here ties the two
         together, and names the fields at each call site as a side benefit.
 
-        The remaining call sites are all *continuation* rows -- a new exponent from some later
-        time, inheriting rate and decline. The first row of a model, which inherits nothing,
-        goes through :meth:`_initial_segment_row` instead.
+        The remaining call sites are all rows that inherit their cumulative volume from the row
+        before them -- the one slot :meth:`_fill_segment_chain` always overwrites -- so ``t`` and
+        ``b`` are the only two always supplied. A rate or a decline may be supplied to step or
+        prescribe it: the terminal row gives ``D``, and a :class:`HyperbolicSegment` may give
+        either. The first row of a model inherits nothing and goes through
+        :meth:`_initial_segment_row` instead.
 
         Parameters
         ----------
@@ -206,15 +210,20 @@ class MultisegmentHyperbolic(PrimaryPhase):
         The first row of every model in this family: the initial conditions at time zero.
 
         All five subclasses start the same way -- rate ``qi`` at ``t = 0`` with nothing produced
-        yet, and a secant ``Di`` converted against the first exponent. Only the exponent varies
-        in where it comes from: four models read ``self.bi`` directly, while
-        :class:`GeneralizedHyperbolic` may inherit its first exponent from a segment, so the
-        caller passes it rather than this method reading a field.
+        yet, and a secant ``Di`` converted against the first exponent.
 
         The conversion is the part worth single-sourcing. ``Di`` is a *secant* effective
         decline, and every consumer of a segment array reads a *nominal per-day* one; a call
         site that forgot the conversion would still produce a plausible forecast, just the
         wrong one by a factor of ``DAYS_PER_YEAR``.
+
+        The three values are taken as parameters rather than read off ``self``, because they are
+        subclass fields: ``MultisegmentHyperbolic`` declares none of them, so reading them here
+        would be an untyped reach into whatever the concrete class happens to define. The
+        exponent is always the model's own ``bi`` --
+        :meth:`GeneralizedHyperbolic._resolved_exponents` seeds its walk with ``self.bi`` and so
+        can only return it in slot 0 -- but that model passes ``exponents[0]`` so every exponent
+        it uses comes from the one walk its validator also reads.
 
         Parameters
         ----------
@@ -251,7 +260,8 @@ class MultisegmentHyperbolic(PrimaryPhase):
         2.7e-310 and was exactly flat, while reporting ``b(t) = 1.5``. That is the
         ``(D == 0, b != 0)`` pair `_fill_segment_chain` zeroes for every row *except* the first.
 
-        Called by the two published hyperbolic models. :class:`GeneralizedHyperbolic` does *not*
+        Called by :class:`Hyperbolic`, :class:`MH` and :class:`THM`. :class:`GeneralizedHyperbolic`
+        does *not*
         call it, since flat segments are part of what that model exists to express, and
         :class:`IncliningHyperbolic` makes the mirror-image check for a rise.
         """
@@ -928,9 +938,9 @@ class MultisegmentHyperbolic(PrimaryPhase):
         ``bi``, bounded to ``[0, 2]``. Shared by :class:`Hyperbolic` and :class:`MH`.
 
         ``0`` is the exponential limit of the relation and ``2`` the transient-linear-flow
-        limit. :class:`THM` bounds its ``bi`` the same way but generates from a fixed 2.0, and
-        :class:`GeneralizedHyperbolic` bounds ``b`` only by being finite, so both write their
-        own.
+        limit. The other three write their own: :class:`THM` keeps this bound but generates from
+        a fixed 2.0, :class:`GeneralizedHyperbolic` bounds ``b`` only by being finite, and
+        :class:`IncliningHyperbolic` requires it strictly negative.
         """
         return ParamDesc(
             'bi', 'Hyperbolic exponent',
@@ -941,7 +951,8 @@ class MultisegmentHyperbolic(PrimaryPhase):
     def _terminal_decline_desc(cls) -> ParamDesc:
         """
         ``Dterm``, a tangent effective decline. Shared by :class:`MH` and
-        :class:`GeneralizedHyperbolic` -- the two models that cap a hyperbolic tail.
+        :class:`GeneralizedHyperbolic` -- the two models that take a ``Dterm`` parameter.
+        :class:`THM` also caps its tail, but through ``bterm``/``tterm`` rather than this.
 
         Generates zero, i.e. no cap, so a randomly generated model is a plain hyperbolic.
         """
@@ -965,7 +976,10 @@ class Hyperbolic(MultisegmentHyperbolic):
 
     .. math::
 
-        q(t) = q_i \\, (1 + b_i \\, D_i \\, t) ^ \\frac{-1}{b_i}
+        q(t) = q_i \\, (1 + b_i \\, D_{nom} \\, t) ^ \\frac{-1}{b_i}
+
+    where :math:`D_{nom}` is the nominal per-day decline the model stores, not the secant
+    ``Di`` it is constructed from; the two are related by the definition of ``Di`` below.
 
     This is the plain relation, with no terminal segment and no segments after the first. It is
     the same forecast as ``MH(qi, Di, bi)`` -- a :class:`MH` given no terminal decline *is* a
@@ -973,14 +987,27 @@ class Hyperbolic(MultisegmentHyperbolic):
     accept a ``Dterm``. Reach for it when the forecast is a plain hyperbolic and you want that
     visible at the call site rather than implied by an omitted argument.
 
-    The rest of the family, in increasing generality:
+    Because the decline is never capped, the rate falls for all time rather than flattening onto
+    a terminal exponential. Whether that leaves an EUR depends on ``bi``: the cumulative volume
+    converges to :math:`q_i / ((1 - b_i) \\, D_{nom})` for ``bi < 1`` -- 295,493.457 for
+    ``Hyperbolic(1000, 0.8, 0.5)`` -- and diverges for ``bi >= 1``, where the integral of the
+    tail does not converge. Against an ``MH`` *given* a terminal decline, the volumes are equal
+    up to that model's terminal time and this one is larger past it: for ``bi = 1.5`` against
+    ``MH(1000, 0.8, 1.5, 0.08)``, whose terminal segment begins at 2884.43 days, both recover
+    358,827.905 there, and by 30 years it is 617,999 against 555,128 and still widening. Use
+    :class:`MH` where the tail has to terminate, or :meth:`time_at_rate` to find the economic
+    limit that bounds it.
 
-    - :class:`MH` adds a terminal exponential segment once the decline reaches ``Dterm``.
+    The rest of the family:
+
+    - :class:`MH` is this model plus a terminal exponential segment, appended once the decline
+      falls to ``Dterm``.
     - :class:`THM` interpolates the exponent from ``bi`` down to ``bf`` across a
-      transient-to-boundary transition.
+      transient-to-boundary transition, and optionally terminates.
     - :class:`GeneralizedHyperbolic` takes an arbitrary number of segments, which may decline,
-      incline, or be flat.
-    - :class:`IncliningHyperbolic` is the mirror of this class: a single *rising* segment.
+      incline, or be flat, and accepts an unbounded exponent. It is the most general of the
+      five, and a superset of :class:`MH`.
+    - :class:`IncliningHyperbolic` is the mirror of this model: a single *rising* segment.
 
     Parameters
     ----------
@@ -1016,8 +1043,8 @@ class Hyperbolic(MultisegmentHyperbolic):
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 3)
 
     def _validate(self) -> None:
-        # the only check beyond the descriptor bounds, and the only one MH makes that is not
-        # about Dterm -- which is why this model is bit-for-bit MH with the Dterm omitted
+        # the only check this model adds, and the only one MH makes that is not about Dterm --
+        # which is why the two are bit-for-bit identical. The base's own checks still run below.
         self._require_a_real_decline(self.Di, self.bi)
         super()._validate()
 

@@ -71,7 +71,7 @@ DeclineCurve (ABC)
 ### Design patterns
 
 - **Frozen dataclasses** — All models are immutable (`@dataclass(frozen=True)`)
-- **Composition for phases** — Primary models link secondary/water via `add_secondary(model)` returning a new instance
+- **Composition for phases** — Primary models link secondary/water via `add_secondary(model)`/`add_water(model)`, which return `None` and attach in place through `object.__setattr__` (the models are frozen, so normal assignment would raise)
 - **Vectorized NumPy** — All calculations accept and return `NDArray[np.float64]`
 - **`scipy.integrate.cumulative_trapezoid`** — Numerical integration on a dense log-spaced grid where analytical solutions aren't available
 - **Parameter validation** — `ParamDesc` descriptors with bounds checking on construction via `get_param_descs()`
