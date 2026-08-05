@@ -15,11 +15,12 @@ Created on August 5, 2019
 
 import inspect
 import re
+import sys
 import types
 import warnings
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 import hypothesis
 import numpy as np
@@ -506,6 +507,73 @@ def test_THM_transient_extra() -> None:
 
     with pytest.raises(ValueError):
         thm = dca.THM(1000.0, 1e-10, 2.0, 0.3, 30.0, 0.5, 10.0)
+
+
+def test_THM_transient_functions_raise_without_mpmath() -> None:
+    """`mpmath` is a dev-only dependency, so an ordinary `pip install petbox-dca` does not have
+    it. `_transDfn` used to print to stderr and return all-nan, which did not degrade cleanly:
+    only transient_D and transient_beta propagated the nan, while transient_rate returned a
+    *constant* and transient_cum integrated that constant into a straight line -- plausible
+    numbers rather than a visible failure. It raises now, and this pins that.
+
+    The stub blocks the import for the duration of the test rather than uninstalling anything,
+    so it is safe to run in an environment that has mpmath (which CI does)."""
+
+    class BlockMpmath:
+        """A meta_path finder that refuses `mpmath`, leaving every other import alone."""
+
+        def find_module(self, name: str, path: object = None) -> "BlockMpmath | None":
+            return self if name == "mpmath" or name.startswith("mpmath.") else None
+
+        def load_module(self, name: str) -> NoReturn:
+            raise ImportError(f"{name} is blocked by this test")
+
+    t = np.array([30.0, 365.25])
+    plain = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0)                  # no terminal segment
+    hyperbolic_term = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.0, 10.0)
+    exponential_term = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.08, 0.0)
+
+    # the non-transient functions have no mpmath dependency, which the error message claims;
+    # capture them first so it can be asserted rather than assumed
+    reference = {name: getattr(plain, name)(t) for name in ("rate", "cum", "D", "beta", "b")}
+
+    blocker = BlockMpmath()
+    blocked = [m for m in sys.modules if m == "mpmath" or m.startswith("mpmath.")]
+    saved_modules = {m: sys.modules[m] for m in blocked}
+    sys.meta_path.insert(0, blocker)  # type: ignore[arg-type]
+    for name in blocked:
+        del sys.modules[name]
+    try:
+        # Four always need the transient decline integral. `transient_b` is the exception: `_bfn`
+        # reaches for it only to locate an *exponential* terminal boundary, so it needs mpmath in
+        # that configuration and not otherwise. Asserted both ways so a change in which branch
+        # calls `_transDfn` shows up here.
+        for model in (plain, hyperbolic_term, exponential_term):
+            for name in ("transient_rate", "transient_cum", "transient_D", "transient_beta"):
+                with pytest.raises(ImportError, match=r"require `mpmath`"):
+                    getattr(model, name)(t)
+
+        with pytest.raises(ImportError, match=r"require `mpmath`"):
+            exponential_term.transient_b(t)
+
+        for model in (plain, hyperbolic_term):
+            assert np.all(np.isfinite(model.transient_b(t)))
+
+        # the message names the remedy and reassures about the rest of the API
+        with pytest.raises(ImportError) as raised:
+            plain.transient_rate(t)
+        assert "pip install mpmath" in str(raised.value)
+        assert isinstance(raised.value.__cause__, ImportError)  # chained, cause not lost
+
+        # and the ordinary functions really are unaffected
+        for name, expected in reference.items():
+            assert np.array_equal(getattr(plain, name)(t), expected, equal_nan=True), name
+    finally:
+        sys.meta_path.remove(blocker)  # type: ignore[arg-type]
+        sys.modules.update(saved_modules)
+
+    # restored, so the rest of the session is unaffected by this test
+    assert np.all(np.isfinite(plain.transient_rate(t)))
 
 
 @given(

@@ -104,18 +104,11 @@ DeclineCurve (ABC)
 
 Runtime: `numpy >= 2.1`, `scipy >= 1.13`. Requires Python >= 3.10.
 
-`mpmath` is a **dev-only** dependency (it is in `[dev]`, not in `dependencies`), imported lazily inside `THM._transDfn`. It is only needed by the five `THM.transient_*` functions.
+`mpmath` is a **dev-only** dependency (in `[dev]`, not in `dependencies`), imported lazily inside `THM._transDfn`. It is needed only by the five `THM.transient_*` functions; everything else works without it.
 
-**Known hazard, measured 2026-08-05:** on a runtime-only install the failure is silent and partly wrong rather than loud. `_transDfn` prints to stderr and returns all-`nan`, but only two of the five callers propagate that:
+Absent, they raise `ImportError` naming the fix. `transient_rate`/`cum`/`D`/`beta` raise always; `transient_b` only for a `bterm`-terminated model, since that is the one branch needing the transient integral.
 
-| without `mpmath` | result |
-|---|---|
-| `transient_D`, `transient_beta` | all `nan` — honest |
-| `transient_rate` | a **constant** `1033.4` at every `t` for `THM(1000, 0.8, 2.0, 0.8, 30.0)` |
-| `transient_cum` | that constant integrated, so linear in `t` |
-| `transient_b` | finite, plausible-looking values |
-
-So a user who `pip install petbox-dca` and calls `transient_rate` gets numbers, not a failure. Same in all three terminal configurations (no terminal, hyperbolic, exponential). Either promote `mpmath` to a runtime dependency or make `_transDfn` raise — the stderr print is not enough.
+That replaced a stderr print plus all-`nan` return, which did not degrade cleanly: only `transient_D` and `transient_beta` propagated the `nan`, while `transient_rate` returned a *constant* (`1033.4` at every `t` for `THM(1000, 0.8, 2.0, 0.8, 30.0)`) and `transient_cum` integrated that constant into a straight line. Plausible numbers, in a library people fit economics to. If you add another optional dependency, fail the same way — loudly, at the point of use.
 
 ## Version
 

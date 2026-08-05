@@ -97,20 +97,19 @@ ignore = ["SIM108"]
 [tool.ruff.lint.mccabe]
 max-complexity = 20
 
-# These flags now cover everything `--strict` implies, plus four it does not
-# (disallow_any_unimported, no_implicit_optional, warn_unreachable, show_error_codes). Keeping
-# them spelled out means `mypy petbox/dca` and `mypy --strict petbox/dca` agree; the list had
-# drifted to 12 of strict's 14, so the CI command passed while `--strict` did not. If mypy adds
-# a flag to strict, add it here too.
+# `strict = true` rather than a hand-listed set of flags. The list it replaced had drifted to 12
+# of strict's 14, so `mypy petbox/dca` passed while `mypy --strict petbox/dca` did not.
 #
-# What the three formerly-missing flags caught:
-#   warn_return_any      -- 8 functions returning Any through a declared NDFloat, because
-#                           typeshed types `float ** float` as Any (a negative base with a
-#                           fractional exponent is complex) and np.where/np.diff as dtype[Any].
-#   no_implicit_reexport -- no `__all__` in petbox/dca/__init__.py. This package ships py.typed,
-#                           so a DOWNSTREAM consumer running strict got "Module petbox.dca does
-#                           not explicitly export attribute MH" on ordinary usage.
-#   extra_checks         -- nothing.
+# Two consequences of strict that constrain how this package is written, and that are easy to
+# undo by accident:
+#   - no_implicit_reexport: a name merely imported into petbox/dca/__init__.py is not
+#     re-exported. Since the package ships py.typed, an unlisted name is invisible to any
+#     type-checked consumer -- `dca.MH(...)` fails in THEIR build, not ours. New public names
+#     must go in `__all__`.
+#   - warn_return_any: numpy and typeshed hand back `Any` more often than they look like they
+#     do (`float ** float` is Any, because a negative base with a fractional exponent is
+#     complex; np.where/np.diff/np.log yield dtype[Any]). A function declared `-> NDFloat` has
+#     to pin the type rather than pass one of those through.
 [tool.mypy]
 strict = true
 warn_unreachable = true

@@ -216,6 +216,34 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       of 0, since flat segments are part of what that model exists to express.
       ``IncliningHyperbolic`` makes the mirror-image check.
 
+* **Breaking:** the ``THM`` transient functions raise when ``mpmath`` is missing
+    * ``mpmath`` is a development dependency, not a runtime one, so an ordinary
+      ``pip install petbox-dca`` does not have it. ``THM._transDfn`` printed a message to stderr
+      and returned all-``NaN``, on the theory that a missing optional dependency should degrade
+      rather than fail. It did not degrade cleanly. Only ``transient_D`` and ``transient_beta``
+      propagated the ``NaN``:
+
+      .. code-block:: text
+
+          transient_D, transient_beta   all NaN -- an honest failure
+          transient_rate                a CONSTANT 1033.4 at every t
+          transient_cum                 that constant integrated, so linear in t
+          transient_b                   finite, plausible-looking values
+
+      measured on ``THM(1000, 0.8, 2.0, 0.8, 30.0)`` and unchanged across all three terminal
+      configurations. A caller got numbers rather than an error, from a library whose output
+      feeds economics.
+    * They now raise ``ImportError`` naming the remedy, chained from the original so the cause is
+      not lost. ``transient_rate``, ``transient_cum``, ``transient_D`` and ``transient_beta``
+      raise in every configuration. ``transient_b`` is the exception: it reaches for the
+      transient integral only to locate an *exponential* terminal boundary, so it raises for a
+      ``bterm``-terminated model and returns finite values otherwise --- correct either way,
+      and asserted both ways.
+    * The other functions --- ``rate``, ``cum``, ``D``, ``beta``, ``b`` --- never needed
+      ``mpmath`` and are unaffected, which the error message states and the test asserts against
+      values captured beforehand. The test blocks the import through a ``sys.meta_path`` stub, so
+      it runs correctly in an environment that *has* ``mpmath``.
+
 * **Bug Fix:** ``NullPrimaryPhase`` and ``NullAssociatedPhase`` are hashable
     * Both were declared ``@dataclass`` rather than ``@dataclass(frozen=True)``. A non-frozen
       dataclass gets a generated ``__eq__`` and has its ``__hash__`` set to ``None``, so both

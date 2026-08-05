@@ -12,7 +12,6 @@ Notes
 Created on August 5, 2019
 """
 
-import sys
 import warnings
 from abc import abstractmethod
 from collections.abc import Callable, Iterable, Sequence
@@ -1499,12 +1498,23 @@ class THM(MultisegmentHyperbolic):
     def _transDfn(self, t: NDFloat) -> NDFloat:
         try:
             import mpmath as mp
-        except ImportError:
-            print(
-                "`mpmath` not installed, please install it compute the transient THM functions",
-                file=sys.stderr,
-            )
-            return np.full_like(t, np.nan, dtype=np.float64)
+        except ImportError as no_mpmath:
+            # Raise rather than warn. This used to print to stderr and return all-nan, on the
+            # theory that a missing optional dependency should degrade rather than fail -- but
+            # it did not degrade cleanly. Only `transient_D` and `transient_beta` propagated the
+            # nan; `transient_rate` returned a *constant* (1033.4 at every t for
+            # THM(1000, 0.8, 2.0, 0.8, 30.0)) and `transient_cum` integrated that constant into
+            # a straight line. Both are plausible-looking numbers, on quiet stderr, in a library
+            # people fit economics to. `mpmath` is not in `dependencies`, so any ordinary
+            # `pip install petbox-dca` hit this.
+            #
+            # Covered by `test_THM_transient_functions_raise_without_mpmath`, which blocks the
+            # import through a `sys.meta_path` stub rather than uninstalling anything.
+            raise ImportError(
+                "The THM transient functions require `mpmath`, which is not installed. "
+                "Install it with `pip install mpmath`. The non-transient functions -- rate, "
+                "cum, D, beta, b -- have no such dependency and are unaffected."
+            ) from no_mpmath
 
         t = np.atleast_1d(t)
         qi = self.qi
