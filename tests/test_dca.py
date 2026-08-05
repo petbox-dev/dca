@@ -1866,14 +1866,29 @@ GUARD_REFERENCE = {
 
 def test_guard_conversion_is_invisible_to_valid_models() -> None:
     """MIN_EPSILON is a tiny *positive* number, so ``D < MIN_EPSILON`` read as "D is zero or
-    negative" where "D is negligible in magnitude" was meant. Converting those to abs() tests
-    is unobservable to MH/THM, whose descriptors forbid a negative D or b -- and abs(x) == x
-    for non-negative x. These are exact equalities, not approximations: the arithmetic is
-    untouched, only the branch predicate changed."""
+    negative" where "D is negligible in magnitude" was meant. Converting those to abs() tests is
+    unobservable to MH/THM, whose descriptors forbid a negative D or b -- and abs(x) == x for
+    non-negative x.
+
+    Two assertions, because the interesting claim and the checkable one differ.
+
+    The exact part is structural: every D and b these models *store* is non-negative, so the
+    abs() predicate and the bare predicate see the same values. That holds bit-for-bit on any
+    platform, and it is the actual reason the conversion is invisible.
+
+    The numeric part is a regression pin, and it cannot be exact. The literals were captured
+    from the pre-change implementation on one machine; `cum` reaches them through expm1, whose
+    last bit differs between glibc and MSVC. Asserted with np.array_equal, this passed on
+    Windows and failed on Linux CI by one ULP. rtol=1e-15 is roughly five ULP -- loose enough
+    for a platform's libm, tight enough that a real change in the arithmetic still fails."""
     for name, (model, expected) in GUARD_REFERENCE.items():
+        stored = model.segment_params
+        assert np.all(stored[:, model.D_IDX] >= 0.0), (name, "stored D is negative")
+        assert np.all(stored[:, model.B_IDX] >= 0.0), (name, "stored b is negative")
+
         for fn, values in expected.items():
             actual = getattr(model, fn)(GUARD_REFERENCE_T)
-            assert np.array_equal(actual, np.array(values)), (name, fn, actual)
+            assert np.allclose(actual, values, rtol=1e-15, atol=0.0), (name, fn, actual)
 
 
 def test_decline_conversions_are_invisible_to_positive_declines() -> None:
@@ -2095,14 +2110,25 @@ TIME_AT_RATE_MODELS = {
 
 
 def test_time_at_rate_inverts_rate() -> None:
-    """time_at_rate is the inverse of rate, for every hyperbolic model and every segment."""
+    """time_at_rate is the inverse of rate, for every hyperbolic model and every segment.
+
+    Two tolerances, and the gap between them is the point. The recovered *time* is only good to
+    rtol=1e-9 -- inverting a shallow tail amplifies error, and IncliningHyperbolic comes back up
+    to 110 ULP away -- but the *rate* at that recovered time still lands on the rate asked for to
+    within a couple of ULP. That is what makes the inversion useful: you get a time you can
+    evaluate at, not merely a time that is nearly right.
+
+    rtol=1e-15 rather than np.array_equal. Four of the five models do round-trip bit-exactly,
+    but GeneralizedHyperbolic is one ULP out on glibc (max rel 1.8e-16) where it was exact on
+    MSVC, because inverting across a segment boundary carries one extra rounding. Asserting
+    equality passed on Windows and failed on Linux CI."""
     t = np.array([1.0, 30.0, 365.25, 1000.0, 5000.0, 20000.0])
 
     for name, model in TIME_AT_RATE_MODELS.items():
-        recovered = model.time_at_rate(model.rate(t))
+        requested = model.rate(t)
+        recovered = model.time_at_rate(requested)
         assert np.allclose(recovered, t, rtol=1e-9, atol=1e-9), name
-        # and the rate at the recovered time is the rate asked for, exactly
-        assert np.array_equal(model.rate(recovered), model.rate(t)), name
+        assert np.allclose(model.rate(recovered), requested, rtol=1e-15, atol=0.0), name
 
 
 def test_time_at_rate_brackets_the_segment() -> None:

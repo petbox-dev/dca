@@ -101,6 +101,27 @@ DeclineCurve (ABC)
 - **Testing:** pytest + hypothesis (property-based). Test data from an Eagle Ford well in `tests/data.py`. `tests/` is a package but is never packaged — `packages.find` includes only `petbox.dca`.
 - Lint, type-check and tests all run over `petbox/dca`, `tests` and `docs`; `tests/test.sh` and `tests/test.bat` mirror the CI lint job.
 
+### Never assert exact float equality against a captured literal
+
+`==` or `np.array_equal` against a hardcoded float is a platform trap, and it has bitten three
+times in this suite. The value is computed through `expm1`/`log1p`/`exp`, whose last bit differs
+between MSVC and glibc, so the assertion passes on the machine that captured it and fails on CI:
+
+- `secant_from_nominal(0.5, 1.5)` — `...629` on numpy 2.5 vs `...628` on 2.2
+- `MH(...).cum(t)` reference values — exactly 1 ULP out on glibc, all four models
+- `rate(time_at_rate(q)) == q` — bit-exact for four models, 1 ULP for `GeneralizedHyperbolic`
+
+Use `pytest.approx(x, rel=1e-15)` or `np.allclose(a, b, rtol=1e-15, atol=0.0)` — about five ULP,
+loose enough for any libm and still tight enough that a real change in the arithmetic fails. Two
+things *are* safe to compare exactly, and both appear in the suite: values computed twice **in
+the same process** (a guarded path against an unguarded one), and values the model merely
+**stores** rather than computes (a segment's `b` is the `b` you passed in).
+
+Where a test's real claim is structural, assert the structure instead of a snapshot.
+`test_guard_conversion_is_invisible_to_valid_models` now asserts that every stored `D` and `b` is
+non-negative — which is *why* `abs()` changes nothing, holds bit-for-bit everywhere, and needs no
+magic numbers — and keeps the numeric literals only as a loose regression pin.
+
 ### Reproducing a CI failure locally
 
 Lint results depend on the installed stack, so a failure that only CI sees is usually a missing
@@ -108,6 +129,18 @@ dev dependency rather than a code problem. Build a venv matching the workflow �
 ".[lint]"` and nothing else — rather than trusting the ambient environment. That is how the
 `scipy-stubs` and `matplotlib` gaps were found: both were resolving locally only because they
 happened to be installed.
+
+**Testing on Linux from Windows.** Two of the three float-equality failures above only appear on
+glibc, and CI runs ubuntu/windows/macos. WSL reproduces them:
+
+```bash
+wsl.exe -e bash -lc 'cd /mnt/c/Users/<you>/Projects/petbox-dev/dca && ...'
+```
+
+Do the venv creation, pip bootstrap, install and test run inside a **single** `wsl.exe`
+invocation — separate calls do not share `/tmp`. `python3 -m venv` there needs
+`--without-pip` plus `get-pip.py`, and `pip install -e .` rather than `PYTHONPATH`, because
+`petbox/dca/__init__.py` reads its version from installed distribution metadata.
 
 **Windows `MAX_PATH` when making venvs.** `python -m venv` fails on Python 3.10/3.11 if the
 target path is deep:
