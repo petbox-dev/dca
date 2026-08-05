@@ -1,0 +1,13 @@
+# The wheel never contained tests -- packages.find includes only petbox.dca -- but the sdist did,
+# partially. setuptools has a legacy default that pulls in top-level test*.py, so
+# petbox_dca-2.2.0.tar.gz shipped tests/test_dca.py and tests/test_perf.py while leaving out
+# tests/__init__.py and tests/data.py. The result could not even be collected:
+#
+#   tests/test_dca.py:35: from .data import rate as q_data
+#   ImportError: attempted relative import with no known parent package
+#
+# Exclude the tree outright. The alternative -- making the suite runnable from an sdist -- means
+# shipping tests/__init__.py, tests/data.py and tests/doc_examples.py, plus docs/examples.rst,
+# which test_examples_literalinclude_markers_resolve reads. That is a standing commitment to
+# keeping the suite sdist-runnable, and a half-shipped suite is worse than either choice.
+prune tests
