@@ -8,19 +8,30 @@ each model that uses numerical integration:
   - PLYield secondary phase attached to MH primary (N(t) = integral of yield * q(t))
 """
 
+from collections.abc import Callable, Sequence
+
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import quad
 
 from petbox import dca
+from petbox.dca.base import NDFloat
+
+# A named pair of zero-argument accessors per label: the library's answer and the quadrature
+# reference for the same model, both already bound to the evaluation grid. `make_figure` and
+# `print_table` each take one of these dicts and nothing else, so the shape is worth a name.
+Comparison = dict[str, tuple[Callable[[], NDFloat], Callable[[], NDFloat]]]
+
+# The model callable integrated by `reference_cum`: a rate or yield-rate function over the grid.
+RateFn = Callable[[NDFloat], NDFloat]
 
 
-def reference_cum(fn, t):
+def reference_cum(fn: RateFn, t: NDFloat) -> NDFloat:
     """High-accuracy reference via adaptive quadrature per interval."""
 
-    # Wrap fn to accept scalars — scipy.integrate.quad passes floats,
+    # Wrap fn to accept scalars -- scipy.integrate.quad passes floats,
     # but DCA model functions expect arrays (they use np.putmask, etc.)
-    def fn_wrapped(x):
+    def fn_wrapped(x: float) -> float:
         return float(fn(np.atleast_1d(x))[0])
 
     cum = np.zeros_like(t)
@@ -34,7 +45,20 @@ def reference_cum(fn, t):
     return cum
 
 
-def make_figure(models, t, filename, suptitle):
+def comparison_pair(
+    model_cum: Callable[[NDFloat], NDFloat], rate_fn: RateFn, t: NDFloat
+) -> tuple[Callable[[], NDFloat], Callable[[], NDFloat]]:
+    """Bind a model's own cumulative and its quadrature reference to one grid.
+
+    A factory rather than two `lambda x=x: ...` defaults at the call site. Those defaults exist
+    only to capture the loop variable, and mypy cannot infer the type of such a lambda when it
+    is assigned into a typed container -- taking the two callables as arguments captures them
+    by value with no trick and no annotation needed on the lambdas themselves.
+    """
+    return (lambda: model_cum(t), lambda: reference_cum(rate_fn, t))
+
+
+def make_figure(models: Comparison, t: NDFloat, filename: str, suptitle: str) -> None:
     """Generate a two-panel figure: cumulative volume + relative error."""
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     fig.suptitle(suptitle, fontsize=12, y=1.02)
@@ -77,7 +101,7 @@ def make_figure(models, t, filename, suptitle):
     print(f"Saved {filename}")
 
 
-def print_table(models, t):
+def print_table(models: Comparison, t: NDFloat) -> None:
     """Print summary statistics table."""
     print(f"\n{'Model':<55} {'Max Rel Err (%)':>15} {'Mean Rel Err (%)':>16}")
     print("-" * 90)
@@ -89,7 +113,7 @@ def print_table(models, t):
         print(f"{label:<55} {rel_err.max():>15.4e} {rel_err.mean():>16.4e}")
 
 
-def print_ngrid_convergence(ple_cases, t):
+def print_ngrid_convergence(ple_cases: Sequence[tuple[str, dca.PLE]], t: NDFloat) -> None:
     """Print worst-case (over the PLE cases) relative error vs n_grid, showing
     the second-order convergence of the log-spaced trapezoid rule."""
     grids = [250, 500, 1000, 2000, 5000, 10_000, 20_000]
@@ -119,10 +143,9 @@ def main() -> None:
         ("PLE (Di=0.5, Dinf=5e-4, n=0.3)", dca.PLE(qi=10_000.0, Di=0.5, Dinf=5e-4, n=0.3)),
     ]
 
-    ple_models = {}
+    ple_models: Comparison = {}
     for label, model in ple_cases:
-        fn = model._qfn
-        ple_models[label] = (lambda m=model: m.cum(t), lambda f=fn: reference_cum(f, t))
+        ple_models[label] = comparison_pair(model.cum, model._qfn, t)
 
     make_figure(
         ple_models,
@@ -137,7 +160,7 @@ def main() -> None:
     # Associated phase: PLYield on MH primary
     # N_sec(t) = integral of (yield(t) * q_primary(t))
     # ----------------------------------------------------------------
-    sec_cases = []
+    sec_cases: list[tuple[str, dca.MH]] = []
 
     # Case 1: MH with rising GOR
     mh1 = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)
@@ -163,11 +186,10 @@ def main() -> None:
     mh4.add_secondary(sec4)
     sec_cases.append(("MH (Di=0.6, bi=1.5) + PLYield (c=3.0, m=-0.2)", mh4))
 
-    sec_models = {}
+    sec_models: Comparison = {}
     for label, primary in sec_cases:
         sec = primary.secondary
-        fn = sec._qfn
-        sec_models[label] = (lambda s=sec: s.cum(t), lambda f=fn: reference_cum(f, t))
+        sec_models[label] = comparison_pair(sec.cum, sec._qfn, t)
 
     make_figure(
         sec_models,

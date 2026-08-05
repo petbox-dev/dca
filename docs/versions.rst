@@ -490,6 +490,16 @@ of every model at ``t < 0`` changes --- see the breaking changes.
           (``"segments.0. has..."``). All are now raw strings with the intent explicit.
         * En dashes in the SPE citations became ASCII hyphens; ``Valkó`` and the copyright signs
           are unchanged.
+        * The ruff ``exclude`` list named ``docs/source/conf.py``, a path that does not exist ---
+          the file is ``docs/conf.py``, and it was being linted all along. Removed rather than
+          repointed: an exclude that silently matches nothing is worse than either choice.
+    * ``docs/`` is now linted and type-checked alongside the package and the tests. The two
+      figure-generating scripts are fully annotated and pass ``mypy --strict``; the one shape
+      they pass around is named ``Comparison``, and the ``lambda x=x: ...`` default-argument
+      trick used to capture loop variables is replaced by a ``comparison_pair`` factory, which
+      captures by value and is inferrable. Both scripts were re-run and all ten figures in
+      ``docs/img`` compared pixel by pixel against the committed versions: identical, with the
+      same printed accuracy figures the docs quote.
 
 * Other changes
     * The segment functions no longer emit ``RuntimeWarning``. ``log1p`` reaches ``-inf`` at the

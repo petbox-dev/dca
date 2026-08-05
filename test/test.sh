@@ -24,5 +24,9 @@ echo mypy --strict -p test
 ( cd "$ROOT" && mypy --strict -p test )
 echo
 
+echo mypy --strict docs
+( cd "$ROOT" && mypy --strict docs )
+echo
+
 echo pytest --cov=petbox.dca --cov-report=term-missing --hypothesis-show-statistics -v .
 pytest --cov=petbox.dca --cov-report=term-missing --hypothesis-show-statistics -v .

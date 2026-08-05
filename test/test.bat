@@ -11,6 +11,7 @@ ruff check petbox\dca test docs
 mypy petbox\dca
 mypy --strict petbox\dca
 mypy --strict -p test
+mypy --strict docs
 
 popd
 

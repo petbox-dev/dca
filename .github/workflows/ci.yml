@@ -20,15 +20,16 @@ jobs:
       run: ruff check petbox/dca test docs
     - name: Mypy
       run: mypy petbox/dca
-    # The test tree is type-checked too, and under --strict. The config now sets every strict
-    # flag, so these two agree with the plain runs above -- but pinning --strict explicitly
-    # means a flag dropped from pyproject.toml fails here rather than silently widening what
-    # CI accepts. `-p test` rather than a path: `test/` is a package, and passing the path
-    # makes mypy see test/data.py as both `data` and `test.data`.
-    - name: Mypy (strict, package and tests)
+    # The test tree and the docs scripts are type-checked too, and under --strict. The config
+    # now sets every strict flag, so these agree with the plain run above -- but pinning
+    # --strict explicitly means a flag dropped from pyproject.toml fails here rather than
+    # silently widening what CI accepts. `-p test` rather than a path: `test/` is a package,
+    # and passing the path makes mypy see test/data.py as both `data` and `test.data`.
+    - name: Mypy (strict, package, tests and docs)
       run: |
         mypy --strict petbox/dca
         mypy --strict -p test
+        mypy --strict docs
 
   test:
     runs-on: ${{ matrix.os }}
