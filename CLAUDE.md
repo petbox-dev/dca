@@ -9,8 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Install (editable, with dev deps)
-pip install -e ".[dev]"
+# Install (editable). `dev` is everything; CI installs the narrower groups it needs --
+# `test` for the 4-Python x 3-OS matrix, `lint` for the single ruff/mypy runner.
+pip install -e ".[dev]"        # or ".[test]" / ".[lint]"
 
 # Lint (package, tests and the docs figure scripts)
 ruff check petbox/dca tests docs
@@ -100,11 +101,33 @@ DeclineCurve (ABC)
 - **Testing:** pytest + hypothesis (property-based). Test data from an Eagle Ford well in `tests/data.py`. `tests/` is a package but is never packaged — `packages.find` includes only `petbox.dca`.
 - Lint, type-check and tests all run over `petbox/dca`, `tests` and `docs`; `tests/test.sh` and `tests/test.bat` mirror the CI lint job.
 
+### Reproducing a CI failure locally
+
+Lint results depend on the installed stack, so a failure that only CI sees is usually a missing
+dev dependency rather than a code problem. Build a venv matching the workflow — `pip install -e
+".[lint]"` and nothing else — rather than trusting the ambient environment. That is how the
+`scipy-stubs` and `matplotlib` gaps were found: both were resolving locally only because they
+happened to be installed.
+
+**Windows `MAX_PATH` when making venvs.** `python -m venv` fails on Python 3.10/3.11 if the
+target path is deep:
+
+```
+ERROR: Could not install packages due to an OSError: [WinError 206]
+The filename or extension is too long: '...\Lib\site-packages\pkg_resources\tests\data\
+my-test-package_unpacked-egg\my_test_package-1.0-py3.7.egg\EGG-INFO'
+```
+
+That is the 260-character limit, not a broken interpreter. `ensurepip` on 3.10/3.11 bundles
+setuptools, whose `pkg_resources/tests/data/` tree is very deep; Python 3.12 dropped setuptools
+from `ensurepip`, which is why 3.12 and 3.13 are unaffected. Create such venvs at a short path
+(`C:\Users\<you>\AppData\Local\Temp\v311`), not under a long scratchpad directory.
+
 ## Dependencies
 
 Runtime: `numpy >= 2.1`, `scipy >= 1.13`. Requires Python >= 3.10.
 
-`mpmath` is a **dev-only** dependency (in `[dev]`, not in `dependencies`), imported lazily inside `THM._transDfn`. It is needed only by the five `THM.transient_*` functions; everything else works without it.
+`mpmath` is a **test-only** dependency (in the `test` extra, not in `dependencies`), imported lazily inside `THM._transDfn`. It is needed only by the five `THM.transient_*` functions; everything else works without it.
 
 Absent, they raise `ImportError` naming the fix. `transient_rate`/`cum`/`D`/`beta` raise always; `transient_b` only for a `bterm`-terminated model, since that is the one branch needing the transient integral.
 

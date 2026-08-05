@@ -41,26 +41,40 @@ dependencies = [
 Homepage = "https://github.com/petbox-dev/dca"
 
 [project.optional-dependencies]
-dev = [
-    "attrs>=19.2.0",
-    "coverage>=5.1",
-
+# Split so the CI jobs can install only what they need. The test matrix is 4 Pythons x 3
+# operating systems, and matplotlib is a heavy dependency that no collected test module imports
+# -- only the figure scripts and mypy do. `dev` remains the one-stop group for a human.
+test = [
     "hypothesis>=6.14.8",
-    # Required by tests/doc_examples.py and the two docs/*_validation.py scripts, which
-    # regenerate every figure in docs/img. It was in no dependency group at all, so a fresh
-    # clone could not rebuild the figures and `mypy --strict tests docs` could not resolve the
-    # imports. matplotlib ships py.typed, so no stub package is needed.
-    "matplotlib>=3.8",
+    # THM's five transient_* functions import it lazily and raise without it, so the test that
+    # pins that behaviour needs it present in order to block it.
     "mpmath>=1.3.0",
-    "mypy>=1.0",
     "pytest>=6.2.4",
     "pytest-cov>=2.12.1",
+]
+lint = [
+    # Includes `test`: the lint job type-checks tests/, and mypy cannot analyse a module whose
+    # own imports it cannot resolve -- without pytest installed, tests/test_perf.py is
+    # `import-not-found` plus an untyped-decorator error per @pytest.mark. This group is
+    # installed once, on one runner; the matrix is what benefits from staying lean.
+    "petbox-dca[test]",
+    "mypy>=1.0",
     "ruff>=0.4.0",
-    # scipy ships no py.typed and no inline annotations, so without these the scipy imports in
-    # base.py and primary.py are `import-untyped` errors under strict, and `gammainc` returning
-    # Any makes SE._Nfn a no-any-return. Not optional: a machine that happens to have
-    # scipy-stubs installed passes while CI does not, which is exactly how this was missed.
+    # Needed to type-check, not to run. tests/doc_examples.py and both docs/*_validation.py
+    # scripts import matplotlib, so `mypy --strict tests docs` cannot resolve them otherwise --
+    # and it was in no dependency group at all, meaning a fresh clone could not regenerate the
+    # figures in docs/img either. matplotlib ships py.typed, so no stub package is needed.
+    "matplotlib>=3.8",
+    # scipy ships no py.typed and no inline annotations. Without these the scipy imports in
+    # base.py and primary.py are `import-untyped` under strict, and `gammainc` returning Any
+    # makes SE._Nfn a no-any-return. Not optional: a machine that happens to have scipy-stubs
+    # installed passes while CI does not, which is exactly how that was missed.
     "scipy-stubs",
+]
+dev = [
+    "petbox-dca[test,lint]",
+    "attrs>=19.2.0",
+    "coverage>=5.1",
     "wheel>=0.34.2",
 ]
 docs = [
