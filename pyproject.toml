@@ -65,7 +65,7 @@ include = ["petbox.dca"]
 "petbox.dca" = ["py.typed"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py310"
 exclude = [
     ".git",
@@ -77,21 +77,27 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "W"]
-ignore = [
-    "F401",   # imported but unused
-    "F841",   # local variable assigned but never used
-    "E116",   # unexpected indentation (comment)
-    "E251",   # unexpected spaces around keyword / parameter default
-    "E261",   # at least two spaces before inline comment
-    "E265",   # block comment should start with '# '
-    "E266",   # too many leading '#' for block comment
-    "E302",   # expected 2 blank lines
-    "E305",   # expected 2 blank lines after end of function/class
-    "E402",   # module level import not at top of file
-    "E722",   # do not use bare 'except'
-    "W605",   # invalid escape sequence
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+    "TC",
+    "RUF",
+    'C90',
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Every line of this file between a `# [begin example-NN]` / `# [end example-NN]` pair is
+# rendered verbatim into docs/examples.rst by a literalinclude, so lint fixes here change
+# published documentation.
+#   B905 -- the three `zip()` calls pair arrays derived from the same `t`, so they cannot
+#           mismatch. Adding `, strict=True` pushes each line past the 100-column limit and
+#           would force reflowing example code a reader is meant to copy.
+"test/doc_examples.py" = ["B905"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 20
@@ -111,24 +117,10 @@ max-complexity = 20
 #                           not explicitly export attribute MH" on ordinary usage.
 #   extra_checks         -- nothing.
 [tool.mypy]
-check_untyped_defs = true
-disallow_any_generics = true
-disallow_any_unimported = true
-disallow_incomplete_defs = true
-disallow_subclassing_any = true
-disallow_untyped_calls = true
-disallow_untyped_decorators = true
-disallow_untyped_defs = true
-extra_checks = true
-no_implicit_optional = true
-no_implicit_reexport = true
-show_error_codes = true
-strict_equality = true
-warn_redundant_casts = true
-warn_return_any = true
+strict = true
 warn_unreachable = true
-warn_unused_configs = true
-warn_unused_ignores = true
+warn_no_return = true
+disallow_any_unimported = true
 plugins = ["numpy.typing.mypy_plugin"]
 
 # Two modules mypy cannot resolve, declared here rather than as `# type: ignore` comments so

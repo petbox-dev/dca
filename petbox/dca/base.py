@@ -13,39 +13,23 @@ Created on August 5, 2019
 """
 
 import sys
-from math import exp, expm1, isfinite, log, log10, log1p, ceil as ceiling, floor
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from functools import partial
 from itertools import chain, repeat
-import warnings
-
-import dataclasses as dc
-from dataclasses import dataclass
-
-import numpy as np
-from numpy.random import Generator
-
-from scipy.special import expi as ei, gammainc
-from scipy.integrate import cumulative_trapezoid
-
-from abc import ABC, abstractmethod
+from math import isfinite, log, log10
 from typing import (
-    TypeVar,
-    Type,
-    List,
-    Dict,
-    Tuple,
     Any,
     Literal,
     NoReturn,
-    Sequence,
-    Iterable,
-    Optional,
-    Callable,
-    ClassVar,
-    Union,
+    TypeVar,
 )
+
+import numpy as np
+from numpy.random import Generator
 from numpy.typing import NDArray
-from typing import cast
+from scipy.integrate import cumulative_trapezoid
 
 NDFloat = NDArray[np.float64]
 NDBool = NDArray[np.bool_]
@@ -61,7 +45,7 @@ NDBool = NDArray[np.bool_]
 # Deliberately narrower than `numpy.typing.ArrayLike`, which also admits strings, None, and
 # nested sequences. Those reach `astype(np.float64)` and either fail there with a numpy message
 # or silently produce a 2-d result, so keeping them out means the call site is still checked.
-FloatLike = Union[float, Sequence[float], NDArray[np.floating[Any]], NDArray[np.integer[Any]]]
+FloatLike = float | Sequence[float] | NDArray[np.floating[Any]] | NDArray[np.integer[Any]]
 
 
 DAYS_PER_MONTH = 365.25 / 12.0
@@ -78,7 +62,7 @@ _Self = TypeVar("_Self", bound="DeclineCurve")
 # new accessor is picked up by every site at once rather than needing three edits.
 _Phase = Literal["secondary", "water"]
 
-_REMOVED_ACCESSORS: Dict[_Phase, Tuple[str, ...]] = {
+_REMOVED_ACCESSORS: dict[_Phase, tuple[str, ...]] = {
     "secondary": ("wor", "wgr"),
     "water": ("gor", "cgr"),
 }
@@ -160,8 +144,8 @@ def _disable_other_phase_accessors(model: "AssociatedPhase", phase: _Phase) -> N
 class ParamDesc:
     name: str
     description: str
-    lower_bound: Optional[float]
-    upper_bound: Optional[float]
+    lower_bound: float | None
+    upper_bound: float | None
     naive_gen: Callable[[Generator, int], NDFloat]
     exclude_lower_bound: bool = False
     exclude_upper_bound: bool = False
@@ -230,7 +214,7 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
         Returns
@@ -250,7 +234,7 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
             n_grid: int
@@ -268,7 +252,7 @@ class DeclineCurve(ABC):
         return self._Nfn(t, **kwargs)
 
     def interval_vol(
-        self, t: FloatLike, t0: Optional[FloatLike] = None, **kwargs: Any
+        self, t: FloatLike, t0: FloatLike | None = None, **kwargs: Any
     ) -> NDFloat:
         """
         Defines the model interval volume function:
@@ -281,10 +265,10 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of interval end times at which to evaluate the function.
 
-            t0: Optional[Union[float, numpy.NDFloat]]
+            t0: FloatLike | None
                 A start time of the first interval. If not given, the first element
                 of ``t`` is used.
 
@@ -313,7 +297,7 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of interval end times at which to evaluate the function.
 
             n_grid: int
@@ -332,7 +316,7 @@ class DeclineCurve(ABC):
         )
 
     def monthly_vol_equiv(
-        self, t: FloatLike, t0: Optional[FloatLike] = None, **kwargs: Any
+        self, t: FloatLike, t0: FloatLike | None = None, **kwargs: Any
     ) -> NDFloat:
         """
         Defines the model equivalent monthly interval volume function:
@@ -344,10 +328,10 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of interval end times at which to evaluate the function.
 
-            t0: Optional[Union[float, numpy.NDFloat]]
+            t0: FloatLike | None
                 A start time of the first interval. If not given, assumed to be zero.
 
             n_grid: int
@@ -377,7 +361,7 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
         Returns
@@ -398,7 +382,7 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
         Returns
@@ -418,7 +402,7 @@ class DeclineCurve(ABC):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
         Returns
@@ -452,9 +436,11 @@ class DeclineCurve(ABC):
     def _bfn(self, t: NDFloat) -> NDFloat:
         raise NotImplementedError
 
-    def _validate(self) -> None:
-        # this will be called by the __post_init__ hook - subclasses should
-        #   do any necessary additional validation or caching here
+    def _validate(self) -> None:  # noqa: B027  -- deliberately not abstract; see below
+        # An optional hook, called by __post_init__. Most subclasses have nothing to add beyond
+        # the descriptor bounds, so this is a no-op rather than @abstractmethod: making it
+        # abstract would force every model to write `pass`, and would break any third-party
+        # subclass. Subclasses that do override it must call super()._validate().
         pass
 
     def __post_init__(self) -> None:
@@ -478,8 +464,11 @@ class DeclineCurve(ABC):
         # silently skip its remaining bound checks. `zip` still truncates an over-long
         # flags list -- `zip_longest` would instead yield `desc=True` and blow up on
         # `desc.name`.
+        #
+        # strict=False is load-bearing, not laziness: `repeat(True)` is infinite, so strict=True
+        # would raise on every single model construction.
         for desc, do_validate in zip(
-            self.get_param_descs(), chain(self.validate_params, repeat(True))
+            self.get_param_descs(), chain(self.validate_params, repeat(True)), strict=False
         ):
             if not do_validate:
                 continue
@@ -518,7 +507,7 @@ class DeclineCurve(ABC):
 
     @classmethod
     @abstractmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         """
         Get the parameter descriptions.
 
@@ -558,7 +547,7 @@ class DeclineCurve(ABC):
         raise NotImplementedError
 
     @classmethod
-    def from_params(cls: Type[_Self], params: Sequence[float]) -> _Self:
+    def from_params(cls: type[_Self], params: Sequence[float]) -> _Self:
         """
         Construct a model from a sequence of parameters.
 
@@ -691,6 +680,16 @@ class PrimaryPhase(DeclineCurve):
         raise ValueError(f"This instance is a {phase} phase and has no `{method}` method.")
 
     def _set_defaults(self) -> None:
+        # Imported here, not at module scope: `associated` imports this module, so a top-level
+        # import is a cycle. It used to be resolved by two imports at the *bottom* of this file,
+        # which made `petbox/dca/__init__.py` order-dependent -- importing `.associated` before
+        # `.base` raised ImportError on a partially initialized module. Nothing caught that but
+        # the test suite: mypy resolved it fine, and ruff's isort rule reordered __init__ into
+        # exactly the broken order. A local import runs only when a model is constructed, by
+        # which point both modules are fully loaded, so no order matters and no suppression is
+        # needed anywhere. It costs a `sys.modules` lookup per construction.
+        from .associated import NullAssociatedPhase
+
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
         secondary = NullAssociatedPhase()
@@ -745,12 +744,13 @@ class AssociatedPhase(DeclineCurve):
     primary: "PrimaryPhase"
 
     def _set_default(self, model: "AssociatedPhase", name: str) -> None:
+        # local for the same reason as `PrimaryPhase._set_defaults` above: `primary` imports
+        # this module, so a top-level import is a cycle
+        from .primary import NullPrimaryPhase
+
         # this is a little naughty: bypass the "frozen" protection, just this once...
         # naturally, this should only be called during the __post_init__ process
-        if hasattr(model, "primary"):
-            primary = getattr(model, "primary")
-        else:
-            primary = NullPrimaryPhase()
+        primary = model.primary if hasattr(model, "primary") else NullPrimaryPhase()
         object.__setattr__(primary, name, model)
         object.__setattr__(model, "primary", primary)
 
@@ -819,7 +819,7 @@ class SecondaryPhase(AssociatedPhase):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
         Returns
@@ -837,7 +837,7 @@ class SecondaryPhase(AssociatedPhase):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
         Returns
@@ -866,7 +866,7 @@ class WaterPhase(AssociatedPhase):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
         Returns
@@ -883,7 +883,7 @@ class WaterPhase(AssociatedPhase):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of times at which to evaluate the function.
 
         Returns
@@ -904,8 +904,3 @@ class BothAssociatedPhase(SecondaryPhase, WaterPhase):
     def _set_defaults(self) -> None:
         super()._set_default(self, "secondary")
         super()._set_default(self, "water")
-
-
-# Must import these here to avoid circular dependency
-from .primary import NullPrimaryPhase
-from .associated import NullAssociatedPhase

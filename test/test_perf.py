@@ -2,12 +2,13 @@
 Performance regression tests for numerical integration and bourdet derivative.
 """
 
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import numpy.typing as npt
 import pytest
 from scipy.integrate import quad
+
 from petbox import dca
 
 
@@ -147,7 +148,7 @@ def test_bourdet_accuracy() -> None:
 
 def test_integrate_with_vs_analytical() -> None:
     """Cross-validate numerical integration against models with analytical cum()."""
-    # MH has analytical cum — compare PLE numerical integration accuracy
+    # MH has analytical cum -- compare PLE numerical integration accuracy
     # by checking that interval volumes sum to cumulative
     ple = dca.PLE(qi=500.0, Di=0.005, Dinf=0.0002, n=0.4)
     t = dca.get_time(1.0, 5000.0, 100)

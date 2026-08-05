@@ -16,23 +16,23 @@ Created on August 5, 2019
 import inspect
 import re
 import types
-import sys
 import warnings
-from datetime import timedelta
+from itertools import pairwise
 from pathlib import Path
-import pytest
-import hypothesis
-from hypothesis import assume, given, settings, note, strategies as st
-from typing import Any, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, TypeVar
 
-from math import isnan
+import hypothesis
 import numpy as np
 import numpy.typing as npt
+import pytest
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
 from petbox import dca
 
 # local import
-from .data import rate as q_data, time as t_data  # noqa
+from .data import rate as q_data
+from .data import time as t_data
 
 
 def signif(x: npt.NDArray[np.float64], p: int) -> npt.NDArray[np.float64]:
@@ -50,28 +50,27 @@ def is_float_array_like(arr: Any, like: npt.NDArray[np.float64]) -> bool:
     )
 
 
+# These three took the 6th-order finite difference, `np.diff(arr, 6)`, not the spacing: the `6`
+# belonged to the `signif(arr, 6)` call in the commented-out line that used to wrap the argument,
+# and was left behind as np.diff's `n` when it was removed. The 6th difference of a *geometric*
+# series stays positive, so `is_monotonic_increasing(get_time())` passed by luck, while a
+# linearly-spaced array gives exactly 0 and failed. None of the three was testing monotonicity.
 def is_monotonic_nonincreasing(arr: npt.NDArray[np.float64]) -> bool:
-    # a = np.diff(signif(arr, 6))
-    a = np.diff(arr, 6)
-    return bool(np.all(a <= 0.0))
+    return bool(np.all(np.diff(arr) <= 0.0))
 
 
 def is_monotonic_increasing(arr: npt.NDArray[np.float64]) -> bool:
-    # a = np.diff(signif(arr, 6))
-    a = np.diff(arr, 6)
-    return bool(np.all(a > 0.0))
+    return bool(np.all(np.diff(arr) > 0.0))
 
 
 def is_monotonic_nondecreasing(arr: npt.NDArray[np.float64]) -> bool:
-    # a = np.diff(signif(arr, 6))
-    a = np.diff(arr, 6)
-    return bool(np.all(a >= 0.0))
+    return bool(np.all(np.diff(arr) >= 0.0))
 
 
 T = TypeVar("T", bound=dca.DeclineCurve)
 
 
-def model_floats(model_cls: Type[T], param: str) -> st.SearchStrategy[float]:
+def model_floats(model_cls: type[T], param: str) -> st.SearchStrategy[float]:
     p = model_cls.get_param_desc(param)
     return st.floats(
         p.lower_bound,
@@ -84,13 +83,11 @@ def model_floats(model_cls: Type[T], param: str) -> st.SearchStrategy[float]:
 def check_model(model: dca.DeclineCurve, qi: float) -> bool:
     t = dca.get_time()
 
-    with warnings.catch_warnings(record=True) as w:
+    with warnings.catch_warnings(record=True):
         if isinstance(model, dca.Duong):
-            t0 = 1e-3
             assert np.isclose(model.rate(np.array(1.0)), qi, atol=1e-10)
             assert np.isclose(model.cum(np.array(1.0)), qi / model.a, atol=1e-10)
         else:
-            t0 = 0.0
             assert np.isclose(model.rate(np.array(0.0)), qi, atol=1e-10)
             assert np.isclose(model.cum(np.array(0.0)), 0.0, atol=1e-10)
 
@@ -139,9 +136,9 @@ def check_model(model: dca.DeclineCurve, qi: float) -> bool:
 
         beta = model.beta(t)
         assert is_float_array_like(beta, t)
-        # TODO: what are the invariants for beta?
-        D_inferred = beta / t
-        # assert is_monotonic_nonincreasing(D_inferred)
+        # TODO: what are the invariants for beta? `beta / t` should be a decline, so
+        #   `assert is_monotonic_nonincreasing(beta / t)` is the candidate -- it does not hold
+        #   for every model, which is why it was never enabled.
         assert np.all(np.isfinite(beta))
 
         b = model.b(t)
@@ -152,11 +149,11 @@ def check_model(model: dca.DeclineCurve, qi: float) -> bool:
 
 
 def check_yield_model(
-    model: Union[dca.SecondaryPhase, dca.WaterPhase], phase: str, qi: float
+    model: dca.SecondaryPhase | dca.WaterPhase, phase: str, qi: float
 ) -> bool:
     t = dca.get_time()
 
-    with warnings.catch_warnings(record=True) as w:
+    with warnings.catch_warnings(record=True):
         t0 = 0.0
         assert np.isclose(model.cum(np.array(0.0)), 0.0, atol=1e-10)
 
@@ -169,7 +166,7 @@ def check_yield_model(
             assert is_float_array_like(cgr, t)
             assert np.all(np.isfinite(cgr))
 
-            with pytest.raises(ValueError) as e:
+            with pytest.raises(ValueError):
                 wor = model.wor(t)  # type: ignore[attr-defined]
                 assert is_float_array_like(wor, t)
                 assert np.all(np.isfinite(wor))
@@ -179,7 +176,7 @@ def check_yield_model(
                 assert np.all(np.isfinite(wgr))
 
         elif phase == "water" and isinstance(model, dca.WaterPhase):
-            with pytest.raises(ValueError) as e:
+            with pytest.raises(ValueError):
                 gor = model.gor(t)  # type: ignore[attr-defined]
                 assert is_float_array_like(gor, t)
                 assert np.all(np.isfinite(gor))
@@ -259,7 +256,7 @@ def check_yield_model(
 def check_transient_model(model: dca.THM) -> bool:
     t = dca.get_time()
 
-    with warnings.catch_warnings(record=True) as w:
+    with warnings.catch_warnings(record=True):
         t_D = model.transient_D(t)
         assert is_float_array_like(t_D, t)
         # assert is_monotonic_nonincreasing(t_D)
@@ -282,7 +279,7 @@ def check_transient_model_rate_cum(model: dca.THM) -> bool:
     # these are computationally expensive, so check separately
     t = dca.get_time()
 
-    with warnings.catch_warnings(record=True) as w:
+    with warnings.catch_warnings(record=True):
         t_N = model.transient_cum(t)
         assert is_float_array_like(t_N, t)
         # assert is_monotonic_nondecreasing(t_N)
@@ -299,10 +296,22 @@ def check_transient_model_rate_cum(model: dca.THM) -> bool:
 def test_time_arrays() -> None:
     t = dca.get_time()
     assert is_monotonic_increasing(t)
+    assert t.dtype == np.float64
 
-    int_t = dca.get_time_monthly_vol()
+    # the monthly-volume grid: month ends, evenly spaced by DAYS_PER_MONTH, starting at one
+    # month rather than zero -- `monthly_vol` differences it, so a leading 0 would give a
+    # zero-length first interval
+    monthly = dca.get_time_monthly_vol()
+    assert is_monotonic_increasing(monthly)
+    assert monthly.dtype == np.float64
+    assert monthly[0] == pytest.approx(2.0 * dca.DAYS_PER_MONTH)
+    assert np.allclose(np.diff(monthly), dca.DAYS_PER_MONTH)
 
+    # and both grids are usable as-is: this asserted nothing at all before
     thm = dca.THM(1000, 0.5, 2.0, 1.0, 30.0)
+    for grid in (t, monthly):
+        assert np.all(np.isfinite(thm.rate(grid)))
+        assert np.all(np.isfinite(thm.monthly_vol(grid)))
 
 
 def test_nulls() -> None:
@@ -329,17 +338,17 @@ def test_nulls() -> None:
 
 
 def test_associated() -> None:
-    with pytest.raises(TypeError) as e:
-        sec = dca.AssociatedPhase()  # type: ignore[abstract]
+    with pytest.raises(TypeError):
+        dca.AssociatedPhase()  # type: ignore[abstract]
 
-    with pytest.raises(TypeError) as e:
-        sec = dca.SecondaryPhase()  # type: ignore[abstract]
+    with pytest.raises(TypeError):
+        dca.SecondaryPhase()  # type: ignore[abstract]
 
-    with pytest.raises(TypeError) as e:
-        wtr = dca.WaterPhase()  # type: ignore[abstract]
+    with pytest.raises(TypeError):
+        dca.WaterPhase()  # type: ignore[abstract]
 
-    with pytest.raises(TypeError) as e:
-        bth = dca.BothAssociatedPhase()  # type: ignore[abstract]
+    with pytest.raises(TypeError):
+        dca.BothAssociatedPhase()  # type: ignore[abstract]
 
 
 # TODO: use bounds, after we use testing to set them
@@ -495,7 +504,7 @@ def test_THM_transient_extra() -> None:
     check_transient_model(thm)
     check_transient_model_rate_cum(thm)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         thm = dca.THM(1000.0, 1e-10, 2.0, 0.3, 30.0, 0.5, 10.0)
 
 
@@ -563,10 +572,10 @@ def test_MH_harmonic(qi: float, Di: float, Dterm: float) -> None:
 def test_MH_no_validate(qi: float, Di: float, Dterm: float) -> None:
     assume(dca.MH.nominal_from_secant(Di, 1.0) >= dca.MH.nominal_from_tangent(Dterm))
     assume(dca.MH.nominal_from_secant(Di, 2.5) >= dca.MH.nominal_from_tangent(Dterm))
-    with pytest.raises(ValueError) as e:
-        mh = dca.MH(qi, Di, 2.5, Dterm)
+    with pytest.raises(ValueError):
+        dca.MH(qi, Di, 2.5, Dterm)
 
-    mh = dca.MH(qi, Di, 2.5, Dterm, validate_params=[True, True, False, True])
+    dca.MH(qi, Di, 2.5, Dterm, validate_params=[True, True, False, True])
 
 
 @given(
@@ -579,48 +588,48 @@ def test_decline_conv(D: float, b: float) -> None:
 
 
 def test_bound_errors() -> None:
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # < lower bound
-        ple = dca.PLE(-1000, 0.8, 0.0, 0.5)
+        dca.PLE(-1000, 0.8, 0.0, 0.5)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # lower bound excluded
-        ple = dca.PLE(1000, 0.8, 0.0, 0.0)
+        dca.PLE(1000, 0.8, 0.0, 0.0)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # > upper bound
         thm = dca.THM(1000, 0.5, 2.0, 10.0, 30.0)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # upper bound exluded
         thm = dca.THM(1000, 1.5, 2.0, 0.5, 30.0)
 
-    with pytest.raises(KeyError) as e:
+    with pytest.raises(KeyError):
         # invalid parameter
         thm = dca.THM(1000, 0.5, 2.0, 0.5, 30.0)
         thm.get_param_desc("n")
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # invalid parameter sequence length
         thm = dca.THM.from_params([1000, 0.5, 2.0, 0.5])
 
 
 def test_terminal_exceeds() -> None:
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # Dinf > Di
-        ple = dca.PLE(1000, 0.8, 0.9, 0.5)
+        dca.PLE(1000, 0.8, 0.9, 0.5)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # Dterm > Di
-        mh = dca.MH(1000, 0.5, 1.0, 0.9)
+        dca.MH(1000, 0.5, 1.0, 0.9)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # bf > bi
-        thm = dca.THM(1000, 0.8, 1.5, 1.6, 30.0)
+        dca.THM(1000, 0.8, 1.5, 1.6, 30.0)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # tterm < telf
-        thm = dca.THM(1000, 0.8, 2.0, 1.0, 200.0, 0.3, 100.0 / dca.DAYS_PER_YEAR)
+        dca.THM(1000, 0.8, 2.0, 1.0, 200.0, 0.3, 100.0 / dca.DAYS_PER_YEAR)
 
 
 @given(
@@ -706,33 +715,33 @@ def test_yield_min_max(
 
 
 def test_yield_min_max_invalid() -> None:
-    with pytest.raises(ValueError) as e:
-        y = dca.PLYield(1000.0, 0.0, 0.0, 180.0, 10.0, 1.0)
+    with pytest.raises(ValueError):
+        dca.PLYield(1000.0, 0.0, 0.0, 180.0, 10.0, 1.0)
 
 
 def test_yield_errors() -> None:
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # < lower bound
-        ple = dca.PLE(-1000, 0.8, 0.0, 0.5)
+        dca.PLE(-1000, 0.8, 0.0, 0.5)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # lower bound excluded
-        tplehm = dca.PLE(1000, 0.8, 0.0, 0.0)
+        dca.PLE(1000, 0.8, 0.0, 0.0)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # > upper bound
         thm = dca.THM(1000, 0.5, 2.0, 10.0, 30.0)
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # upper bound exluded
         thm = dca.THM(1000, 1.5, 2.0, 0.5, 30.0)
 
-    with pytest.raises(KeyError) as e:
+    with pytest.raises(KeyError):
         # invalid parameter
         thm = dca.THM(1000, 0.5, 2.0, 0.5, 30.0)
         thm.get_param_desc("n")
 
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(ValueError):
         # invalid parameter sequence length
         thm = dca.THM.from_params([1000, 0.5, 2.0, 0.5])
 
@@ -757,7 +766,7 @@ def test_examples_literalinclude_markers_resolve() -> None:
     # every include must point at the script this test checks
     assert set(includes) == {"../test/doc_examples.py"}
 
-    for start, end in zip(starts, ends):
+    for start, end in zip(starts, ends, strict=True):
         assert source.count(start) == 1, f"{start!r} appears {source.count(start)} times"
         assert source.count(end) == 1, f"{end!r} appears {source.count(end)} times"
         assert source.index(start) < source.index(end), f"{start!r} follows {end!r}"
@@ -768,8 +777,8 @@ def test_examples_literalinclude_markers_resolve() -> None:
         )
 
     # the marked regions must be disjoint and in the same order as the document
-    spans = [(source.index(s), source.index(e)) for s, e in zip(starts, ends)]
-    for (_, previous_end), (next_start, _) in zip(spans, spans[1:]):
+    spans = [(source.index(s), source.index(e)) for s, e in zip(starts, ends, strict=True)]
+    for (_, previous_end), (next_start, _) in pairwise(spans):
         assert previous_end < next_start, "marked regions overlap or are out of order"
 
     # and every marker in the script must be referenced, so none is left orphaned
@@ -779,8 +788,19 @@ def test_examples_literalinclude_markers_resolve() -> None:
 
 @given(L=st.floats(0.0, 2.0), xlog=st.booleans(), ylog=st.booleans())
 def test_bourdet(L: float, xlog: bool, ylog: bool) -> None:
-    with warnings.catch_warnings(record=True) as w:
-        der = dca.bourdet(q_data, t_data, L, xlog, ylog)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        derivative = dca.bourdet(q_data, t_data, L, xlog, ylog)
+
+    # asserted nothing before -- not even that it returned an array
+    assert isinstance(derivative, np.ndarray)
+    assert derivative.shape == q_data.shape
+    assert derivative.dtype == np.float64
+    assert not caught, [str(warning.message) for warning in caught]
+
+    # finite everywhere, endpoints included: `bourdet` one-sides the difference at the edges
+    # rather than leaving them nan
+    assert np.all(np.isfinite(derivative))
 
 
 def test_plyield_param_desc_names() -> None:
@@ -998,7 +1018,7 @@ def test_generalized_errors() -> None:
         # max < min, raised by the shared base
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.8),), 10.0, 1.0)
 
-    with pytest.raises(ValueError, match="c <= 0.0"):
+    with pytest.raises(ValueError, match=r"c <= 0\.0"):
         # c at its excluded lower bound
         dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(90.0, m=0.8),))
 
@@ -1530,7 +1550,7 @@ def test_every_public_accessor_takes_every_FloatLike_form() -> None:
     rejected under mypy what the library accepts and what README.rst's own examples do -- and
     because this package ships py.typed, that landed on downstream users type-checking correct
     code. This pins the runtime half; the static half is the annotation itself."""
-    forms: List[Any] = [
+    forms: list[Any] = [
         30.0,                                   # float
         30,                                     # int, via the numeric tower
         [30.0, 365.0],                          # list of float
@@ -1596,7 +1616,7 @@ def test_all_matches_what_the_package_exports() -> None:
 
     # a star-import is the runtime half of the same contract
     namespace: dict[str, Any] = {}
-    exec('from petbox import dca as _dca; from petbox.dca import *', namespace)  # noqa: S102
+    exec('from petbox import dca as _dca; from petbox.dca import *', namespace)
     assert {n for n in namespace if not n.startswith('_')} == declared
 
 
@@ -2154,7 +2174,7 @@ def test_thm_terminal_time_survives_a_zero_decline() -> None:
     assert np.all(np.diff(thm.cum(dca.get_time())) >= 0.0)
 
     # the Di = 0 route is closed
-    with pytest.raises(ValueError, match="Di <= 0.0"):
+    with pytest.raises(ValueError, match=r"Di <= 0\.0"):
         dca.THM(0.0, 0.0, 2.0, 1.0, 1.0, 1.1125369292536007e-308, 0.0)
 
     # a denormal but non-zero decline still divides, so nothing that worked before changed
@@ -2404,7 +2424,7 @@ def test_hyperbolic_rejects_what_MH_rejects() -> None:
 
 def _desc_contract(
     desc: "dca.base.ParamDesc",
-) -> Tuple[str, str, Optional[float], Optional[float], bool, bool]:
+) -> tuple[str, str, float | None, float | None, bool, bool]:
     """Everything a ParamDesc validates on. Excludes ``naive_gen``, which is a fresh lambda per
     call and so compares by identity."""
     return (
@@ -2464,7 +2484,7 @@ def test_hyperbolic_param_descs_and_phases() -> None:
     generated = [desc.naive_gen(rng, 6) for desc in dca.Hyperbolic.get_param_descs()]
     assert np.all(generated[1] > 0.0)  # Di must decline
     assert np.all((generated[2] >= 0.0) & (generated[2] <= 2.0))
-    for params in zip(*generated):
+    for params in zip(*generated, strict=True):
         assert np.all(np.isfinite(dca.Hyperbolic(*params).rate(dca.get_time())))
 
     model = dca.Hyperbolic(1000.0, 0.8, 1.5)
@@ -2603,7 +2623,7 @@ def test_inclining_hyperbolic_param_descs_and_phases() -> None:
     rng = np.random.default_rng(20260803)
     generated = [desc.naive_gen(rng, 6) for desc in dca.IncliningHyperbolic.get_param_descs()]
     assert np.all(generated[1] < 0.0) and np.all(generated[2] < 0.0)
-    for params in zip(*generated):
+    for params in zip(*generated, strict=True):
         model = dca.IncliningHyperbolic(*params)
         assert np.all(np.isfinite(model.rate(dca.get_time())))
 
@@ -2876,19 +2896,19 @@ def test_generalized_hyperbolic_requires_D_and_b_to_agree_in_sign() -> None:
         assert message in str(e.value), args
 
     # given b, inherited D
-    with pytest.raises(ValueError, match="segments.0. has D and b of opposing signs"):
+    with pytest.raises(ValueError, match=r"segments\[0\] has D and b of opposing signs"):
         GH.from_segments(1000.0, 0.8, 1.5, [(365.0, -0.5)])
 
     # given D, inherited b
-    with pytest.raises(ValueError, match="segments.0. has D and b of opposing signs"):
+    with pytest.raises(ValueError, match=r"segments\[0\] has D and b of opposing signs"):
         GH.from_segments(1000.0, 0.8, 1.5, [(365.0, -0.3, None)])
 
     # given D == 0, inherited non-zero b
-    with pytest.raises(ValueError, match="segments.0. has D == 0, which requires b == 0"):
+    with pytest.raises(ValueError, match=r"segments\[0\] has D == 0, which requires b == 0"):
         GH.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.0, None)])
 
     # the index in the message points at the offending segment, not the initial conditions
-    with pytest.raises(ValueError, match="segments.1. has D and b of opposing signs"):
+    with pytest.raises(ValueError, match=r"segments\[1\] has D and b of opposing signs"):
         GH.from_segments(1000.0, 0.8, 1.5, [(365.0, 0.3, 0.8), (730.0, -0.2, None)])
 
     # inheriting a sign-consistent pair is fine, in both directions
@@ -2910,9 +2930,9 @@ def test_the_two_models_diverge_only_on_a_flat_forecast() -> None:
     a matching b of 0: an exponent has nothing to act on when the decline is zero.
 
     This is why the reduction test restricts itself to Di > 0."""
-    with pytest.raises(ValueError, match="Di <= 0.0"):
+    with pytest.raises(ValueError, match=r"Di <= 0\.0"):
         dca.MH(1000.0, 0.0, 1.5)
-    with pytest.raises(ValueError, match="Di <= 0.0"):
+    with pytest.raises(ValueError, match=r"Di <= 0\.0"):
         dca.MH(1000.0, 0.0, 0.0)
 
     # the generalized model takes it with a zero exponent, and only then
@@ -3103,7 +3123,7 @@ def test_generalized_segments_accept_a_generator() -> None:
 
     # an empty generator still reaches the empty check rather than a TypeError
     with pytest.raises(ValueError) as e:
-        empty: Tuple[dca.PLYieldSegment, ...] = ()
+        empty: tuple[dca.PLYieldSegment, ...] = ()
         dca.GeneralizedPLYield(1.2, 0.0, (segment for segment in empty))  # type: ignore[arg-type]
     assert "at least one segment" in str(e.value)
 

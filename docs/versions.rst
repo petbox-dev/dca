@@ -455,6 +455,42 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       and ``mypy --strict`` over the test tree as well as the package, and ``test/test.sh`` and
       ``test/test.bat`` mirror it.
 
+* **Lint:** the ruff rule set is broadened, and two bugs it found are fixed
+    * ``select`` gains ``I`` (import sorting), ``UP`` (pyupgrade), ``B`` (bugbear), ``SIM``,
+      ``TC``, ``RUF`` and ``C90``, and the blanket ``ignore`` list is dropped. 210 findings,
+      almost all mechanical: PEP 585/604 annotations (``List`` to ``list``, ``Optional[X]`` to
+      ``X | None``), 40 unused imports, sorted import blocks. Docstring type descriptions were
+      updated to match, so no ``Optional[...]`` or ``Union[...]`` prose remains anywhere in the
+      package.
+
+        * **Bug:** ``petbox/dca/__init__.py``'s import order was load-bearing, and sorting it
+          broke the package outright with ``ImportError: cannot import name
+          'NullAssociatedPhase' from partially initialized module``. ``base`` imported
+          ``NullPrimaryPhase`` and ``NullAssociatedPhase`` at the *bottom* of the file to break a
+          cycle, which left ``__init__`` order-dependent: importing ``.associated`` before
+          ``.base`` failed. Both imports are now local to the two methods that use them, which
+          run only when a model is constructed, so the cycle is gone and any import order works.
+          Nothing but the test suite caught this --- mypy resolved it fine.
+        * **Bug:** the three monotonicity helpers in the test suite were not testing
+          monotonicity. Each called ``np.diff(arr, 6)``, which is the *6th-order finite
+          difference*, not the spacing --- the ``6`` belonged to a ``signif(arr, 6)`` call that
+          had been removed from the argument. The 6th difference of a geometric series stays
+          positive, so ``is_monotonic_increasing(get_time())`` passed by luck, while a
+          linearly-spaced array gives exactly 0 and fails. Now ``np.diff(arr)``. No production
+          test depended on the broken form.
+        * Two tests asserted nothing at all --- ``test_time_arrays`` built a monthly grid and a
+          ``THM`` and checked neither; ``test_bourdet`` called ``bourdet`` and discarded the
+          result, inside a ``catch_warnings`` block it never read. Both now assert real
+          properties. Unused-variable findings are what surfaced them.
+        * ``zip`` calls carry an explicit ``strict=``. One is ``strict=False`` and load-bearing:
+          ``DeclineCurve.__post_init__`` zips against ``chain(validate_params, repeat(True))``,
+          and ``repeat`` is infinite, so ``strict=True`` would raise on every construction.
+        * Three ``pytest.raises(match=...)`` patterns used ``.`` as an accidental wildcard
+          (``"c <= 0.0"``) and three used it deliberately in place of brackets
+          (``"segments.0. has..."``). All are now raw strings with the intent explicit.
+        * En dashes in the SPE citations became ASCII hyphens; ``Valkó`` and the copyright signs
+          are unchanged.
+
 * Other changes
     * The segment functions no longer emit ``RuntimeWarning``. ``log1p`` reaches ``-inf`` at the
       pole of a backward extrapolation and ``NaN`` beyond it, ``_Dcheck``'s denominator vanishes

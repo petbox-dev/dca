@@ -8,12 +8,14 @@
 
 from pathlib import Path
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+from data import rate as data_q
+from data import time as data_t
+
 # [begin example-00]
 from petbox import dca
-from data import rate as data_q, time as data_t
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 
 plt.style.use("seaborn-v0_8-white")
 plt.rcParams["font.size"] = 16
@@ -65,7 +67,7 @@ N_mh *= data_N[-1] / mh.cum(data_t[-1])
 
 # Fulford, D. S., and Blasingame, T. A. 2013. Evaluation of Time-Rate Performance of Shale Wells
 # using the Transient Hyperbolic Relation. Presented at SPE Unconventional Resources Conference
-# – Canada in Calgary, Alberta, Canda, 5–7 November. SPE-167242-MS.
+# - Canada in Calgary, Alberta, Canda, 5-7 November. SPE-167242-MS.
 # https://doi.org/10.2118/167242-MS.
 
 # [begin example-03]
@@ -84,7 +86,7 @@ N_trans *= data_N[-1] / thm.transient_cum(data_t[-1])
 
 # Fulford, D.S. 2018. A Model-Based Diagnostic Workflow for Time-Rate Performance of
 # Unconventional Wells. Presented at Unconventional Resources Conference in Houston,
-# Texas, USA, 23–25 July. URTeC-2903036. https://doi.org/10.15530/urtec-2018-2903036.
+# Texas, USA, 23-25 July. URTeC-2903036. https://doi.org/10.15530/urtec-2018-2903036.
 
 # [begin example-04]
 q_thm = thm.rate(t)
@@ -100,14 +102,14 @@ N_thm *= data_N[-1] / thm.cum(data_t[-1])
 # ---------------------------
 
 # Ilk, D., Perego, A. D., Rushing, J. A., and Blasingame, T. A. 2008. Exponential vs.
-# Hyperbolic Decline in Tight Gas Sands – Understanding the Origin and Implications
+# Hyperbolic Decline in Tight Gas Sands - Understanding the Origin and Implications
 # for Reserve Estimates Using Arps Decline Curves. Presented at SPE Annual Technical
-# Conference and Exhibition in Denver, Colorado, USA, 21–24 September. SPE-116731-MS.
+# Conference and Exhibition in Denver, Colorado, USA, 21-24 September. SPE-116731-MS.
 # https://doi.org/10.2118/116731-MS.
 
 # Ilk, D., Rushing, J. A., and Blasingame, T. A. 2009. Decline Curve Analysis for
 # HP/HT Gas Wells: Theory and Applications. Presented at SPE Annual Technical
-# Conference and Exhibition in New Orleands, Louisiana, USA, 4–7 October.
+# Conference and Exhibition in New Orleands, Louisiana, USA, 4-7 October.
 # SPE-125031-MS. https://doi.org/10.2118/125031-MS.
 
 # [begin example-07]
@@ -127,7 +129,7 @@ N_ple *= data_N[-1] / ple.cum(data_t[-1])
 # Valkó, P. P. Assigning Value to Stimulation in the Barnett Shale: A Simultaneous
 # Analysis of 7000 Plus Production Histories and Well Completion Records. 2009.
 # Presented at SPE Hydraulic Fracturing Technology Conference in College Station,
-# Texas, USA, 19–21 January. SPE-119369-MS. https://doi.org/10.2118/119369-MS.
+# Texas, USA, 19-21 January. SPE-119369-MS. https://doi.org/10.2118/119369-MS.
 
 # [begin example-08]
 se = dca.SE(qi=715, tau=90.0, n=0.5)
@@ -144,7 +146,7 @@ N_se *= data_N[-1] / se.cum(data_t[-1])
 # -----------
 
 # Duong, A. N. 2001. Rate-Decline Analysis for Fracture-Dominated Shale Reservoirs.
-# SPE Res Eval & Eng 14 (3): 377–387. SPE-137748-PA. https://doi.org/10.2118/137748-PA.
+# SPE Res Eval & Eng 14 (3): 377-387. SPE-137748-PA. https://doi.org/10.2118/137748-PA.
 
 # [begin example-09]
 dg = dca.Duong(qi=715, a=2.8, m=1.4)
@@ -279,7 +281,7 @@ print("Secondary Phase Decline Curve Models...")
 
 # Fulford, D.S. 2018. A Model-Based Diagnostic Workflow for Time-Rate Performance
 # of Unconventional Wells. Presented at Unconventional Resources Conference in
-# Houston, Texas, USA, 23–25 July. URTeC-2903036.
+# Houston, Texas, USA, 23-25 July. URTeC-2903036.
 # https://doi.org/10.15530/urtec-2018-2903036.
 
 # [begin example-12]
@@ -358,7 +360,7 @@ ax4.plot(t, g_IN, c="C3", label="Gas")
 ax4.plot(t, _g_IN, c="k", ls=":", label="Gas (numeric)")
 ax4.plot(t, y, c="C1", label="GOR")
 ax4.set(xscale="log", yscale="log", xlim=(1e0, 1e5), ylim=(1e0, 1e5))
-ax4.set(ylabel="$\Delta$Volume or GOR, MBbl, MMcf, or Mscf/Bbl", xlabel="Time, Days")
+ax4.set(ylabel=r"$\Delta$Volume or GOR, MBbl, MMcf, or Mscf/Bbl", xlabel="Time, Days")
 
 for ax in [ax1, ax2, ax3, ax4]:
     ax.set_aspect(1)

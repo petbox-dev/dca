@@ -13,11 +13,10 @@ Created on August 5, 2019
 """
 
 from math import log
+from typing import cast
 
 import numpy as np
-
 from numpy.typing import NDArray
-from typing import cast
 
 # Defined here rather than imported from `.base`: this module is standalone -- `bourdet` is
 # a free function over arrays and imports nothing from the model hierarchy -- and importing
@@ -94,10 +93,10 @@ def bourdet(
     y = np.atleast_1d(y).astype(np.float64)
     n = len(x)
 
-    log_x = cast(NDFloat, np.log10(x))
+    log_x = cast("NDFloat", np.log10(x))
 
     if ylog:
-        y = cast(NDFloat, np.log(y))
+        y = cast("NDFloat", np.log(y))
 
     der = np.zeros(n, dtype=np.float64)
 

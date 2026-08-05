@@ -13,47 +13,31 @@ Created on August 5, 2019
 """
 
 import sys
-from math import exp, expm1, isfinite, log, log1p, ceil as ceiling, floor
 import warnings
-
-import dataclasses as dc
+from abc import abstractmethod
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from math import exp, expm1, isfinite, log1p
+from typing import (
+    Any,
+    ClassVar,
+)
 
 import numpy as np
-
-from scipy.special import expi as ei, gammainc, gamma
-
-from abc import ABC, abstractmethod
-from typing import (
-    TypeVar,
-    Type,
-    List,
-    Dict,
-    Tuple,
-    Any,
-    Sequence,
-    Iterable,
-    Optional,
-    Callable,
-    ClassVar,
-    Union,
-)
-from numpy.typing import NDArray
-from typing import cast
+from scipy.special import expi as ei
+from scipy.special import gamma, gammainc
 
 from .base import (
-    ParamDesc,
-    DeclineCurve,
-    PrimaryPhase,
-    SecondaryPhase,
-    DAYS_PER_MONTH,
     DAYS_PER_YEAR,
     LOG_EPSILON,
     MIN_EPSILON,
-    _validate_segment_times,
-    NDFloat,
-    NDBool,
+    DeclineCurve,
     FloatLike,
+    NDBool,
+    NDFloat,
+    ParamDesc,
+    PrimaryPhase,
+    _validate_segment_times,
 )
 
 
@@ -90,7 +74,7 @@ class NullPrimaryPhase(PrimaryPhase):
         return np.zeros_like(t, dtype=np.float64)
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return []
 
 
@@ -169,10 +153,10 @@ class MultisegmentHyperbolic(PrimaryPhase):
         cls,
         t: float,
         b: float,
-        q: Optional[float] = None,
-        D: Optional[float] = None,
-        N: Optional[float] = None,
-    ) -> List[float]:
+        q: float | None = None,
+        D: float | None = None,
+        N: float | None = None,
+    ) -> list[float]:
         """
         One row of a segment array, placed through the column constants.
 
@@ -199,14 +183,14 @@ class MultisegmentHyperbolic(PrimaryPhase):
                 Hyperbolic exponent from ``t`` onward. Always given, since it is the one
                 parameter :meth:`_fill_segment_chain` cannot derive.
 
-            q: Optional[float] = None
+            q: float | None = None
                 Rate at ``t`` [volume/day]. ``None`` leaves it to be inherited.
 
-            D: Optional[float] = None
+            D: float | None = None
                 Nominal decline per day at ``t`` -- already converted, not a secant. ``None``
                 leaves it to be inherited.
 
-            N: Optional[float] = None
+            N: float | None = None
                 Cumulative volume at ``t``. ``None`` leaves it to be inherited, which is the
                 usual case: only the first row of a model knows its own.
 
@@ -230,7 +214,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         return row
 
     @classmethod
-    def _initial_segment_row(cls, qi: float, Di: float, bi: float) -> List[float]:
+    def _initial_segment_row(cls, qi: float, Di: float, bi: float) -> list[float]:
         """
         The first row of every model in this family: the initial conditions at time zero.
 
@@ -456,7 +440,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @staticmethod
     def _qcheck(
-        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+        t0: float, q: float, D: float, b: float, N: float, t: float | NDFloat
     ) -> NDFloat:
         """
         Compute the proper Arps form of q
@@ -493,7 +477,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @staticmethod
     def _Ncheck(
-        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+        t0: float, q: float, D: float, b: float, N: float, t: float | NDFloat
     ) -> NDFloat:
         """
         Compute the proper Arps form of N
@@ -562,7 +546,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @staticmethod
     def _Dcheck(
-        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+        t0: float, q: float, D: float, b: float, N: float, t: float | NDFloat
     ) -> NDFloat:
         """
         Compute the proper Arps form of D
@@ -589,7 +573,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @staticmethod
     def _Dcheck2(
-        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+        t0: float, q: float, D: float, b: float, N: float, t: float | NDFloat
     ) -> NDFloat:
         """
         Compute the derivative of the proper Arps form of D
@@ -610,7 +594,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
             return np.where(Denom < 0.0, np.nan, -b * D * D / (Denom * Denom))
 
     @staticmethod
-    def _tcheck(q: float, D: float, b: float, q_target: Union[float, NDFloat]) -> NDFloat:
+    def _tcheck(q: float, D: float, b: float, q_target: float | NDFloat) -> NDFloat:
         """
         Invert the proper Arps form of q: the time *elapsed within* a segment whose rate starts
         at ``q``, before it reaches ``q_target``.
@@ -658,7 +642,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
     @staticmethod
     def _bcheck(
-        t0: float, q: float, D: float, b: float, N: float, t: Union[float, NDFloat]
+        t0: float, q: float, D: float, b: float, N: float, t: float | NDFloat
     ) -> NDFloat:
         """
         Compute the proper Arps form of b, which is constant within a segment but has no
@@ -721,7 +705,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         return within
 
-    def _vectorize(self, fn: Callable[..., NDFloat], t: Union[float, NDFloat]) -> NDFloat:
+    def _vectorize(self, fn: Callable[..., NDFloat], t: float | NDFloat) -> NDFloat:
         """
         Vectorize the computation of a parameter
         """
@@ -799,7 +783,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         Parameters
         ----------
-            q: Union[float, numpy.NDFloat]
+            q: FloatLike
                 An array of rates, in units of ``volume / day``.
 
         Returns
@@ -1092,7 +1076,7 @@ class Hyperbolic(MultisegmentHyperbolic):
         return np.array([self._initial_segment_row(self.qi, self.Di, self.bi)], dtype=np.float64)
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         # exactly MH's list minus Dterm, which is the whole difference between the two models
         return [
             cls._initial_rate_desc(),
@@ -1169,7 +1153,7 @@ class MH(MultisegmentHyperbolic):
         )
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             cls._initial_rate_desc(),
             cls._declining_Di_desc(),
@@ -1185,8 +1169,8 @@ class THM(MultisegmentHyperbolic):
 
     Fulford, D. S., and Blasingame, T. A. 2013. Evaluation of Time-Rate
     Performance of Shale Wells using the Transient Hyperbolic Relation.
-    Presented at SPE Unconventional Resources Conference – Canada in Calgary,
-    Alberta, Canda, 5–7 November. SPE-167242-MS.
+    Presented at SPE Unconventional Resources Conference - Canada in Calgary,
+    Alberta, Canda, 5-7 November. SPE-167242-MS.
     https://doi.org/10.2118/167242-MS.
 
 
@@ -1194,7 +1178,7 @@ class THM(MultisegmentHyperbolic):
 
     Fulford, D.S. 2018. A Model-Based Diagnostic Workflow for Time-Rate
     Performance of Unconventional Wells. Presented at Unconventional Resources
-    Conference in Houston, Texas, USA, 23–25 July. URTeC-2903036.
+    Conference in Houston, Texas, USA, 23-25 July. URTeC-2903036.
     https://doi.org/10.15530/urtec-2018-2903036.
 
     Parameters
@@ -1236,7 +1220,7 @@ class THM(MultisegmentHyperbolic):
             The time to end of linear flow in units of ``day``, or more specifically the time at
             which ``b(t) < bi``. Visual end of half slope occurs ``~2.5x`` after ``telf``.
 
-        bterm: Optional[float] = None
+        bterm: float | None = None
             The terminal value of the hyperbolic parameter. Has two interpretations:
 
             If ``tterm > 0`` then the terminal regime is a hyperbolic regime with ``b = bterm``
@@ -1245,7 +1229,7 @@ class THM(MultisegmentHyperbolic):
             If ``tterm = 0`` then the terminal regime is an exponential regime with
             ``Dterm = bterm`` and the parameter is given as secant effective decline.
 
-        tterm: Optional[float] = None
+        tterm: float | None = None
             The time to start of the terminal regime in years. Setting ``tterm = 0.0`` creates an
             exponential terminal regime, while setting ``tterm > 0.0`` creates a hyperbolic
             terminal regime.
@@ -1383,7 +1367,7 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of time values to evaluate.
 
             **kwargs
@@ -1407,7 +1391,7 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of time values to evaluate.
 
             **kwargs
@@ -1432,7 +1416,7 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of time values to evaluate.
 
         Returns
@@ -1454,7 +1438,7 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of time values to evaluate.
 
         Returns
@@ -1481,7 +1465,7 @@ class THM(MultisegmentHyperbolic):
 
         Parameters
         ----------
-            t: Union[float, numpy.NDFloat]
+            t: FloatLike
                 An array of time values to evaluate.
 
         Returns
@@ -1543,11 +1527,9 @@ class THM(MultisegmentHyperbolic):
 
         else:
             # transient function
-            if tterm > 0.0:
-                where_term = t >= tterm
-            else:
-                # no known terminal times in this array, might be some later if exponential terminal
-                where_term = np.full_like(t, False, dtype=bool)
+            # an all-False mask when there is no terminal time in this array; an exponential
+            # terminal may still introduce one later
+            where_term = t >= tterm if tterm > 0.0 else np.full_like(t, False, dtype=bool)
 
             c = self.EXP_GAMMA / (1.5 * telf)
             D_denom = np.full_like(t, np.nan, dtype=np.float64)
@@ -1619,7 +1601,7 @@ class THM(MultisegmentHyperbolic):
         return b
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             ParamDesc(
                 # not the shared `_initial_rate_desc`: THM's generator draws from a narrower
@@ -1682,17 +1664,17 @@ class HyperbolicSegment:
             The segment start time in days. Must be finite and positive; a segment at
             ``t = 0`` is rejected, since the model's own initial conditions start there.
 
-        q: Optional[float] = None
+        q: float | None = None
             The rate at ``t``, in units of ``volume / day``. ``None`` leaves the rate
             continuous. Must be finite and positive when given.
 
-        D: Optional[float] = None
+        D: float | None = None
             The decline at ``t`` in secant effective decline, i.e. annual effective percent
             decline, matching ``Di`` and ``Dterm``. ``None`` leaves the decline continuous.
             Negative to incline, zero for a flat segment. Must be finite and less than 1 when
             given, and must agree in sign with the segment's resolved ``b``.
 
-        b: Optional[float] = None
+        b: float | None = None
             The hyperbolic exponent from ``t`` onward. ``None`` continues the previous
             exponent. Must be finite when given; it is otherwise unbounded. It must agree in
             sign with the segment's ``D``, and must be zero where that ``D`` is zero --
@@ -1700,12 +1682,12 @@ class HyperbolicSegment:
     """
 
     t: float
-    q: Optional[float] = field(default=None, kw_only=True)
-    D: Optional[float] = field(default=None, kw_only=True)
-    b: Optional[float] = field(default=None, kw_only=True)
+    q: float | None = field(default=None, kw_only=True)
+    D: float | None = field(default=None, kw_only=True)
+    b: float | None = field(default=None, kw_only=True)
 
     @classmethod
-    def from_tuple(cls, spec: Sequence[Optional[float]]) -> "HyperbolicSegment":
+    def from_tuple(cls, spec: Sequence[float | None]) -> "HyperbolicSegment":
         """
         Build one segment from a loose tuple. Arity selects the meaning, following one rule:
         the shape parameter is always last, and short forms omit the level. ``(t, b)``
@@ -1720,7 +1702,7 @@ class HyperbolicSegment:
 
         Parameters
         ----------
-            spec: Sequence[Optional[float]]
+            spec: Sequence[float | None]
                 A ``(t, b)``, ``(t, D, b)`` or ``(t, q, D, b)`` tuple.
 
         Returns
@@ -1834,7 +1816,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         qi: float,
         Di: float,
         bi: float,
-        segments: Iterable[Sequence[Optional[float]]],
+        segments: Iterable[Sequence[float | None]],
         Dterm: float = 0.0,
     ) -> "GeneralizedHyperbolic":
         """
@@ -1855,7 +1837,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             bi: float
                 As :class:`GeneralizedHyperbolic`.
 
-            segments: Iterable[Sequence[Optional[float]]]
+            segments: Iterable[Sequence[float | None]]
                 An iterable of ``(t, b)``, ``(t, D, b)`` or ``(t, q, D, b)`` tuples.
 
             Dterm: float = 0.0
@@ -1961,7 +1943,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                     f"(D > 0, b >= 0) or incline (D < 0, b <= 0)"
                 )
 
-    def _resolved_exponents(self) -> List[float]:
+    def _resolved_exponents(self) -> list[float]:
         """
         The hyperbolic exponent in force for the initial conditions and for each segment, with
         an inherited one resolved to the value it inherits.
@@ -1981,7 +1963,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
 
         return resolved
 
-    def _resolved_declines(self) -> List[Tuple[float, float]]:
+    def _resolved_declines(self) -> list[tuple[float, float]]:
         """
         The ``(D, b)`` pair in force for the initial conditions and for each segment, as
         *secant* declines rather than nominal.
@@ -2040,7 +2022,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         )
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             cls._initial_rate_desc(),
             ParamDesc(
@@ -2187,7 +2169,7 @@ class IncliningHyperbolic(MultisegmentHyperbolic):
         return np.array([self._initial_segment_row(self.qi, self.Di, self.bi)], dtype=np.float64)
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             cls._initial_rate_desc(),
             ParamDesc(
@@ -2219,15 +2201,15 @@ class PLE(PrimaryPhase):
     Power-Law Exponential Model
 
     Ilk, D., Perego, A. D., Rushing, J. A., and Blasingame, T. A. 2008.
-    Exponential vs. Hyperbolic Decline in Tight Gas Sands – Understanding
+    Exponential vs. Hyperbolic Decline in Tight Gas Sands - Understanding
     the Origin and Implications for Reserve Estimates Using Arps Decline Curves.
     Presented at SPE Annual Technical Conference and Exhibition in Denver,
-    Colorado, USA, 21–24 September. SPE-116731-MS. https://doi.org/10.2118/116731-MS.
+    Colorado, USA, 21-24 September. SPE-116731-MS. https://doi.org/10.2118/116731-MS.
 
     Ilk, D., Rushing, J. A., and Blasingame, T. A. 2009.
     Decline Curve Analysis for HP/HT Gas Wells: Theory and Applications.
     Presented at SPE Annual Technical Conference and Exhibition in New Orleands,
-    Louisiana, USA, 4–7 October. SPE-125031-MS. https://doi.org/10.2118/125031-MS.
+    Louisiana, USA, 4-7 October. SPE-125031-MS. https://doi.org/10.2118/125031-MS.
 
     Parameters
     ----------
@@ -2294,7 +2276,7 @@ class PLE(PrimaryPhase):
         return Di * (1.0 - n) * n * t**n / (Denom * Denom)
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             ParamDesc(
                 "qi", "Initial rate [vol/day]", 0, None, lambda r, n: r.uniform(1e-10, 1e6, n)
@@ -2325,7 +2307,7 @@ class SE(PrimaryPhase):
     Valkó, P. P. Assigning Value to Stimulation in the Barnett Shale:
     A Simultaneous Analysis of 7000 Plus Production Histories and Well
     Completion Records. 2009. Presented at SPE Hydraulic Fracturing
-    Technology Conference in College Station, Texas, USA, 19–21 January.
+    Technology Conference in College Station, Texas, USA, 19-21 January.
     SPE-119369-MS. https://doi.org/10.2118/119369-MS.
 
     Parameters
@@ -2403,7 +2385,7 @@ class SE(PrimaryPhase):
         return (1.0 - n) / n * tau_to_the_n * t**-n
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             ParamDesc(
                 "qi", "Initial rate [vol/day]", 0.0, None, lambda r, n: r.uniform(1e-10, 1e6, n)
@@ -2426,7 +2408,7 @@ class Duong(PrimaryPhase):
     Duong Model
 
     Duong, A. N. 2001. Rate-Decline Analysis for Fracture-Dominated
-    Shale Reservoirs. SPE Res Eval & Eng 14 (3): 377–387. SPE-137748-PA.
+    Shale Reservoirs. SPE Res Eval & Eng 14 (3): 377-387. SPE-137748-PA.
     https://doi.org/10.2118/137748-PA.
 
     Parameters
@@ -2499,7 +2481,7 @@ class Duong(PrimaryPhase):
         return np.where(Denom == 0.0, 0.0, m * t**m * (t**m - a * t) / (Denom * Denom))
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             ParamDesc(
                 "qi", "Initial rate [vol/day]", 0.0, None, lambda r, n: r.uniform(1.0, 2e4, n)

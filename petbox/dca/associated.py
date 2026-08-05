@@ -12,46 +12,27 @@ Notes
 Created on August 5, 2019
 """
 
-import warnings
 
 import dataclasses as dc
+from abc import abstractmethod
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from typing import (
+    Any,
+    ClassVar,
+)
 
 import numpy as np
 
-from abc import abstractmethod
-from typing import (
-    TypeVar,
-    Type,
-    List,
-    Dict,
-    Tuple,
-    Any,
-    Sequence,
-    Iterable,
-    Optional,
-    Callable,
-    ClassVar,
-    Union,
-)
-from numpy.typing import NDArray
-from typing import cast
-
 from .base import (
-    DeclineCurve,
-    PrimaryPhase,
-    AssociatedPhase,
-    SecondaryPhase,
-    WaterPhase,
-    BothAssociatedPhase,
-    ParamDesc,
-    DAYS_PER_MONTH,
-    DAYS_PER_YEAR,
     LOG_EPSILON,
     MIN_EPSILON,
-    _validate_segment_times,
+    BothAssociatedPhase,
     NDFloat,
-    FloatLike,
+    ParamDesc,
+    SecondaryPhase,
+    WaterPhase,
+    _validate_segment_times,
 )
 
 
@@ -75,7 +56,7 @@ class NullAssociatedPhase(SecondaryPhase, WaterPhase):
     def _qfn(self, t: NDFloat) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
-    def _Nfn(self, t: NDFloat, **kwargs: Dict[Any, Any]) -> NDFloat:
+    def _Nfn(self, t: NDFloat, **kwargs: dict[Any, Any]) -> NDFloat:
         return np.zeros_like(t, dtype=np.float64)
 
     def _Dfn(self, t: NDFloat) -> NDFloat:
@@ -91,7 +72,7 @@ class NullAssociatedPhase(SecondaryPhase, WaterPhase):
         return np.zeros_like(t, dtype=np.float64)
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return []
 
 
@@ -119,8 +100,8 @@ class MultisegmentPLYield(BothAssociatedPhase):
     # each concrete subclass declares. These annotations create no dataclass fields, and
     # so do not perturb subclass field order -- see the class docstring of `PLYield`.
     segment_params: NDFloat
-    min: Optional[float]
-    max: Optional[float]
+    min: float | None
+    max: float | None
 
     @abstractmethod
     def _segments(self) -> NDFloat:
@@ -177,7 +158,7 @@ class MultisegmentPLYield(BothAssociatedPhase):
         # naturally, this should only be called during the __post_init__ process
         object.__setattr__(self, "segment_params", self._segments())
 
-    def _lookup_segment(self, t: NDFloat) -> Tuple[NDFloat, NDFloat, NDFloat]:
+    def _lookup_segment(self, t: NDFloat) -> tuple[NDFloat, NDFloat, NDFloat]:
         """
         Gather the anchor time, anchor value, and slope of the segment containing each
         element of ``t``.
@@ -254,7 +235,7 @@ class MultisegmentPLYield(BothAssociatedPhase):
         """Associated-phase rate: the yield ratio times the primary phase rate."""
         return self._yieldfn(t) * self.primary._qfn(t)
 
-    def _Nfn(self, t: NDFloat, **kwargs: Dict[Any, Any]) -> NDFloat:
+    def _Nfn(self, t: NDFloat, **kwargs: dict[Any, Any]) -> NDFloat:
         """
         Cumulative volume. No closed form exists, so integrate `_qfn` numerically.
 
@@ -314,7 +295,7 @@ class PLYield(MultisegmentPLYield):
 
     Fulford, D.S. 2018. A Model-Based Diagnostic Workflow for Time-Rate
     Performance of Unconventional Wells. Presented at Unconventional Resources
-    Conference in Houston, Texas, USA, 23–25 July. URTeC-2903036.
+    Conference in Houston, Texas, USA, 23-25 July. URTeC-2903036.
     https://doi.org/10.15530/urtec-2018-2903036.
 
     Has the general form of
@@ -342,10 +323,10 @@ class PLYield(MultisegmentPLYield):
         t0: float
             The time of the anchor or pivot value ``c``.
 
-        min: Optional[float] = None
+        min: float | None = None
             The minimum allowed value. Would be used e.g. to limit minimum CGR.
 
-        max: Optional[float] = None
+        max: float | None = None
             The maximum allowed value. Would be used e.g. to limit maximum GOR.
     """
 
@@ -353,8 +334,8 @@ class PLYield(MultisegmentPLYield):
     m0: float
     m: float
     t0: float
-    min: Optional[float] = None
-    max: Optional[float] = None
+    min: float | None = None
+    max: float | None = None
 
     # a tuple, not a list: a list default makes this frozen dataclass unhashable, since
     # the generated __hash__ hashes the field tuple
@@ -403,7 +384,7 @@ class PLYield(MultisegmentPLYield):
         )
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             ParamDesc(
                 "c",
@@ -476,23 +457,23 @@ class PLYieldSegment:
         t: float
             The breakpoint time in days. Must be finite and positive.
 
-        c: Optional[float] = None
+        c: float | None = None
             The yield value at ``t``, in the same units as the model's ``c``. ``None``
             leaves the yield continuous. Must be finite and positive when given, and is
             rejected on the first segment, where the model's ``c`` already defines the
             value at that time.
 
-        m: Optional[float] = None
+        m: float | None = None
             The power-law slope from ``t`` onward. ``None`` continues the previous slope.
             Must be finite and within ``[-10, 10]`` when given.
     """
 
     t: float
-    c: Optional[float] = field(default=None, kw_only=True)
-    m: Optional[float] = field(default=None, kw_only=True)
+    c: float | None = field(default=None, kw_only=True)
+    m: float | None = field(default=None, kw_only=True)
 
     @classmethod
-    def from_tuple(cls, spec: Sequence[Optional[float]]) -> "PLYieldSegment":
+    def from_tuple(cls, spec: Sequence[float | None]) -> "PLYieldSegment":
         """
         Build one segment from a loose tuple. Arity selects the meaning: ``(t, m)`` inherits
         the yield value, ``(t, c, m)`` sets it. An explicit ``None`` inherits exactly as a
@@ -503,7 +484,7 @@ class PLYieldSegment:
 
         Parameters
         ----------
-            spec: Sequence[Optional[float]]
+            spec: Sequence[float | None]
                 A ``(t, m)`` or ``(t, c, m)`` tuple.
 
         Returns
@@ -529,7 +510,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
 
     Fulford, D.S. 2018. A Model-Based Diagnostic Workflow for Time-Rate
     Performance of Unconventional Wells. Presented at Unconventional Resources
-    Conference in Houston, Texas, USA, 23–25 July. URTeC-2903036.
+    Conference in Houston, Texas, USA, 23-25 July. URTeC-2903036.
     https://doi.org/10.15530/urtec-2018-2903036.
 
     Extends :class:`PLYield` to an arbitrary number of segments. Within each segment,
@@ -565,18 +546,18 @@ class GeneralizedPLYield(MultisegmentPLYield):
             strictly increasing. Use :meth:`from_segments` to build these from plain
             ``(t, m)`` or ``(t, c, m)`` tuples.
 
-        min: Optional[float] = None
+        min: float | None = None
             The minimum allowed value. Would be used e.g. to limit minimum CGR.
 
-        max: Optional[float] = None
+        max: float | None = None
             The maximum allowed value. Would be used e.g. to limit maximum GOR.
     """
 
     c: float
     m0: float
     segments: Sequence[PLYieldSegment]
-    min: Optional[float] = None
-    max: Optional[float] = None
+    min: float | None = None
+    max: float | None = None
 
     # a tuple, not a list -- see PLYield.validate_params
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 5)
@@ -586,9 +567,9 @@ class GeneralizedPLYield(MultisegmentPLYield):
         cls,
         c: float,
         m0: float,
-        segments: Iterable[Sequence[Optional[float]]],
-        min: Optional[float] = None,
-        max: Optional[float] = None,
+        segments: Iterable[Sequence[float | None]],
+        min: float | None = None,
+        max: float | None = None,
     ) -> "GeneralizedPLYield":
         """
         Construct from plain tuples instead of :class:`PLYieldSegment` instances.
@@ -605,13 +586,13 @@ class GeneralizedPLYield(MultisegmentPLYield):
             m0: float
                 As :class:`GeneralizedPLYield`.
 
-            segments: Iterable[Sequence[Optional[float]]]
+            segments: Iterable[Sequence[float | None]]
                 An iterable of ``(t, m)`` or ``(t, c, m)`` tuples.
 
-            min: Optional[float] = None
+            min: float | None = None
                 As :class:`GeneralizedPLYield`.
 
-            max: Optional[float] = None
+            max: float | None = None
                 As :class:`GeneralizedPLYield`.
 
         Returns
@@ -641,7 +622,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
         shifted._adopt_attachment(self)
         return shifted
 
-    def _segment_arrays(self) -> Tuple[NDFloat, NDFloat, NDFloat]:
+    def _segment_arrays(self) -> tuple[NDFloat, NDFloat, NDFloat]:
         """
         Breakpoint times, resolved slopes, and yield-value overrides (``nan`` where
         absent). A segment with ``m=None`` continues the previous slope; the first
@@ -771,7 +752,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
         )
 
     @classmethod
-    def get_param_descs(cls) -> List[ParamDesc]:
+    def get_param_descs(cls) -> list[ParamDesc]:
         return [
             ParamDesc(
                 "c",
