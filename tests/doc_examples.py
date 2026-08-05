@@ -464,9 +464,9 @@ ax1.set(ylabel="$D$-parameter, 1 / Days", xlabel="Time, Days")
 secant_from_nominal = dca.MultisegmentHyperbolic.secant_from_nominal
 dpy = dca.DAYS_PER_YEAR
 
-q_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(q_D, thm.b(t))]
-g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(g_D, thm.secondary.b(t))]
-_g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(_g_D, np.gradient(1 / _g_D, t))]
+q_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(q_D, thm.b(t), strict=True)]
+g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(g_D, thm.secondary.b(t), strict=True)]
+_g_Dn = [secant_from_nominal(d * dpy, b) for d, b in zip(_g_D, np.gradient(1 / _g_D, t), strict=True)]
 
 ax2.plot(t, q_Dn, c="C2", label="Oil")
 ax2.plot(t, g_Dn, c="C3", label="Gas")

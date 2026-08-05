@@ -94,15 +94,6 @@ select = [
 # not fire at 100 because those ternaries did not fit. The rest of SIM stays on.
 ignore = ["SIM108"]
 
-[tool.ruff.lint.per-file-ignores]
-# Every line of this file between a `# [begin example-NN]` / `# [end example-NN]` pair is
-# rendered verbatim into docs/examples.rst by a literalinclude, so lint fixes here change
-# published documentation.
-#   B905 -- the three `zip()` calls pair arrays derived from the same `t`, so they cannot
-#           mismatch. Adding `, strict=True` pushes each line past the 100-column limit and
-#           would force reflowing example code a reader is meant to copy.
-"tests/doc_examples.py" = ["B905"]
-
 [tool.ruff.lint.mccabe]
 max-complexity = 20
 
@@ -151,7 +142,12 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=petbox.dca --cov-report=term-missing --cov-report=lcov:coverage.lcov --cov-config=pyproject.toml --hypothesis-show-statistics -v tests"
+# `tests` belongs in testpaths, not addopts. pytest ignores testpaths as soon as paths are
+# given on the command line, so bare `pytest` still runs the suite while
+# `pytest tests/test_dca.py::test_name` runs just that test. With it in addopts the
+# directory was appended to every invocation, so a node ID silently ran all 143 tests.
+addopts = "--cov=petbox.dca --cov-report=term-missing --cov-report=lcov:coverage.lcov --cov-config=pyproject.toml --hypothesis-show-statistics -v"
+testpaths = ["tests"]
 
 [tool.coverage.run]
 # branch = true
