@@ -938,7 +938,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
         :meth:`_require_a_real_decline` for the companion check on the *stored* decline, which
         the bound alone cannot make.
         """
-        return ParamDesc(  # TODO
+        return ParamDesc(
             "Di",
             "Initial decline [sec. eff. / yr]",
             0.0,
@@ -969,7 +969,7 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         Generates zero, i.e. no cap, so a randomly generated model is a plain hyperbolic.
         """
-        return ParamDesc(  # TODO
+        return ParamDesc(
             "Dterm",
             "Terminal decline [tan. eff. / yr]",
             0.0,
@@ -1252,7 +1252,6 @@ class THM(MultisegmentHyperbolic):
     def _validate(self) -> None:
         self._require_a_real_decline(self.Di, self.bi)
 
-        # TODO: do we want to deal with optional params at all?
         if self.bi < self.bf:
             raise ValueError("bi < bf")
         if self.bf < self.bterm and self.tterm != 0.0:
@@ -1633,10 +1632,10 @@ class THM(MultisegmentHyperbolic):
                 2.0,
                 lambda r, n: np.full(n, 2.0),
             ),
-            ParamDesc(  # TODO
+            ParamDesc(
                 "bf", "Final hyperbolic exponent", 0.0, 2.0, lambda r, n: r.uniform(0.0, 1.0, n)
             ),
-            ParamDesc(  # TODO
+            ParamDesc(
                 "telf",
                 "Time to end of linear flow [days]",
                 None,

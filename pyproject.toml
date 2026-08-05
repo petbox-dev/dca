@@ -46,11 +46,21 @@ dev = [
     "coverage>=5.1",
 
     "hypothesis>=6.14.8",
+    # Required by tests/doc_examples.py and the two docs/*_validation.py scripts, which
+    # regenerate every figure in docs/img. It was in no dependency group at all, so a fresh
+    # clone could not rebuild the figures and `mypy --strict tests docs` could not resolve the
+    # imports. matplotlib ships py.typed, so no stub package is needed.
+    "matplotlib>=3.8",
     "mpmath>=1.3.0",
     "mypy>=1.0",
     "pytest>=6.2.4",
     "pytest-cov>=2.12.1",
     "ruff>=0.4.0",
+    # scipy ships no py.typed and no inline annotations, so without these the scipy imports in
+    # base.py and primary.py are `import-untyped` errors under strict, and `gammainc` returning
+    # Any makes SE._Nfn a no-any-return. Not optional: a machine that happens to have
+    # scipy-stubs installed passes while CI does not, which is exactly how this was missed.
+    "scipy-stubs",
     "wheel>=0.34.2",
 ]
 docs = [
@@ -111,11 +121,20 @@ max-complexity = 20
 #     complex; np.where/np.diff/np.log yield dtype[Any]). A function declared `-> NDFloat` has
 #     to pin the type rather than pass one of those through.
 [tool.mypy]
+# Deliberately NO `python_version` pin. Setting it to "3.10" to match `requires-python` looks
+# right and breaks: numpy >= 2.3 writes its own stubs with PEP 695 `type` statements, so mypy
+# targeting 3.10 rejects numpy/__init__.pyi itself with "Type statement is only supported in
+# Python 3.12 and greater". mypy therefore checks against whatever interpreter runs it, and code
+# here must satisfy every version in the CI matrix -- which means not relying on a
+# `# type: ignore` whose necessity varies by typeshed version. Subclass the protocol you are
+# implementing instead; see `BlockMpmath(MetaPathFinder)` in tests/test_dca.py.
 strict = true
 warn_unreachable = true
 warn_no_return = true
 disallow_any_unimported = true
-plugins = ["numpy.typing.mypy_plugin"]
+# No `plugins = ["numpy.typing.mypy_plugin"]`: deprecated in NumPy 2.3 and slated for removal,
+# and it emits a DeprecationWarning on every run. numpy ships its own annotations, so the plugin
+# no longer adds anything.
 
 # Two modules mypy cannot resolve, declared here rather than as `# type: ignore` comments so
 # the reasons live in one place and `warn_unused_ignores` can still police every inline ignore.
