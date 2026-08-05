@@ -8,8 +8,8 @@ ROOT="$DIR/.."
 # test/ is a package, and passing the path makes mypy see test/data.py as both `data`
 # and `test.data`, which is a hard error.
 
-echo ruff check petbox/dca test
-ruff check "$ROOT/petbox/dca" "$ROOT/test"
+echo ruff check petbox/dca test docs
+ruff check "$ROOT/petbox/dca" "$ROOT/test" "$ROOT/docs"
 echo
 
 echo mypy petbox/dca

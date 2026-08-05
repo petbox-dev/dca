@@ -7,10 +7,10 @@ Compares petbox-dca output against Table 1 of SPE-12777:
     SPE Form Eval 4 (2): 293-302. SPE-12777-PA.
 """
 
-import numpy as np
 import matplotlib.pyplot as plt
-from petbox import dca
+import numpy as np
 
+from petbox import dca
 
 # Full Table 1 from Bourdet 1989 (SPE-12777) — Buildup 2
 # Columns: elapsed_time (hr), pressure_change (psi), der_L0, der_L01, superposition_time
@@ -155,7 +155,7 @@ def main() -> None:
     our_L01 = dca.bourdet(dp, x, L=L_log10)
 
     # --- Figure 1: side-by-side log-log comparison ---
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+    _, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
 
     ax = axes[0]
     ax.set_title("SPE-12777 Table 1 (Published)", fontsize=11)
@@ -187,7 +187,7 @@ def main() -> None:
     rel_err_L0 = np.abs(paper_L0 - our_L0) / np.abs(paper_L0) * 100
     rel_err_L01 = np.abs(paper_L01 - our_L01) / np.abs(paper_L01) * 100
 
-    fig, ax = plt.subplots(figsize=(8, 4))
+    _, ax = plt.subplots(figsize=(8, 4))
     ax.semilogy(dt, rel_err_L0, "b^-", markersize=4, alpha=1.0, label="L=0")
     ax.semilogy(dt, rel_err_L01, "rs-", markersize=4, alpha=1.0, label="L=0.1")
     ax.axhline(0.01, color="gray", linestyle="--", alpha=0.5)

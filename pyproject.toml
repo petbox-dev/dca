@@ -70,7 +70,6 @@ target-version = "py310"
 exclude = [
     ".git",
     "__pycache__",
-    "docs/source/conf.py",
     "old",
     "build",
     "dist",
@@ -89,6 +88,11 @@ select = [
     "RUF",
     'C90',
 ]
+# SIM108 ("use a ternary") is the one SIM rule whose benefit inverts as the line
+# limit grows: at line-length 120 it argues for ternaries up to 115 characters
+# chaining several calls, which read worse than the if/else they replace. It did
+# not fire at 100 because those ternaries did not fit. The rest of SIM stays on.
+ignore = ["SIM108"]
 
 [tool.ruff.lint.per-file-ignores]
 # Every line of this file between a `# [begin example-NN]` / `# [end example-NN]` pair is

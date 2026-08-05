@@ -16,7 +16,6 @@ import sys
 sys.path.insert(0, os.path.abspath(".."))
 from importlib.metadata import version as _get_version
 
-
 # -- Project information -----------------------------------------------------
 
 project = "petbox-dca"
@@ -63,8 +62,8 @@ html_theme = "sphinx_rtd_theme"
 
 # A list of paths that contain custom static files (such as style sheets or
 # script files). Relative paths are taken as relative to the configuration
-# directory. They are copied to the output’s _static directory after the
-# theme’s static files, so a file named default.css will overwrite the theme’s
+# directory. They are copied to the output's _static directory after the
+# theme's static files, so a file named default.css will overwrite the theme's
 # default.css.
 html_static_path = ["_static"]
 

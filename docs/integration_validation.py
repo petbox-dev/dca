@@ -8,8 +8,8 @@ each model that uses numerical integration:
   - PLYield secondary phase attached to MH primary (N(t) = integral of yield * q(t))
 """
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy.integrate import quad
 
 from petbox import dca
@@ -98,7 +98,7 @@ def print_ngrid_convergence(ple_cases, t):
     print("-" * 56)
     for ng in grids:
         max_e = mean_e = 0.0
-        for (_, m), ref in zip(ple_cases, refs):
+        for (_, m), ref in zip(ple_cases, refs, strict=True):
             mask = ref > 0
             rel = np.abs((m.cum(t, n_grid=ng)[mask] - ref[mask]) / ref[mask]) * 100
             max_e = max(max_e, rel.max())

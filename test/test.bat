@@ -7,7 +7,7 @@
 
 pushd %~dp0..
 
-ruff check petbox\dca test
+ruff check petbox\dca test docs
 mypy petbox\dca
 mypy --strict petbox\dca
 mypy --strict -p test
