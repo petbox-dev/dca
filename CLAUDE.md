@@ -12,23 +12,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install (editable, with dev deps)
 pip install -e ".[dev]"
 
-# Lint
-ruff check petbox/dca
+# Lint (package, tests and the docs figure scripts)
+ruff check petbox/dca tests docs
 
-# Type check
-mypy petbox/dca
+# Type check. Three separate runs, not one over all three trees: `petbox/` is a namespace
+# package with no __init__.py, so a combined invocation resolves petbox/dca/__init__.py as
+# both `dca` and `petbox.dca` and aborts. pyproject.toml sets `strict = true`, so bare
+# `mypy <path>` is equivalent -- `--strict` is pinned so a dropped flag fails loudly.
+mypy --strict petbox/dca
+mypy --strict tests
+mypy --strict docs
 
 # All tests with coverage + hypothesis stats
 pytest
 
 # Single test
-pytest test/test_dca.py::test_name -v
+pytest tests/test_dca.py::test_name -v
 
-# Build docs
+# Build docs (add -W to fail on warnings, as they should stay at zero)
 cd docs && make html
 
-# Full CI sequence
-ruff check petbox/dca && mypy petbox/dca && pytest
+# Full CI sequence -- or just run tests/test.sh (bash) / tests/test.bat (cmd), which mirror it
+ruff check petbox/dca tests docs \
+  && mypy --strict petbox/dca && mypy --strict tests && mypy --strict docs \
+  && pytest
 ```
 
 ## Commit process
@@ -83,7 +90,7 @@ DeclineCurve (ABC)
 - **Max complexity:** 20
 - **mypy:** Strict mode — `disallow_untyped_defs`, `disallow_incomplete_defs`, `no_implicit_optional`
 - **Type hints required** on all functions, using `numpy.typing.NDArray`
-- **Testing:** pytest + hypothesis (property-based). Test data from Eagle Ford well in `test/data.py`
+- **Testing:** pytest + hypothesis (property-based). Test data from Eagle Ford well in `tests/data.py`
 
 ## Dependencies
 

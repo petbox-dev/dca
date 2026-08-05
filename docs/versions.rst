@@ -452,8 +452,8 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       re-derived in each module.
     * ``pyproject.toml`` spells out every flag ``--strict`` implies, so ``mypy petbox/dca`` and
       ``mypy --strict petbox/dca`` agree; the list had drifted to 12 of 14. CI now runs ``ruff``
-      and ``mypy --strict`` over the test tree as well as the package, and ``test/test.sh`` and
-      ``test/test.bat`` mirror it.
+      and ``mypy --strict`` over the test tree as well as the package, and ``tests/test.sh`` and
+      ``tests/test.bat`` mirror it.
 
 * **Lint:** the ruff rule set is broadened, and two bugs it found are fixed
     * ``select`` gains ``I`` (import sorting), ``UP`` (pyupgrade), ``B`` (bugbear), ``SIM``,
@@ -493,6 +493,14 @@ of every model at ``t < 0`` changes --- see the breaking changes.
         * The ruff ``exclude`` list named ``docs/source/conf.py``, a path that does not exist ---
           the file is ``docs/conf.py``, and it was being linted all along. Removed rather than
           repointed: an exclude that silently matches nothing is worse than either choice.
+    * **The test directory is renamed** ``test/`` **to** ``tests/``. ``test`` is the name of a
+      CPython *stdlib* package --- the interpreter's own regression suite, ``test.support`` and
+      friends --- and a top-level ``test/`` package in the repository root shadowed it: from the
+      repo root, ``import test`` resolved here and ``import test.support`` raised
+      ``ModuleNotFoundError``. It stays a package; ``__init__.py`` is kept, so the relative
+      ``from .data import ...`` still works. Nothing shipped either way, since
+      ``packages.find`` includes only ``petbox.dca`` --- verified by building a wheel and
+      confirming its only top-level entries are ``petbox`` and the dist-info.
     * ``docs/`` is now linted and type-checked alongside the package and the tests. The two
       figure-generating scripts are fully annotated and pass ``mypy --strict``; the one shape
       they pass around is named ``Comparison``, and the ``lambda x=x: ...`` default-argument
@@ -515,7 +523,7 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       at ``t = 0``. The division by zero there is the expected limit of a power law, and ``b``
       additionally divides by ``D`` inside an ``np.where`` that evaluates both branches. Values
       are unchanged.
-    * ``docs/examples.rst`` no longer duplicates ``test/doc_examples.py``. The examples were
+    * ``docs/examples.rst`` no longer duplicates ``tests/doc_examples.py``. The examples were
       maintained twice --- once as the script that generates the figures, once as hand-copied
       ``code-block`` directives --- with nothing keeping them in step, which is how the GOR
       examples drifted by a factor of 1000 before. Fifteen of the seventeen blocks are now
@@ -537,7 +545,7 @@ of every model at ``t < 0`` changes --- see the breaking changes.
       The integration-accuracy figures were regenerated; the relative errors are unchanged, since
       the trapezoid error is scale-invariant.
     * Regenerated every figure in ``docs/img`` from its generating script
-      (``test/doc_examples.py``, ``docs/bourdet_validation.py``,
+      (``tests/doc_examples.py``, ``docs/bourdet_validation.py``,
       ``docs/integration_validation.py``). This release also adds one, the four-panel
       generalized-models figure described above.
     * Fixed two malformed grid tables in ``docs/numerical_integration.rst`` whose rows were 1 and

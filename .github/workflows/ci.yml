@@ -17,18 +17,18 @@ jobs:
     - name: Install dependencies
       run: pip install -e ".[dev]"
     - name: Ruff
-      run: ruff check petbox/dca test docs
-    - name: Mypy
-      run: mypy petbox/dca
-    # The test tree and the docs scripts are type-checked too, and under --strict. The config
-    # now sets every strict flag, so these agree with the plain run above -- but pinning
-    # --strict explicitly means a flag dropped from pyproject.toml fails here rather than
-    # silently widening what CI accepts. `-p test` rather than a path: `test/` is a package,
-    # and passing the path makes mypy see test/data.py as both `data` and `test.data`.
+      run: ruff check petbox/dca tests docs
+    # Three separate mypy invocations, not one over all three trees: `petbox/` is a namespace
+    # package with no __init__.py, so `mypy petbox/dca tests docs` makes mypy resolve
+    # petbox/dca/__init__.py as both `dca` and `petbox.dca` and abort with "Source file found
+    # twice under different module names".
+    #
+    # --strict is pinned explicitly even though pyproject.toml sets `strict = true`, so that a
+    # flag dropped from the config fails here rather than silently widening what CI accepts.
     - name: Mypy (strict, package, tests and docs)
       run: |
         mypy --strict petbox/dca
-        mypy --strict -p test
+        mypy --strict tests
         mypy --strict docs
 
   test:

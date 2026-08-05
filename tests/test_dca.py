@@ -747,7 +747,7 @@ def test_yield_errors() -> None:
 
 
 def test_examples_literalinclude_markers_resolve() -> None:
-    """`docs/examples.rst` reads its code out of `test/doc_examples.py` through marker comments,
+    """`docs/examples.rst` reads its code out of `tests/doc_examples.py` through marker comments,
     rather than duplicating it -- the examples used to be maintained twice, which is how the GOR
     figures drifted by a factor of 1000.
 
@@ -764,7 +764,7 @@ def test_examples_literalinclude_markers_resolve() -> None:
 
     assert len(includes) == len(starts) == len(ends) > 0
     # every include must point at the script this test checks
-    assert set(includes) == {"../test/doc_examples.py"}
+    assert set(includes) == {"../tests/doc_examples.py"}
 
     for start, end in zip(starts, ends, strict=True):
         assert source.count(start) == 1, f"{start!r} appears {source.count(start)} times"

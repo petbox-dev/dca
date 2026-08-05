@@ -1,7 +1,7 @@
 # Normalize line endings in the repository, and pin them in the working tree where the tool
 # that reads the file cares.
 #
-# Without this, `core.autocrlf=true` (the Git for Windows default) checks `test/test.sh` out
+# Without this, `core.autocrlf=true` (the Git for Windows default) checks `tests/test.sh` out
 # with CRLF, and bash then fails on every line with `$'\r': command not found`. Git warns about
 # the rewrite at commit time but the breakage only shows up on the next fresh clone.
 
