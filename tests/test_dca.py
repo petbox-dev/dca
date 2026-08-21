@@ -820,6 +820,75 @@ def test_yield_errors() -> None:
         thm = dca.THM.from_params([1000, 0.5, 2.0, 0.5])
 
 
+def test_interval_vol_first_interval_is_empty() -> None:
+    """With the default ``t0`` the first interval is ``[t[0], t[0]]``, which is empty. The
+    prepend was a second integration on its own log-spaced grid, so it returned that grid's
+    discretization noise instead -- 3.8968e-04 for this model."""
+    ple = dca.PLE(1000.0, 0.8, 1e-4, 0.5)
+    t = np.array([365.25, 730.5, 1095.75])
+
+    volumes = ple.interval_vol(t)
+    assert volumes[0] == 0.0
+
+    # every later interval agrees exactly with the cumulative over the same times, which
+    # holds only because one grid produced both
+    assert np.array_equal(volumes[1:], np.diff(ple.cum(t)))
+
+
+def test_interval_start_must_be_a_single_time() -> None:
+    """``t0`` anchors one interval, so a sequence of times has no meaning there -- and it
+    silently shifted the positional alignment the differencing depends on, returning one
+    value per element of ``t0`` plus ``t`` rather than one per requested time."""
+    ple = dca.PLE(1000.0, 0.8, 1e-4, 0.5)
+    t = np.array([100.0, 200.0, 300.0])
+
+    for method in (ple.interval_vol, ple.monthly_vol_equiv):
+        with pytest.raises(ValueError, match="t0 must be a single time"):
+            method(t, [10.0, 20.0])  # type: ignore[arg-type]
+
+        # one time in a container is still one time, and the result is one value per
+        # requested time either way
+        assert method(t, 10.0).shape == t.shape
+        assert method(t, [10.0]).shape == t.shape  # type: ignore[arg-type]
+
+
+def test_monthly_vol_equiv_zero_width_interval_is_empty() -> None:
+    """A zero-width interval is a definite integral whose bounds coincide, so it holds no
+    volume and no rate can be averaged over it. The quotient was ``0 / 0`` -- a nan, with a
+    RuntimeWarning that reached the caller."""
+    ple = dca.PLE(1000.0, 0.8, 1e-4, 0.5)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        # t0 coinciding with the first requested time
+        t = np.array([365.25, 730.5, 1095.75])
+        assert ple.monthly_vol_equiv(t, 365.25)[0] == 0.0
+
+        # and a repeated time, which makes an interior interval zero-width too
+        repeated = np.array([365.25, 365.25, 730.5])
+        assert ple.monthly_vol_equiv(repeated, 0.0)[1] == 0.0
+
+    # the intervals that do have width are unaffected
+    assert np.all(ple.monthly_vol_equiv(t, 365.25)[1:] > 0.0)
+
+
+def test_monthly_vol_equiv_honors_t0() -> None:
+    """``t0`` is documented as the start of the first interval, but was overwritten with 0.0
+    before use, so the first interval always ran from zero however it was called."""
+    ple = dca.PLE(1000.0, 0.8, 1e-4, 0.5)
+    t = np.array([365.25, 730.5, 1095.75])
+
+    # the rate declines, so a first interval that starts at 300 days rather than at zero
+    # excludes the high early rates and averages far lower over the same end time
+    assert ple.monthly_vol_equiv(t, 300.0)[0] < ple.monthly_vol_equiv(t)[0]
+
+    # and the result is exactly the interval volume per day, scaled to a month -- exactly,
+    # because both come off the same integration grid
+    equivalent = ple.monthly_vol_equiv(t, 300.0)
+    per_month = ple.interval_vol(t, 300.0) / np.diff(t, prepend=300.0) * dca.DAYS_PER_MONTH
+    assert np.array_equal(equivalent, per_month)
+
+
 def test_examples_literalinclude_markers_resolve() -> None:
     """`docs/examples.rst` reads its code out of `tests/doc_examples.py` through marker comments,
     rather than duplicating it -- the examples used to be maintained twice, which is how the GOR
@@ -1092,9 +1161,10 @@ def test_generalized_errors() -> None:
         # max < min, raised by the shared base
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.8),), 10.0, 1.0)
 
-    with pytest.raises(ValueError, match=r"c <= 0\.0"):
-        # c at its excluded lower bound
-        dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(90.0, m=0.8),))
+    with pytest.raises(ValueError, match=r"c < 0\.0"):
+        # c below its inclusive lower bound. Zero is IN bounds here -- it is an initial
+        # shut-in, see test_generalized_initial_shut_in
+        dca.GeneralizedPLYield(-1.0, 0.0, (dca.PLYieldSegment(90.0, m=0.8),))
 
     # the inclusive bound endpoints are accepted
     dca.GeneralizedPLYield(
@@ -1135,14 +1205,11 @@ def test_generalized_rejects_nonfinite_segments() -> None:
 
 
 def test_generalized_anchor_chain_seed_is_consistent() -> None:
-    """With validation disabled, c == 0 must give a yield of zero on EVERY segment, not
-    just the first. Seeding the log-space chain with a `c > 0` special case made
-    segment 0 report c while every later segment reported 0."""
+    """c == 0 must give a yield of zero on EVERY segment, not just the first. Seeding the
+    log-space chain with a `c > 0` special case made segment 0 report c while every later
+    segment reported 0."""
     y = dca.GeneralizedPLYield(
-        0.0,
-        0.0,
-        (dca.PLYieldSegment(90.0, m=0.5), dca.PLYieldSegment(365.0, m=0.5)),
-        validate_params=[False],
+        0.0, 0.0, (dca.PLYieldSegment(90.0, m=0.5), dca.PLYieldSegment(365.0, m=0.5))
     )
     assert np.all(y.segment_params[:, y.Y_IDX] == 0.0)
 
@@ -1425,23 +1492,247 @@ def test_generalized_c_override_steps_the_yield() -> None:
     assert np.isclose(y.gor(np.array([2190.0]))[0], 2.5 * (2190.0 / 1095.0) ** 0.6, rtol=1e-12)
 
 
-def test_generalized_c_override_rejected_on_first_segment() -> None:
-    """The model's own c already defines the yield at segments[0].t; a second source for
-    the same quantity would silently conflict."""
+def test_generalized_c_override_rejected_only_when_both_are_positive() -> None:
+    """Two positive sources for the yield at segments[0].t is the real conflict. An
+    override that starts or ends a shut-in is not: exactly one of the two is zero, so
+    each pins a different branch -- the model c the pre-anchor one, the override the
+    segment itself."""
     with pytest.raises(ValueError, match="conflicts with the model c"):
         dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, c=2.5, m=0.6),))
+
+    # a shut-in at the anchor time, and a restart from an initial shut-in
+    dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, c=0.0),))
+    dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(180.0, c=2.5, m=0.6),))
 
 
 def test_generalized_c_override_rejects_nonfinite() -> None:
     """`overrides` uses nan to mean "absent", so an explicitly-NaN c must be rejected
     before it reaches that array -- otherwise it is silently read as no override."""
-    for bad in (float("nan"), np.inf, 0.0, -1.0):
-        with pytest.raises(ValueError, match="segments c must be finite and > 0"):
+    for bad in (float("nan"), np.inf, -1.0):
+        with pytest.raises(ValueError, match="segments c must be finite and >= 0"):
             dca.GeneralizedPLYield(
                 1.2,
                 0.0,
                 (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=bad, m=-0.2)),
             )
+
+
+def _shut_in_model(
+    shut_in_c: float = 0.0, min: float | None = None
+) -> tuple[dca.MH, dca.GeneralizedPLYield]:
+    """A producing yield that shuts in at 1095 days, with one further segment after the
+    shut-in whose slope must not leak into anything."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    y = dca.GeneralizedPLYield(
+        1.2,
+        0.0,
+        (
+            dca.PLYieldSegment(180.0, m=0.6),
+            dca.PLYieldSegment(1095.0, c=shut_in_c),
+            dca.PLYieldSegment(2190.0, m=-0.2),
+        ),
+        min,
+    )
+    mh.add_secondary(y)
+    return mh, y
+
+
+def test_generalized_shut_in_zeroes_the_yield() -> None:
+    """A segment c of zero is a shut-in: the yield is exactly zero from that breakpoint
+    onward. Zero is absorbing, so the later segment inheriting the anchor stays shut in
+    rather than resuming the trend."""
+    mh, _ = _shut_in_model()
+    y = mh.secondary
+
+    # producing right up to the shut-in, so the zeroes below are a change and not the
+    # whole curve being zero
+    assert y.gor(np.array([1095.0 * (1.0 - 1e-12)]))[0] > 1.0
+
+    t = np.array([1095.0, 1500.0, 2190.0, 1e5])
+    assert np.array_equal(y.gor(t), np.zeros(4))
+
+    # the associated rate goes with it, while the primary keeps producing
+    assert np.array_equal(y.rate(t), np.zeros(4))
+    assert np.all(mh.rate(t) > 0.0)
+
+
+def test_generalized_shut_in_restarts_only_at_an_explicit_c() -> None:
+    """Coming back on production takes an explicit c: the chain restarts at that value,
+    since the shut-in erased the trend it would otherwise continue from."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(
+        dca.GeneralizedPLYield(
+            1.2,
+            0.0,
+            (
+                dca.PLYieldSegment(180.0, m=0.6),
+                dca.PLYieldSegment(1095.0, c=0.0),
+                dca.PLYieldSegment(2190.0, c=2.5, m=0.6),
+            ),
+        )
+    )
+    y = mh.secondary
+
+    assert y.gor(np.array([2190.0 * (1.0 - 1e-12)]))[0] == 0.0
+    assert y.gor(np.array([2190.0]))[0] == 2.5
+    assert np.isclose(y.gor(np.array([4380.0]))[0], 2.5 * 2.0**0.6, rtol=1e-12)
+
+
+def test_generalized_shut_in_is_exempt_from_min() -> None:
+    """min floors a declining yield, but must not resurrect a shut-in -- the associated
+    phase can be shut in while the primary still flows."""
+    mh, _ = _shut_in_model(min=1.5)
+    y = mh.secondary
+
+    # min is active on the producing branch, or the exemption below proves nothing
+    assert y.gor(np.array([90.0]))[0] == 1.5
+
+    assert np.array_equal(y.gor(np.array([1095.0, 1500.0, 2190.0])), np.zeros(3))
+
+
+def test_generalized_shut_in_contributes_no_volume() -> None:
+    """Zero rate means zero volume: the cumulative is flat across the shut-in and every
+    interval inside it is empty, while the primary keeps accumulating."""
+    mh, _ = _shut_in_model()
+    y = mh.secondary
+
+    # one call, so one integration grid -- the increment across the shut-in is exactly
+    # zero rather than the difference of two separately gridded integrals
+    t = np.array([1095.0, 2190.0, 5000.0])
+    cum = y.cum(t)
+    assert np.array_equal(cum, np.full(3, cum[0]))
+    assert cum[0] > 0.0
+
+    # every interval, including the first: with the default t0 that interval is
+    # [t[0], t[0]], which one integration makes exactly empty
+    assert np.array_equal(y.interval_vol(t), np.zeros(3))
+    assert np.all(mh.interval_vol(t)[1:] > 0.0)
+
+
+def test_generalized_shut_in_has_no_slope() -> None:
+    """A yield flat at zero contributes no slope, so D reduces to the primary's. Without
+    this the stored segment slope leaks in as -m / t, reporting a decline for a phase
+    that has no rate at all."""
+    mh, _ = _shut_in_model()
+    y = mh.secondary
+
+    # 2190 onward is the segment carrying m=-0.2, which must not appear in D
+    t = np.array([1095.0, 1500.0, 2190.0, 5000.0])
+    assert np.allclose(y.D(t), mh.D(t), rtol=1e-13, atol=0.0)
+    assert np.allclose(y.beta(t), mh.D(t) * t, rtol=1e-13, atol=0.0)
+    assert np.allclose(
+        y.b(t), -mh._Dfn2(t) / (mh.D(t) * mh.D(t)), rtol=1e-13, atol=0.0
+    )
+
+
+def test_generalized_initial_shut_in() -> None:
+    """A model c of zero shuts the phase in from the start -- the only way to zero the
+    pre-anchor branch, which spans t < segments[0].t -- and segments[0] may then supply
+    the value it comes back at."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(
+        dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(90.0, c=2.5, m=0.6),))
+    )
+    y = mh.secondary
+
+    assert np.array_equal(y.gor(np.array([1.0, 45.0, 90.0 * (1.0 - 1e-12)])), np.zeros(3))
+    assert y.gor(np.array([90.0]))[0] == 2.5
+    assert np.isclose(y.gor(np.array([180.0]))[0], 2.5 * 2.0**0.6, rtol=1e-12)
+
+
+def test_generalized_shut_in_at_the_first_breakpoint() -> None:
+    """The mirror case: a producing pre-anchor branch that shuts in exactly at
+    segments[0].t, where the model c pins the value on the way in."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, c=0.0),)))
+    y = mh.secondary
+
+    assert y.gor(np.array([90.0]))[0] == 1.2
+    assert np.array_equal(y.gor(np.array([180.0, 1e4])), np.zeros(2))
+
+
+def test_generalized_shut_in_survives_a_saturating_exponent() -> None:
+    """A shut-in stays zero even where the segment exponent saturates to inf, which
+    `0 * inf` would otherwise make nan -- with a RuntimeWarning on the way out."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(
+        dca.GeneralizedPLYield(
+            1.2,
+            0.0,
+            (dca.PLYieldSegment(1e-300, m=0.0), dca.PLYieldSegment(1e-200, c=0.0, m=10.0)),
+        )
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert np.array_equal(mh.secondary.gor(np.array([1.0, 1e5])), np.zeros(2))
+
+
+def test_plyield_c_stays_positive() -> None:
+    """PLYield anchors both of its segments at the same (t0, c), so a zero c is zero for
+    all time with no way back -- that is NullAssociatedPhase, not a shut-in period. Only
+    the generalized model, which can restart a chain, accepts zero."""
+    with pytest.raises(ValueError, match=r"c <= 0\.0"):
+        dca.PLYield(0.0, 0.0, 0.6, 180.0)
+
+
+def test_zero_slope_contributes_no_decline_at_t_zero() -> None:
+    """``-m / t`` is nan for ``m == 0`` at ``t == 0``, so a yield that is flat at the origin
+    reported a silent nan for D, beta and b. A flat yield contributes no decline, and the
+    limit there is zero -- not the signed infinity a real power-law slope has.
+
+    Three parameterizations reach a zero slope at the origin, and only the first is new: a
+    model ``c`` of zero, shut in from the start; a ``min`` clamp, since the yield is 0.0 at
+    ``t == 0`` by convention and so is always at or below the floor there; and a plain flat
+    ``m0``, which is the parameterization the README itself uses."""
+    zero = np.array([0.0])
+
+    shut_in = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    shut_in.add_secondary(
+        dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(90.0, c=2.5, m=0.6),))
+    )
+    clamped = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    clamped.add_secondary(dca.PLYield(1.2, 0.5, 0.6, 180.0, 1.0, None))
+    flat = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    flat.add_secondary(dca.PLYield(1.2, 0.0, 0.6, 180.0))
+
+    for primary in (shut_in, clamped, flat):
+        secondary = primary.secondary
+        # the yield term drops out entirely, leaving the primary phase's decline. Exact:
+        # both sides are the same sum computed in the same process, and the yield term
+        # contributes a literal 0.0
+        assert np.array_equal(secondary.D(zero), primary.D(zero))
+        assert secondary.beta(zero)[0] == 0.0
+        assert np.all(np.isfinite(secondary.b(zero)))
+
+    # a real power-law slope keeps its signed-infinite limit at the origin
+    sloped = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    sloped.add_secondary(dca.PLYield(1.2, 0.5, 0.6, 180.0))
+    assert sloped.secondary.D(zero)[0] == -np.inf
+
+
+def test_zero_slope_lookup_does_not_leak_a_warning() -> None:
+    """`_mfn` must be called INSIDE the errstate its caller's quotient uses. `_yieldfn`
+    divides by the anchor time, which is zero for a ``t0`` of zero -- reachable with
+    validation disabled -- and that warning was suppressed only because the block used to
+    wrap the whole expression, the ``_mfn`` call included."""
+    primary = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    primary.add_secondary(dca.PLYield(1.2, 0.5, 0.6, 0.0, validate_params=(False,) * 6))
+    secondary = primary.secondary
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        for accessor in (secondary.D, secondary.beta, secondary.b):
+            assert np.all(np.isfinite(accessor(np.array([50.0]))))
+
+
+def test_generalized_first_segment_override_reports_its_own_invalidity() -> None:
+    """An invalid override at ``segments[0]`` must be diagnosed as invalid rather than as a
+    conflict with the model ``c``. ``nan != 0.0`` and ``-5.0 != 0.0`` are both True, so the
+    conflict check fires first unless the validity check is ordered ahead of it."""
+    for bad in (float("nan"), np.inf, -5.0):
+        with pytest.raises(ValueError, match="segments c must be finite and >= 0"):
+            dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, c=bad),))
 
 
 def test_generalized_inherited_slope_is_a_no_op() -> None:
@@ -1664,9 +1955,15 @@ def test_every_public_accessor_takes_every_FloatLike_form() -> None:
             if expected.shape == reference.shape and np.array_equal(expected, [30.0, 365.0]):
                 assert np.array_equal(result, reference, equal_nan=True), (name, form)
 
-    # interval_vol's t0 is FloatLike too, and Optional
-    for form in forms:
-        assert primary.interval_vol([30.0, 365.0], form).dtype == np.float64
+    # interval_vol's t0 is Optional, and a scalar rather than FloatLike -- it anchors one
+    # interval, so a sequence of times has no meaning there. Every scalar form still works,
+    # including a numpy scalar and an int via the numeric tower
+    for scalar in (30.0, 30, np.float64(30.0), np.int64(30)):
+        assert primary.interval_vol([30.0, 365.0], scalar).dtype == np.float64  # type: ignore[arg-type]
+
+    for sequence in ([30.0, 365.0], (30.0, 365.0), np.arange(1, 5)):
+        with pytest.raises(ValueError, match="t0 must be a single time"):
+            primary.interval_vol([30.0, 365.0], sequence)  # type: ignore[arg-type]
 
 
 def test_all_matches_what_the_package_exports() -> None:

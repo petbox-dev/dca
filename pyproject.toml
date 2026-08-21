@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "petbox-dca"
-version = "2.2.0"
+version = "2.3.0"
 description = "Decline Curve Library"
 readme = {file = "README.rst", content-type = "text/x-rst"}
 license = "MIT"

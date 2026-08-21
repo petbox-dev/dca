@@ -158,6 +158,26 @@ that breakpoint — a GOR change at a workover, say — and restarts the curve f
 The GOR reaches 3.358 just before the workover, steps to the specified 2.5, then declines
 from there.
 
+A step to **zero** is a shut-in of the associated phase, and zero is absorbing: the yield
+stays there until a later segment supplies a positive ``c``. A zero model ``c`` shuts the
+phase in from the start, which is the only way to zero the branch before the first
+breakpoint, so ``c=0.0`` with a first segment that names its own value is a phase that comes
+online late. ``min`` does not apply to a shut-in — the associated phase can be shut in while
+the primary still flows.
+
+.. code-block:: python
+
+    >>> mh = dca.MH(qi=1000.0, Di=0.8, bi=1.8, Dterm=0.08)
+    >>> mh.add_secondary(dca.GeneralizedPLYield.from_segments(
+    ...     0.0, 0.0, [(90.0, 2.5, 0.6), (1095.0, 0.0, None)]))
+    >>> mh.secondary.gor([45.0, 90.0, 365.0, 1095.0, 2000.0])
+    array([0.000, 2.500, 5.791, 0.000, 0.000])
+
+No gas is produced before 90 days, the GOR then starts at 2.5 and rises as ``t**0.6``, and the
+shut-in at 1095 days holds it at zero for the rest of the forecast. ``PLYield`` keeps its
+``c > 0`` bound: both of its segments anchor at the same ``(t0, c)``, so a zero there is zero
+for all time with no way back — that is ``NullAssociatedPhase``, not a shut-in period.
+
 If a model was fit against the wrong first-production date, ``shift(dt)`` re-anchors it
 rather than requiring evaluation at negative time, where a power law is not real-valued:
 

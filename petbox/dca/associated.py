@@ -181,7 +181,8 @@ class MultisegmentPLYield(BothAssociatedPhase):
         """
         Evaluate ``y_anchor * (t / t_anchor) ** m`` per element, in log space so that an
         extreme exponent saturates to ``inf``/``0`` instead of overflowing. ``t == 0`` is
-        special-cased to zero rather than the ``0 ** negative m`` singularity.
+        special-cased to zero rather than the ``0 ** negative m`` singularity, and a zero
+        anchor -- a shut-in -- to zero regardless of ``min``/``max``.
         """
         t_anchor, y_anchor, m = self._lookup_segment(t)
 
@@ -196,11 +197,19 @@ class MultisegmentPLYield(BothAssociatedPhase):
         # own 0.0 convention. Captured before the putmask mutates t_ratio.
         before_zero = t < 0.0
 
+        # A zero anchor is a shut-in: the segment is flat at zero, whatever its slope says.
+        # Used twice below -- once to neutralize the exponent, so a saturating one cannot
+        # make the product `0 * inf`, i.e. nan with a RuntimeWarning, and once after the
+        # `min`/`max` clip, which must not resurrect the shut-in: an associated phase can be
+        # shut in while the primary still flows.
+        shut_in = y_anchor == 0.0
+
         t_ratio = t / t_anchor
         np.putmask(t_ratio, mask=t_ratio <= 0, values=MIN_EPSILON)
         log_factor = m * np.log(t_ratio)
         np.putmask(log_factor, mask=log_factor > LOG_EPSILON, values=np.inf)
         np.putmask(log_factor, mask=log_factor < -LOG_EPSILON, values=-np.inf)
+        np.putmask(log_factor, mask=shut_in, values=0.0)
 
         if self.min is not None or self.max is not None:
             out = np.where(
@@ -208,13 +217,15 @@ class MultisegmentPLYield(BothAssociatedPhase):
             )
         else:
             out = np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
+
+        out = np.where(shut_in, 0.0, out)
         return np.where(before_zero, np.nan, out)
 
     def _mfn(self, t: NDFloat) -> NDFloat:
         """
         The slope of the segment containing each element of ``t``, zeroed wherever the
-        yield function is clamped by ``min`` or ``max`` -- a clamped yield is flat, so it
-        contributes no slope to `_Dfn` or `_Dfn2`.
+        yield function is clamped by ``min`` or ``max``, or shut in by a zero anchor -- such
+        a yield is flat, so it contributes no slope to `_Dfn` or `_Dfn2`.
 
         ``nan`` for ``t < 0``, where the yield itself is undefined. This is the single point
         that keeps `_Dfn`, `_Dfn2`, `_betafn` and `_bfn` consistent with `_yieldfn`: the
@@ -222,9 +233,12 @@ class MultisegmentPLYield(BothAssociatedPhase):
         report definite values for a domain in which there is no rate to differentiate.
         """
         # advanced indexing in `_lookup_segment` returns a copy, so this is safe to mutate
-        _, _, m = self._lookup_segment(t)
+        _, y_anchor, m = self._lookup_segment(t)
         y = self._yieldfn(t)
 
+        # Keyed on the anchor rather than on ``y == 0.0``, which is also true at ``t == 0``
+        # -- there the segment slope is real and `_Dfn` keeps its signed-infinite limit.
+        m[y_anchor == 0.0] = 0.0
         if self.min is not None:
             m[y <= self.min] = 0.0
         if self.max is not None:
@@ -256,18 +270,32 @@ class MultisegmentPLYield(BothAssociatedPhase):
         ``t == 0`` divides by zero to give a signed infinity, which is the correct limit
         for a power law. The warning is suppressed because the degenerate point is
         expected, matching how `MultisegmentHyperbolic` guards its own overflow.
+
+        A zero slope is kept out of that quotient rather than divided through it: a flat
+        yield contributes no decline at any ``t``, and ``-0 / 0`` would report that as a
+        silent nan at the origin. `_mfn` returns a zero slope for a shut-in and for a
+        clamped yield, and a segment may simply be given ``m == 0`` -- so this is reachable
+        from a flat ``m0`` alone, which is what `PLYield(1.2, 0.0, 0.6, 180.0)` is.
         """
+        # `_mfn` is called INSIDE the errstate, not before it: `_yieldfn` divides by the
+        # anchor time, which is zero for a non-positive anchor reachable with validation
+        # disabled, and that warning belongs to the same expected-degeneracy set as the
+        # quotient below.
         with np.errstate(divide="ignore", invalid="ignore"):
-            return -self._mfn(t) / t + self.primary._Dfn(t)
+            m = self._mfn(t)
+            return np.where(m == 0.0, 0.0, -m / t) + self.primary._Dfn(t)
 
     def _Dfn2(self, t: NDFloat) -> NDFloat:
         """
         Derivative of `_Dfn`, from the yield term only. Unlike `_Dfn`, the primary phase's
         contribution is deliberately excluded here: `_bfn` subtracts ``primary._Dfn2``
         itself, so including it here would double-count it.
+
+        A zero slope is kept out of the quotient for the reason given in `_Dfn`.
         """
         with np.errstate(divide="ignore", invalid="ignore"):
-            return -self._mfn(t) / (t * t)
+            m = self._mfn(t)
+            return np.where(m == 0.0, 0.0, -m / (t * t))
 
     def _betafn(self, t: NDFloat) -> NDFloat:
         """``beta = t * D``, so the yield term contributes a constant ``-m`` per segment."""
@@ -445,7 +473,9 @@ class PLYieldSegment:
     ``None`` means "continuous from the previous segment": an omitted ``m`` continues the
     preceding slope, which for the first segment is the model's ``m0``, and an omitted
     ``c`` leaves the yield value continuous at ``t``. Supplying ``c`` steps the yield to
-    that value at ``t`` and restarts the anchor chain there.
+    that value at ``t`` and restarts the anchor chain there. A ``c`` of zero is a shut-in,
+    and zero is absorbing: every later segment that inherits its value stays shut in, so
+    only an explicit positive ``c`` puts the phase back on production.
 
     The optional fields are keyword-only on purpose. Positionally,
     ``PLYieldSegment(180.0, 0.6)`` would set ``c``, while the equivalent builder tuple
@@ -459,9 +489,10 @@ class PLYieldSegment:
 
         c: float | None = None
             The yield value at ``t``, in the same units as the model's ``c``. ``None``
-            leaves the yield continuous. Must be finite and positive when given, and is
-            rejected on the first segment, where the model's ``c`` already defines the
-            value at that time.
+            leaves the yield continuous, and zero shuts the phase in from ``t``. Must be
+            finite and ``>= 0`` when given. On the first segment, where the model's ``c``
+            already defines the value at that time, it is rejected unless one of the two
+            is zero -- that one is then the shut-in and the other the branch beside it.
 
         m: float | None = None
             The power-law slope from ``t`` onward. ``None`` continues the previous slope.
@@ -522,7 +553,10 @@ class GeneralizedPLYield(MultisegmentPLYield):
 
     with an independent slope ``m`` per segment. The yield function is continuous across
     every segment boundary unless that segment overrides ``c``, in which case it steps to
-    the override there. The single-breakpoint case is identical to :class:`PLYield`,
+    the override there. An override of zero is a shut-in: the yield is zero from that
+    breakpoint until a later segment supplies a positive ``c``, and a zero model ``c``
+    shuts the phase in from the start. The single-breakpoint case is identical to
+    :class:`PLYield`,
 
     .. math::
 
@@ -532,7 +566,9 @@ class GeneralizedPLYield(MultisegmentPLYield):
     ----------
         c: float
             The value of GOR/CGR/WOR/WGR that acts as the anchor or pivot at the first
-            breakpoint time, ``segments[0].t``.
+            breakpoint time, ``segments[0].t``. Zero shuts the phase in from the start,
+            through the pre-anchor branch that no segment can otherwise reach; the phase
+            then produces nothing until a segment supplies a positive ``c``.
             Units should be correctly specified for the respective yield function.
             Assumed volumes units per phase must be ``Bbl`` for oil and water and
             ``Mscf`` for gas in order to resolve any inconsistencies in unit magnitude.
@@ -544,7 +580,8 @@ class GeneralizedPLYield(MultisegmentPLYield):
             A sequence of :class:`PLYieldSegment`. At least one is required; the first
             segment's time is the anchor time of ``c``. Times must be finite, positive and
             strictly increasing. Use :meth:`from_segments` to build these from plain
-            ``(t, m)`` or ``(t, c, m)`` tuples.
+            ``(t, m)`` or ``(t, c, m)`` tuples. A segment ``c`` of zero shuts the phase in
+            from that breakpoint, and a positive one after it brings the phase back.
 
         min: float | None = None
             The minimum allowed value. Would be used e.g. to limit minimum CGR.
@@ -659,14 +696,23 @@ class GeneralizedPLYield(MultisegmentPLYield):
         if not all(isinstance(segment, PLYieldSegment) for segment in self.segments):
             raise ValueError("segments entries must be PLYieldSegment")
 
-        if self.segments[0].c is not None:
-            raise ValueError("segments[0] c conflicts with the model c at the same time")
-
         # Check c per field rather than via the overrides array: that array uses nan to
         # mean "absent", so an explicitly-NaN c would be silently read as no override.
         for segment in self.segments:
-            if segment.c is not None and not (np.isfinite(segment.c) and segment.c > 0.0):
-                raise ValueError("segments c must be finite and > 0")
+            if segment.c is not None and not (np.isfinite(segment.c) and segment.c >= 0.0):
+                raise ValueError("segments c must be finite and >= 0")
+
+        # segments[0] shares its time with the model `c`, so two positive values there are
+        # two sources for one quantity. One of them being zero is not: a zero model `c`
+        # shuts the phase in before the first breakpoint and the override is the value it
+        # comes back at, while a zero override shuts it in at the anchor the model `c` pins
+        # on the way in. Each of those describes a different branch.
+        #
+        # Ordered after the loop above, not before it: `nan != 0.0` and `-5.0 != 0.0` are
+        # both True, so an override that is merely invalid would be reported here as a
+        # conflict and never reach the message that names what is actually wrong with it.
+        if self.segments[0].c is not None and self.c != 0.0 and self.segments[0].c != 0.0:
+            raise ValueError("segments[0] c conflicts with the model c at the same time")
 
         # normalize every field to float, so the instance stays hashable and its fields
         # match their annotations at runtime even when given ints
@@ -712,18 +758,24 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # as `_yieldfn`, so a long, steep chain resolves to inf or 0 rather than
         # overflowing part-way through a running product.
         anchor_values = np.empty_like(breakpoint_times)
-        anchor_values[0] = self.c
-        # Seed from log(c) directly rather than special-casing `c > 0`, so that c == 0
-        # gives -inf here and every anchor comes back as 0 -- agreeing with
-        # anchor_values[0]. The old `if c > 0 else -inf` seed made segment 0 report c
-        # while every later segment reported 0. A negative or NaN c still disagrees
-        # (the first anchor keeps c, later ones are NaN) because anchor_values[0] must
-        # stay exactly `self.c` to keep the single-breakpoint case bit-for-bit equal to
-        # PLYield -- exp(log(c)) does not round-trip. A non-positive c needs validation
-        # disabled, but a NaN c does NOT: `nan <= 0.0` is False, so it passes the `c`
-        # ParamDesc bound check. See the library-wide NaN gap noted in the design spec.
+        # segments[0] may override `c` only to start or end a shut-in -- see `_validate` --
+        # so an override here is the value the yield takes at the first breakpoint, while
+        # row 0 below keeps `self.c` for the pre-anchor branch. Absent, this is `self.c` by
+        # the same path as before, which is what keeps the single-breakpoint case
+        # bit-for-bit equal to PLYield.
+        anchor_values[0] = self.c if np.isnan(overrides[0]) else overrides[0]
+        # Seed from the log of that anchor directly rather than special-casing `> 0`, so
+        # that a zero -- a shut-in -- gives -inf here and every anchor after it comes back
+        # as 0, agreeing with anchor_values[0]. The old `if c > 0 else -inf` seed made
+        # segment 0 report c while every later segment reported 0. A negative or NaN c
+        # still disagrees (the first anchor keeps c, later ones are NaN) because
+        # anchor_values[0] must stay exactly the value it was given, to keep the
+        # single-breakpoint case bit-for-bit equal to PLYield -- exp(log(c)) does not
+        # round-trip. A negative c needs validation disabled, but a NaN c does NOT:
+        # `nan < 0.0` is False, so it passes the `c` ParamDesc bound check. See the
+        # library-wide NaN gap noted in the design spec.
         with np.errstate(divide="ignore", invalid="ignore"):
-            log_anchor = float(np.log(self.c))
+            log_anchor = float(np.log(anchor_values[0]))
 
         for i in range(1, breakpoint_times.size):
             if np.isnan(overrides[i]):
@@ -755,12 +807,14 @@ class GeneralizedPLYield(MultisegmentPLYield):
     def get_param_descs(cls) -> list[ParamDesc]:
         return [
             ParamDesc(
+                # Zero is IN bounds here, unlike `PLYield.c`: it shuts the phase in from
+                # the start, and this model can restart the anchor chain at a later
+                # segment, so the shut-in is a period rather than the whole forecast.
                 "c",
                 "Pivot point of the early-time function and the first segment [vol/vol]",
                 0.0,
                 None,
                 lambda r, n: r.uniform(0.0, 1e6, n),
-                exclude_lower_bound=True,
             ),
             ParamDesc(
                 "m0",

@@ -6,6 +6,108 @@ Version History
    :noindex:
 
 
+2.3.0
+-----
+
+Adds shut-in periods to ``GeneralizedPLYield``, and fixes a grid misalignment that made every
+interval volume the difference of two independent numerical integrations. The shut-in work
+only widens the accepted parameter domain, so it leaves every 2.2.0 forecast unchanged; the
+interval-volume fix is a breaking numerical change for the models that integrate numerically.
+
+* New behaviour
+    * A ``PLYieldSegment`` ``c`` of ``0`` is a **shut-in**: the yield, and so the associated
+      phase rate, is exactly zero from that breakpoint. Zero is absorbing --- every later
+      segment that inherits its value stays shut in --- so only an explicit positive ``c``
+      brings the phase back on production. Volume accumulated across a shut-in is zero, and
+      the cumulative is flat there.
+    * A model ``c`` of ``0`` shuts the phase in from the start. This is the only way to zero
+      the pre-anchor branch, which spans ``t < segments[0].t`` and no segment can reach, so
+      ``GeneralizedPLYield(0.0, m0, (PLYieldSegment(t, c=..., m=...),))`` is an associated
+      phase that comes online at ``t``. The ``c`` bound is now ``>= 0`` rather than ``> 0``,
+      which also means a fitter sampling from ``get_param_descs`` may draw ``c = 0``.
+    * ``segments[0]`` may now override ``c``. It shares its time with the model ``c``, so two
+      *positive* values there are still rejected as two sources for one quantity --- but one
+      of them being zero is not: each then describes a different branch, the model ``c`` the
+      pre-anchor one and the override the segment itself. This admits both "produce, then
+      shut in at the anchor time" and "shut in, then come online at the anchor time".
+    * ``min`` and ``max`` do not apply to a shut-in. A ``min`` floor otherwise resurrects it,
+      and an associated phase can be shut in while the primary still flows. By the same rule,
+      a yield of exactly zero now reads as zero rather than being clamped up to ``min``,
+      which is also reachable when a long, steep anchor chain saturates below ~1e-308.
+    * A shut-in contributes no slope, so ``D`` reduces to the primary phase's decline and
+      ``beta`` to ``t`` times it. Without this the stored segment slope leaked in as
+      ``-m / t``, reporting a decline for a phase that has no rate at all.
+
+* Bug Fix
+    * **Breaking numerical change:** ``monthly_vol`` and ``interval_vol`` differenced two
+      *separate* numerical integrations. ``_integrate_with`` builds its log-spaced grid from
+      the largest time it is given, so ``N(t)`` and ``N(t - 1 month)`` sampled the shared
+      early interval at different points, and the ~1e-6 relative error on each cumulative
+      --- an absolute error scaled by the cumulative --- did not cancel. Both now take every
+      endpoint they need from one integration. This affects the numerically integrated models
+      only (``PLE`` and the associated-phase yields); ``MH``, ``THM``, ``SE``, ``Duong`` and
+      the other hyperbolics have closed-form cumulatives and are unchanged.
+
+        * ``monthly_vol`` was the worse of the two, because *every* element crossed two
+          grids. The residual is an absolute error, so it is unbounded against a monthly
+          volume that has decayed: for ``PLE(1000, 0.8, 1e-4, 0.5)`` it was a constant
+          ``-3.98e-6``, which is to say a **negative monthly volume** at every time past
+          about a year. Against adaptive quadrature the same model improves from ``-3.5e-4``
+          to ``+6.7e-5`` relative error at one year, and an ``MH`` + ``PLYield`` secondary
+          from ``6.8e-6`` to ``1.9e-6`` at thirty years.
+        * ``interval_vol`` crossed two grids in one place, the ``prepend`` that anchors the
+          first interval. With the default ``t0``, which is ``t[0]``, that interval is empty
+          and the method returned the second grid's discretization noise instead of zero ---
+          ``3.8968e-04`` for the model above. Later intervals were already consistent, and
+          are unchanged when ``t0`` is left to default.
+        * Both are now faster, since each performs one integration rather than two: a
+          359-point monthly series on ``PLE`` goes from 0.77 ms to 0.38 ms per call.
+
+    * ``D``, ``beta`` and ``b`` returned a silent ``nan`` at ``t == 0`` for any associated
+      phase whose yield is flat at the origin. The yield term is ``-m / t``, which is
+      ``-0 / 0`` there when the slope is zero, and the surrounding ``errstate`` suppressed
+      the warning. A flat yield contributes no decline, so the limit is zero and ``D`` now
+      reduces to the primary phase's own decline; a non-zero slope keeps the signed infinity
+      that is its real limit. Three parameterizations reach a zero slope at the origin, and
+      only the first is new in this version:
+
+        * a model ``c`` of zero, i.e. shut in from the start;
+        * a ``min`` clamp, since the yield is ``0.0`` at ``t == 0`` by convention and so is
+          always at or below the floor there;
+        * a flat ``m0``, which is what ``PLYield(1.2, 0.0, 0.6, 180.0)`` --- the
+          parameterization in this project's own README --- has always been.
+
+    * ``monthly_vol_equiv`` ignored its ``t0`` argument. The body opened with
+      ``t0 = np.atleast_1d(0.0)``, overwriting the parameter, so the first interval always
+      ran from zero however the method was called. It now honours ``t0`` and still defaults
+      to zero, as documented. Its integration was never misaligned --- the discarded
+      ``_Nfn(0.0)`` is exactly zero --- but it now shares the single-integration path, which
+      is what makes ``monthly_vol_equiv(t, t0)`` exactly ``interval_vol(t, t0)`` per day,
+      scaled to a month.
+    * ``monthly_vol_equiv`` returned ``nan`` for a zero-width interval, and leaked the
+      ``RuntimeWarning`` from the ``0 / 0`` to the caller. A zero-width interval is a
+      definite integral whose bounds coincide, so it holds no volume and there is no rate to
+      average over it: the result is now ``0``. Reachable both from a ``t0`` equal to
+      ``t[0]`` and from a repeated time inside ``t``.
+    * **Breaking API change:** ``t0`` is typed ``float | None`` rather than
+      ``FloatLike | None`` on ``interval_vol`` and ``monthly_vol_equiv``, and a value
+      carrying more than one time now raises. It anchors one interval rather than being a
+      series, and a longer sequence silently shifted the positional alignment the
+      differencing depends on --- ``interval_vol(t, t0=[10, 20])`` returned one value per
+      element of ``t0`` plus ``t`` rather than one per requested time, in this version and
+      every version before it. Every scalar form still works, a numpy scalar and an ``int``
+      via the numeric tower included; this narrows only what the package ships in
+      ``py.typed``, so a type-checked consumer passing a sequence sees it at the call site.
+
+* Unchanged
+    * ``PLYield.c`` keeps its ``> 0`` bound. Both of its segments anchor at the same
+      ``(t0, c)``, so a zero there is zero for all time with no way back --- that is
+      ``NullAssociatedPhase``, not a shut-in *period*. Only a model that can restart an
+      anchor chain can express one.
+    * The single-breakpoint equivalence to ``PLYield`` is still bit-for-bit: with no
+      first-segment override the anchor chain is seeded exactly as before.
+
+
 2.2.0
 -----
 

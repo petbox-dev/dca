@@ -154,6 +154,28 @@ an analytical rate function), which helps the trapezoidal rule.
    configurations. Right: relative error vs. time for each case.
 
 
+Interval Quantities
+-------------------
+
+``interval_vol``, ``monthly_vol`` and ``monthly_vol_equiv`` report a volume
+over an interval rather than from zero, so each is a difference of two
+cumulatives. That difference must be taken **within a single integration**,
+and all three do: every endpoint the method needs goes into one ``_Nfn``
+call, and the differencing happens across the array it returns.
+
+The grid is built from :math:`t_{max}` of the requested times, so two
+separate calls sample the shared early interval at *different* points. The
+relative error quoted above is an absolute error scaled by the cumulative,
+and it does not cancel between two grids --- it is negligible against
+:math:`N(t)` and unbounded against a short interval late in a forecast.
+Differencing two calls, as these methods once did, left a residual of
+constant magnitude: for ``PLE(1000, 0.8, 1e-4, 0.5)`` it was
+:math:`-4 \times 10^{-6}`, so ``monthly_vol`` returned a *negative* volume
+at every time past roughly a year, where the true monthly volume had
+underflowed below it. On one grid the result is the trapezoid integral over
+the interval itself, and it costs one integration rather than two.
+
+
 Performance
 -----------
 

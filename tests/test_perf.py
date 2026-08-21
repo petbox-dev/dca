@@ -158,10 +158,56 @@ def test_integrate_with_vs_analytical() -> None:
     # interval volumes should sum to approximately the final cumulative
     assert np.isclose(np.sum(ivol), cum[-1], rtol=1e-3)
 
-    # monthly vol should be finite and non-negative
+    # monthly vol should be finite and non-negative. Exactly non-negative: the -1e-10
+    # slack here used to absorb the two-grid misalignment in `monthly_vol`
     mvol = ple.monthly_vol(t)
     assert np.all(np.isfinite(mvol))
-    assert np.all(mvol >= -1e-10)
+    assert np.all(mvol >= 0.0)
+
+
+def test_monthly_vol_matches_integral() -> None:
+    """monthly_vol differenced two SEPARATE integrations. `_integrate_with` builds its
+    log-spaced grid from the largest time it is given, so ``N(t)`` and ``N(t - 1 month)``
+    sampled the shared ``[0, t - 1 month]`` at different points, and the ~1e-6 relative
+    error on each cumulative -- an absolute error scaled by the cumulative -- did not
+    cancel. Once the monthly volume fell below it the difference was pure noise: a
+    constant -3.98e-6 for this model at 5, 10 and 30 years, i.e. a negative volume."""
+    qi, Di, Dinf, n = 1000.0, 0.8, 1e-4, 0.5
+    ple = dca.PLE(qi, Di, Dinf, n)
+
+    def rate_fn(s: float) -> float:
+        return float(qi * np.exp(-Di * s**n - Dinf * s))
+
+    t = np.array([30.0, 90.0, 365.25, 1826.25, 3652.5, 10957.5])
+    t_start = np.where(t < dca.DAYS_PER_MONTH, 0.0, t - dca.DAYS_PER_MONTH)
+
+    volumes = ple.monthly_vol(t)
+    assert np.all(volumes >= 0.0)
+
+    ref = np.array(
+        [quad(rate_fn, float(a), float(b))[0] for a, b in zip(t_start, t, strict=True)]
+    )
+    assert np.allclose(volumes, ref, rtol=1e-4, atol=1e-9)
+
+
+def test_monthly_vol_matches_integral_for_a_yield_model() -> None:
+    """The same, for the other numerically integrated family. Here the monthly volume stays
+    large enough that the misalignment shows up as a relative error -- 6.8e-6 at 30 years,
+    against 1.9e-6 once both endpoints share one grid -- rather than as noise."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(dca.PLYield(c=1.2, m0=0.0, m=0.6, t0=180.0))
+    secondary = mh.secondary
+
+    def rate_fn(s: float) -> float:
+        return float(secondary.rate(np.array([s]))[0])
+
+    t = np.array([30.0, 90.0, 365.25, 1826.25, 3652.5, 10957.5])
+    t_start = np.where(t < dca.DAYS_PER_MONTH, 0.0, t - dca.DAYS_PER_MONTH)
+
+    ref = np.array(
+        [quad(rate_fn, float(a), float(b))[0] for a, b in zip(t_start, t, strict=True)]
+    )
+    assert np.allclose(secondary.monthly_vol(t), ref, rtol=5e-6)
 
 
 def test_PLE_cum_matches_integral() -> None:

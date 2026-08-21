@@ -252,7 +252,7 @@ class DeclineCurve(ABC):
         return self._Nfn(t, **kwargs)
 
     def interval_vol(
-        self, t: FloatLike, t0: FloatLike | None = None, **kwargs: Any
+        self, t: FloatLike, t0: float | None = None, **kwargs: Any
     ) -> NDFloat:
         """
         Defines the model interval volume function:
@@ -268,9 +268,10 @@ class DeclineCurve(ABC):
             t: FloatLike
                 An array of interval end times at which to evaluate the function.
 
-            t0: FloatLike | None
-                A start time of the first interval. If not given, the first element
-                of ``t`` is used.
+            t0: float | None
+                The start time of the first interval, as a single time -- unlike ``t``,
+                this is not a series. If not given, the first element of ``t`` is used,
+                which makes the first interval empty.
 
             n_grid: int
                 Number of log-spaced integration points, for models evaluated by
@@ -283,8 +284,14 @@ class DeclineCurve(ABC):
         t = self._validate_ndarray(t)
         if t0 is None:
             t0 = t[0]
-        t0 = np.atleast_1d(t0).astype(np.float64)
-        return np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
+        start = self._validate_start_time(t0)
+        # One integration, not two. `_integrate_with` builds its log-spaced grid from the
+        # largest time it is given, so a separately integrated ``t0`` samples ``[0, t0]`` at
+        # different points and its discretization error does not cancel in the difference --
+        # see `monthly_vol`, where the same defect could turn a volume negative. With the
+        # default ``t0`` the first interval is empty, and this is what makes it exactly zero
+        # rather than that grid's noise.
+        return np.diff(self._Nfn(np.concatenate([start, t]), **kwargs))
 
     def monthly_vol(self, t: FloatLike, **kwargs: Any) -> NDFloat:
         """
@@ -306,17 +313,23 @@ class DeclineCurve(ABC):
 
         Returns
         -------
-            monthly equivalent volume: numpy.NDFloat
+            monthly volume: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
-        return np.asarray(
-            self._Nfn(t, **kwargs)
-            - np.where(t < DAYS_PER_MONTH, 0.0, self._Nfn(t - DAYS_PER_MONTH, **kwargs)),
-            dtype=np.float64,
-        )
+        # Both endpoint sets go into ONE `_Nfn` call. `_integrate_with` builds its log-spaced
+        # grid from the largest time it is given, so integrating ``t`` and ``t - 1 month``
+        # separately sampled the shared ``[0, t - 1 month]`` at different points. Each
+        # cumulative carries ~1e-6 *relative* error, which is an absolute error scaled by the
+        # cumulative, so it did not cancel: once the monthly volume fell below it the
+        # difference was noise, and negative for PLE beyond about a year. One grid makes the
+        # difference the trapezoid integral over the interval itself, and costs one
+        # integration rather than two.
+        t_start = np.where(t < DAYS_PER_MONTH, 0.0, t - DAYS_PER_MONTH)
+        volumes = self._Nfn(np.concatenate([t, t_start]), **kwargs)
+        return np.asarray(volumes[: len(t)] - volumes[len(t) :], dtype=np.float64)
 
     def monthly_vol_equiv(
-        self, t: FloatLike, t0: FloatLike | None = None, **kwargs: Any
+        self, t: FloatLike, t0: float | None = None, **kwargs: Any
     ) -> NDFloat:
         """
         Defines the model equivalent monthly interval volume function:
@@ -331,8 +344,9 @@ class DeclineCurve(ABC):
             t: FloatLike
                 An array of interval end times at which to evaluate the function.
 
-            t0: FloatLike | None
-                A start time of the first interval. If not given, assumed to be zero.
+            t0: float | None
+                The start time of the first interval, as a single time -- unlike ``t``,
+                this is not a series. If not given, assumed to be zero.
 
             n_grid: int
                 Number of log-spaced integration points, for models evaluated by
@@ -343,13 +357,23 @@ class DeclineCurve(ABC):
             monthly equivalent volume: numpy.NDFloat
         """
         t = self._validate_ndarray(t)
-        t0 = np.atleast_1d(0.0).astype(np.float64)
-        return np.asarray(
-            np.diff(self._Nfn(t, **kwargs), prepend=self._Nfn(t0, **kwargs))
-            / np.diff(t, prepend=t0)
-            * DAYS_PER_MONTH,
-            dtype=np.float64,
-        )
+        # Zero, not ``t[0]`` as in `interval_vol`: this method reports an average rate, so
+        # the first interval running from first production is the useful default
+        if t0 is None:
+            t0 = 0.0
+        start = self._validate_start_time(t0)
+        # one integration, for the reason given in `interval_vol`
+        volumes = np.diff(self._Nfn(np.concatenate([start, t]), **kwargs))
+        widths = np.diff(t, prepend=start)
+        # A zero-width interval is a definite integral whose bounds coincide, so it holds no
+        # volume and there is no rate to average over it. The quotient is 0/0 there, which
+        # reported nan and leaked a RuntimeWarning to the caller. Reachable both from a `t0`
+        # equal to ``t[0]`` and from a repeated time inside ``t``.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.asarray(
+                np.where(widths == 0.0, 0.0, volumes / widths * DAYS_PER_MONTH),
+                dtype=np.float64,
+            )
 
     def D(self, t: FloatLike) -> NDFloat:
         """
@@ -569,6 +593,22 @@ class DeclineCurve(ABC):
         Ensure the time array is a 1d arary of floats.
         """
         return np.atleast_1d(x).astype(np.float64)
+
+    @staticmethod
+    def _validate_start_time(t0: float) -> NDFloat:
+        """
+        Ensure the start time anchoring the first interval of `interval_vol` or
+        `monthly_vol_equiv` is a single time, and return it as a 1-element array.
+
+        Unlike every other public time argument, this one is NOT a series -- it anchors one
+        interval. A longer sequence shifted the positional alignment the differencing in
+        those methods depends on, silently returning one value per element of ``t0`` plus
+        ``t`` rather than one per requested time.
+        """
+        start = np.atleast_1d(t0).astype(np.float64)
+        if start.size != 1:
+            raise ValueError(f"t0 must be a single time, got {start.size} values")
+        return start
 
     def _integrate_with(
         self, fn: Callable[[NDFloat], NDFloat], t: NDFloat, **kwargs: Any
