@@ -77,6 +77,15 @@ interval-volume fix is a breaking numerical change for the models that integrate
         * a flat ``m0``, which is what ``PLYield(1.2, 0.0, 0.6, 180.0)`` --- the
           parameterization in this project's own README --- has always been.
 
+    * The associated-phase yield function suppresses its own expected degeneracies rather
+      than relying on the ``errstate`` of whichever caller happens to wrap it, which did not
+      cover them: ``D`` sets ``divide`` and ``invalid`` but never ``over``, so a denormal
+      anchor time leaked ``overflow encountered in divide`` through ``D``, ``beta`` and
+      ``b``, while ``gor``, ``rate`` and ``cum`` leaked all three categories. A denormal
+      anchor time needs no special setup --- ``t0`` is bounded below only by zero --- and a
+      non-positive one needs ``validate_params`` disabled. Values are unchanged; every one of
+      these points was already resolved by an explicit mask.
+
     * ``monthly_vol_equiv`` ignored its ``t0`` argument. The body opened with
       ``t0 = np.atleast_1d(0.0)``, overwriting the parameter, so the first interval always
       ran from zero however the method was called. It now honours ``t0`` and still defaults

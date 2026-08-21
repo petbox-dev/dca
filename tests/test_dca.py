@@ -1711,19 +1711,33 @@ def test_zero_slope_contributes_no_decline_at_t_zero() -> None:
     assert sloped.secondary.D(zero)[0] == -np.inf
 
 
-def test_zero_slope_lookup_does_not_leak_a_warning() -> None:
-    """`_mfn` must be called INSIDE the errstate its caller's quotient uses. `_yieldfn`
-    divides by the anchor time, which is zero for a ``t0`` of zero -- reachable with
-    validation disabled -- and that warning was suppressed only because the block used to
-    wrap the whole expression, the ``_mfn`` call included."""
-    primary = dca.MH(1000.0, 0.7, 1.5, 0.08)
-    primary.add_secondary(dca.PLYield(1.2, 0.5, 0.6, 0.0, validate_params=(False,) * 6))
-    secondary = primary.secondary
+def test_degenerate_anchor_time_does_not_leak_a_warning() -> None:
+    """`_yieldfn` owns its own degeneracies rather than relying on the errstate of whichever
+    caller happens to wrap it. Every one of them is already handled by an explicit mask, and
+    leaving them to callers did not cover them: `_Dfn` sets ``divide`` and ``invalid`` but
+    never ``over``, so a denormal anchor time leaked an overflow through ``D``, ``beta`` and
+    ``b``, while ``gor``, ``rate`` and ``cum`` leaked all three categories.
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        for accessor in (secondary.D, secondary.beta, secondary.b):
-            assert np.all(np.isfinite(accessor(np.array([50.0]))))
+    A non-positive anchor time needs validation disabled to reach. A denormal one does not,
+    since `t0` is bounded below only by zero."""
+    cases = (
+        # t / t_anchor divides by zero
+        (dca.PLYield(1.2, 0.5, 0.6, 0.0, validate_params=(False,) * 6), np.array([50.0])),
+        # the same division overflows
+        (dca.PLYield(1.2, 0.5, 0.6, 5e-324, validate_params=(False,) * 6), np.array([1e5])),
+        # and is 0 / 0 at the origin
+        (dca.PLYield(1.2, 0.5, 0.6, 0.0, validate_params=(False,) * 6), np.array([0.0])),
+    )
+
+    for yield_model, t in cases:
+        primary = dca.MH(1000.0, 0.7, 1.5, 0.08)
+        primary.add_secondary(yield_model)
+        secondary = primary.secondary
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            for name in ("gor", "rate", "cum", "D", "beta", "b"):
+                getattr(secondary, name)(t)
 
 
 def test_generalized_first_segment_override_reports_its_own_invalidity() -> None:

@@ -204,21 +204,31 @@ class MultisegmentPLYield(BothAssociatedPhase):
         # shut in while the primary still flows.
         shut_in = y_anchor == 0.0
 
-        t_ratio = t / t_anchor
-        np.putmask(t_ratio, mask=t_ratio <= 0, values=MIN_EPSILON)
-        log_factor = m * np.log(t_ratio)
-        np.putmask(log_factor, mask=log_factor > LOG_EPSILON, values=np.inf)
-        np.putmask(log_factor, mask=log_factor < -LOG_EPSILON, values=-np.inf)
-        np.putmask(log_factor, mask=shut_in, values=0.0)
+        # Every degeneracy below is expected and already handled by an explicit mask, so the
+        # warnings are suppressed HERE rather than left to whichever caller happens to wrap
+        # this in an errstate of its own. Leaving them to callers did not cover them: `_Dfn`
+        # sets `divide` and `invalid` but never `over`, so a denormal anchor time leaked an
+        # overflow through D, beta and b, while gor, rate and cum leaked all three.
+        #   divide  -- t / t_anchor for an anchor time of zero
+        #   over    -- the same division for a denormal one
+        #   invalid -- 0 / 0 there at t == 0, and inf * 0 in the product below
+        # `under` is numpy's own default of "ignore" and is not set here.
+        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+            t_ratio = t / t_anchor
+            np.putmask(t_ratio, mask=t_ratio <= 0, values=MIN_EPSILON)
+            log_factor = m * np.log(t_ratio)
+            np.putmask(log_factor, mask=log_factor > LOG_EPSILON, values=np.inf)
+            np.putmask(log_factor, mask=log_factor < -LOG_EPSILON, values=-np.inf)
+            np.putmask(log_factor, mask=shut_in, values=0.0)
 
-        if self.min is not None or self.max is not None:
-            out = np.where(
-                t == 0.0, 0.0, np.clip(y_anchor * np.exp(log_factor), self.min, self.max)
-            )
-        else:
-            out = np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
+            if self.min is not None or self.max is not None:
+                out = np.where(
+                    t == 0.0, 0.0, np.clip(y_anchor * np.exp(log_factor), self.min, self.max)
+                )
+            else:
+                out = np.where(t == 0.0, 0.0, y_anchor * np.exp(log_factor))
 
-        out = np.where(shut_in, 0.0, out)
+            out = np.where(shut_in, 0.0, out)
         return np.where(before_zero, np.nan, out)
 
     def _mfn(self, t: NDFloat) -> NDFloat:
@@ -277,12 +287,8 @@ class MultisegmentPLYield(BothAssociatedPhase):
         clamped yield, and a segment may simply be given ``m == 0`` -- so this is reachable
         from a flat ``m0`` alone, which is what `PLYield(1.2, 0.0, 0.6, 180.0)` is.
         """
-        # `_mfn` is called INSIDE the errstate, not before it: `_yieldfn` divides by the
-        # anchor time, which is zero for a non-positive anchor reachable with validation
-        # disabled, and that warning belongs to the same expected-degeneracy set as the
-        # quotient below.
+        m = self._mfn(t)
         with np.errstate(divide="ignore", invalid="ignore"):
-            m = self._mfn(t)
             return np.where(m == 0.0, 0.0, -m / t) + self.primary._Dfn(t)
 
     def _Dfn2(self, t: NDFloat) -> NDFloat:
@@ -293,8 +299,8 @@ class MultisegmentPLYield(BothAssociatedPhase):
 
         A zero slope is kept out of the quotient for the reason given in `_Dfn`.
         """
+        m = self._mfn(t)
         with np.errstate(divide="ignore", invalid="ignore"):
-            m = self._mfn(t)
             return np.where(m == 0.0, 0.0, -m / (t * t))
 
     def _betafn(self, t: NDFloat) -> NDFloat:
