@@ -249,6 +249,17 @@ class MultisegmentHyperbolic(PrimaryPhase):
             row: List[float]
                 A five-float row, ready for ``np.array`` alongside any later segments.
         """
+        # A ``qi`` of zero is a well shut in from the start, and stores a decline of zero to
+        # match -- the same treatment `GeneralizedHyperbolic` gives a shut-in *segment*, and
+        # for the same reason: a rate that is identically zero has no decline, and forcing it
+        # here is what lets every derivative accessor answer without a special case. It goes
+        # in this shared builder rather than in one model because a segment-free
+        # `GeneralizedHyperbolic` is bit-for-bit `MH`, so forcing it in one and not the other
+        # would break that equivalence. The declared ``Di`` and ``bi`` are untouched; only
+        # the built row is forced, so a model still round-trips through its own fields.
+        if qi == 0.0:
+            return cls._segment_row(t=0.0, b=0.0, q=0.0, N=0.0, D=0.0)
+
         return cls._segment_row(
             t=0.0, b=bi, q=qi, N=0.0, D=cls._nominal_per_day_from_secant(Di, bi)
         )
@@ -356,6 +367,15 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         # no terminal decline asked for, so there is nothing to cap and nothing to report
         if Dterm_nom < MIN_EPSILON:
+            return segments
+
+        # Nor is there anything to report for a model that never produced. A zero ``qi``
+        # forces its initial row flat, which the check below would otherwise treat as a
+        # caller whose Dterm is being dropped -- but a well shut in from the start has no
+        # tail to cap and nothing was silently lost. Keyed on the model's INITIAL rate, not
+        # the last segment's: a model that produced and then shut in does have a Dterm the
+        # caller meant to apply to the producing tail, and still says so.
+        if segments[0, self.Q_IDX] == 0.0:
             return segments
 
         # A terminal decline caps a *hyperbolic* tail: one whose decline falls with time until
@@ -1919,11 +1939,10 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             # `D` therefore inherits a flat forecast at its own rate, for the rest of time,
             # and an EUR to match -- so it has to state a decline. `b` may still inherit the
             # zero, which restarts exponentially rather than flat.
-            if (
-                index > 0
-                and segment.q
-                and segment.D is None
-                and self.segments[index - 1].q == 0.0
+            # index 0 inherits from the initial conditions rather than from a segment, and
+            # a ``qi`` of zero is a shut-in there too -- with its decline forced the same way
+            if segment.q and segment.D is None and (
+                self.qi == 0.0 if index == 0 else self.segments[index - 1].q == 0.0
             ):
                 raise ValueError(
                     f"segments[{index}] restarts after a shut-in and must state its own D"

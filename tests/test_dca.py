@@ -57,6 +57,15 @@ def is_float_array_like(arr: Any, like: npt.NDArray[np.float64]) -> bool:
 # and was left behind as np.diff's `n` when it was removed. The 6th difference of a *geometric*
 # series stays positive, so `is_monotonic_increasing(get_time())` passed by luck, while a
 # linearly-spaced array gives exactly 0 and failed. None of the three was testing monotonicity.
+# A power-law yield slope. Subnormals are excluded because they are not a forecast parameter
+# a subnormal ever expresses, and because they make an exact answer unrepresentable rather
+# than merely extreme: `b` is `-1 / m` wherever the yield slope is the whole of `D`, so a
+# subnormal `m` overflows a double and the model saturates to -inf. That became reachable
+# when a `qi` of zero started forcing the primary phase's decline to zero, leaving the yield
+# slope as the whole of `D` -- before that the primary's own decline always dominated it.
+YIELD_SLOPE = st.floats(-1.0, 1.0, allow_subnormal=False)
+
+
 def is_monotonic_nonincreasing(arr: npt.NDArray[np.float64]) -> bool:
     return bool(np.all(np.diff(arr) <= 0.0))
 
@@ -714,8 +723,8 @@ def test_terminal_exceeds() -> None:
     bterm=st.floats(1e-3, 0.3, exclude_max=True),
     tterm=st.floats(5.0, 30.0),
     c=st.floats(1e-10, 1e10),
-    m0=st.floats(-1.0, 1.0),
-    m=st.floats(-1.0, 1.0),
+    m0=YIELD_SLOPE,
+    m=YIELD_SLOPE,
     t0=st.floats(1e-10, 365.25),
 )
 # The two assume() calls below reject most draws, so hypothesis trips
@@ -755,8 +764,8 @@ def test_yield(
     bterm=st.floats(1e-3, 0.3, exclude_max=True),
     tterm=st.floats(5.0, 30.0),
     c=st.floats(1e-10, 1e10),
-    m0=st.floats(-1.0, 1.0),
-    m=st.floats(-1.0, 1.0),
+    m0=YIELD_SLOPE,
+    m=YIELD_SLOPE,
     t0=st.floats(1e-10, 365.25),
     _min=st.floats(0, 100.0),
     _max=st.floats(1e4, 5e5),
@@ -1051,8 +1060,8 @@ def test_plyield_closed_form_clamped() -> None:
     bterm=st.floats(1e-3, 0.3, exclude_max=True),
     tterm=st.floats(5.0, 30.0),
     c=st.floats(1e-10, 1e10),
-    m0=st.floats(-1.0, 1.0),
-    m=st.floats(-1.0, 1.0),
+    m0=YIELD_SLOPE,
+    m=YIELD_SLOPE,
     t0=st.floats(1e-10, 365.25),
 )
 # The two assume() calls below reject roughly two draws in three -- 202 invalid against 99
@@ -1357,10 +1366,10 @@ def test_generalized_anchor_chain_saturates() -> None:
 
 @given(
     c=st.floats(1e-10, 1e10),
-    m0=st.floats(-1.0, 1.0),
-    m1=st.floats(-1.0, 1.0),
-    m2=st.floats(-1.0, 1.0),
-    m3=st.floats(-1.0, 1.0),
+    m0=YIELD_SLOPE,
+    m1=YIELD_SLOPE,
+    m2=YIELD_SLOPE,
+    m3=YIELD_SLOPE,
     t1=st.floats(1.0, 100.0),
     dt2=st.floats(1.0, 1000.0),
     dt3=st.floats(1.0, 5000.0),
@@ -1397,9 +1406,9 @@ def test_generalized_model(
 
 @given(
     c=st.floats(1e-10, 1e10),
-    m0=st.floats(-1.0, 1.0),
-    m1=st.floats(-1.0, 1.0),
-    m2=st.floats(-1.0, 1.0),
+    m0=YIELD_SLOPE,
+    m1=YIELD_SLOPE,
+    m2=YIELD_SLOPE,
     t1=st.floats(1.0, 100.0),
     dt2=st.floats(1.0, 1000.0),
     qi=st.floats(0.0, 1e6),
@@ -1762,6 +1771,26 @@ def test_plyield_c_stays_positive() -> None:
     the generalized model, which can restart a chain, accepts zero."""
     with pytest.raises(ValueError, match=r"c <= 0\.0"):
         dca.PLYield(0.0, 0.0, 0.6, 180.0)
+
+
+def test_yield_b_survives_a_denormal_slope() -> None:
+    """``b`` is ``(D2 - primary D2) / D**2``. Squaring a denormal ``D`` loses it: the square
+    goes subnormal and then to zero, so the quotient is first inaccurate and then infinite,
+    where the true value is perfectly representable. Dividing by ``D`` twice reaches it --
+    for ``m = 7.28e-158`` at ``t = 1e4`` the exact answer is ``-1 / m``, i.e. -1.373e157,
+    which ``x / D / D`` returns and ``x / (D * D)`` misses by 2.4% before going infinite.
+
+    Found by hypothesis once a ``qi`` of zero forced the primary phase's decline to zero,
+    which is what leaves the yield's own tiny slope as the whole of ``D``."""
+    mh = dca.MH(0.0, 0.8, 1.5)
+    mh.add_secondary(dca.PLYield(1.0, 0.0, 7.283535870312702e-158, 1.0))
+
+    assert np.all(np.isfinite(mh.secondary.b(dca.get_time())))
+
+    # the yield term is the whole of D, so b is -1 / m independent of t
+    assert mh.secondary.b(np.array([1e4]))[0] == pytest.approx(
+        -1.0 / 7.283535870312702e-158, rel=1e-12
+    )
 
 
 def test_zero_slope_contributes_no_decline_at_t_zero() -> None:
@@ -2722,7 +2751,7 @@ def test_a_saturated_decline_is_rejected_rather_than_producing_nan() -> None:
     # A row that no t can reach is exempt: its parameters never enter a forecast. THM produces
     # one -- a denormal bf overflows its terminal time to inf, and the chain fill then evaluates
     # that row's decline as 1 + D*0*inf, i.e. nan. The model works and must still construct.
-    thm = dca.THM(0.0, 0.5, 2.0, 1.1125369292536007e-308, 0.0, 0.125, 0.0)
+    thm = dca.THM(1000.0, 0.5, 2.0, 1.1125369292536007e-308, 0.0, 0.125, 0.0)
     assert thm.segment_params[-1, thm.T_IDX] == np.inf
     assert np.isnan(thm.segment_params[-1, thm.D_IDX])
     assert np.all(np.isfinite(thm.rate(dca.get_time())))
@@ -3250,6 +3279,53 @@ def test_generalized_hyperbolic_qi_zero_comes_online_at_a_segment() -> None:
     # nothing is recovered before it comes online
     assert np.array_equal(gh.cum(t)[:3], np.zeros(3))
     assert gh.cum(t)[4] > 0.0
+
+
+def test_qi_zero_reports_no_decline() -> None:
+    """A ``qi`` of zero is a well shut in from the start, and it now stores a decline of zero
+    to match -- the same treatment a shut-in *segment* gets. It reported the parametric
+    ``Di`` before, which is a live decline for a rate that is identically zero.
+
+    This is the whole hyperbolic family rather than one model: ``GeneralizedHyperbolic`` with
+    no segments is bit-for-bit ``MH``, so forcing it in one and not the other would break
+    that equivalence."""
+    t = np.array([1.0, 365.0, 3650.0])
+    zeros = np.zeros(3)
+
+    for model in (
+        dca.Hyperbolic(0.0, 0.8, 1.5),
+        dca.MH(0.0, 0.8, 1.5),
+        dca.THM(0.0, 0.8, 2.0, 0.8, 30.0),
+        dca.IncliningHyperbolic(0.0, -0.5, -0.5),
+        dca.GeneralizedHyperbolic(0.0, 0.8, 1.5, ()),
+    ):
+        assert np.array_equal(model.rate(t), zeros), model
+        assert np.array_equal(model.D(t), zeros), model
+        assert np.array_equal(model.b(t), zeros), model
+        assert np.array_equal(model.beta(t), zeros), model
+        assert model.segment_params[0, model.D_IDX] == 0.0, model
+        assert model.segment_params[0, model.B_IDX] == 0.0, model
+
+    # the declared parameters are untouched -- only the built segment row is forced, so a
+    # model still round-trips through its own fields
+    assert dca.MH(0.0, 0.8, 1.5).Di == 0.8
+    assert dca.MH(0.0, 0.8, 1.5).bi == 1.5
+
+    # and a non-zero qi keeps its real decline, which is what makes the above a change
+    assert dca.MH(1000.0, 0.8, 1.5).D(t)[0] > 0.0
+
+
+def test_qi_zero_restart_needs_a_decline() -> None:
+    """Zero is absorbing from the initial conditions exactly as it is from a shut-in segment,
+    so a segment that brings the well online while inheriting ``D`` inherits the forced zero
+    -- a flat forecast at its own rate for the rest of time. It must state a decline."""
+    with pytest.raises(ValueError, match="segments\\[0\\] restarts after a shut-in"):
+        dca.GeneralizedHyperbolic.from_segments(0.0, 0.8, 1.5, [(800.0, 500.0, None, None)])
+
+    online = dca.GeneralizedHyperbolic.from_segments(0.0, 0.8, 1.5, [(800.0, 500.0, 0.8, 1.5)])
+    assert online.rate(np.array([799.0, 800.0, 1200.0]))[0] == 0.0
+    assert online.rate(np.array([800.0]))[0] == 500.0
+    assert online.rate(np.array([1200.0]))[0] < 500.0
 
 
 def test_generalized_hyperbolic_consecutive_shut_ins() -> None:

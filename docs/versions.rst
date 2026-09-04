@@ -39,6 +39,35 @@ integrate numerically.
     * A shut-in contributes no slope, so ``D`` reduces to the primary phase's decline and
       ``beta`` to ``t`` times it. Without this the stored segment slope leaked in as
       ``-m / t``, reporting a decline for a phase that has no rate at all.
+    * A ``qi`` of zero stores a decline of zero to match. It was already in bounds --- a
+      well shut in from the start --- but reported the parametric ``Di``, which is a live
+      decline for a rate that is identically zero: ``MH(0, 0.8, 1.5)`` gave
+      ``D = 0.0181`` at one day. It now reports zero, as a shut-in segment does, and for the
+      same reason: forcing it is what lets every derivative accessor answer without a
+      special case. This is the whole hyperbolic family rather than one model, because a
+      segment-free ``GeneralizedHyperbolic`` is bit-for-bit ``MH`` and forcing it in one but
+      not the other would break that equivalence.
+
+        * Only the built segment row is forced. The declared ``Di`` and ``bi`` are untouched,
+          so a model still round-trips through its own fields.
+        * ``D == 0`` requires ``b == 0``, the model's own invariant, so ``b`` is forced with
+          it. Two structural consequences follow, both for zero-rate models only, and neither
+          changes a rate or a volume --- those were zero already. A ``Dterm`` beside a zero
+          ``qi`` appends no terminal row, and does so *silently*: the
+          ``Dterm ignored: the last segment is flat`` warning exists to tell a caller their
+          cap is being dropped, and a well that never produced has no tail to cap. It is
+          keyed on the model's initial rate, so a model that produced and then shut in still
+          warns. And ``THM`` builds its chain from the forced flat row, so a zero-``qi``
+          ``THM`` has a different segment count from a producing one.
+        * ``GeneralizedHyperbolic`` extends its restart rule to the initial conditions: a
+          segment stating a positive rate while inheriting ``D`` from a zero ``qi`` raises
+          ``segments[0] restarts after a shut-in and must state its own D``, exactly as it
+          does after a shut-in segment.
+        * ``PLE``, ``SE`` and ``Duong`` are unchanged. Their ``D`` is a closed form that never
+          references ``qi``, so forcing it would mean the per-accessor special-casing this
+          avoids everywhere else --- and they carry no segment concept to be inconsistent
+          with.
+
     * ``GeneralizedHyperbolic`` takes shut-in segments too, for symmetry: a
       ``HyperbolicSegment`` ``q`` of ``0`` is a shut-in, the bound relaxing from ``> 0`` to
       ``>= 0``. The rate is zero from that breakpoint until a later segment states one, and
@@ -100,6 +129,15 @@ integrate numerically.
           always at or below the floor there;
         * a flat ``m0``, which is what ``PLYield(1.2, 0.0, 0.6, 180.0)`` --- the
           parameterization in this project's own README --- has always been.
+
+    * The associated phase's ``b`` divides by ``D`` twice rather than by ``D * D`` once. The
+      square of a small ``D`` goes subnormal and then to zero while the quotient itself stays
+      representable, so squaring lost accuracy and then the value outright. For a yield slope
+      of ``7.28e-158`` against a primary phase contributing no decline the exact ``b`` is
+      ``-1 / m``: squaring returned ``-1.34e157`` against the true ``-1.373e157``, and
+      ``-inf`` once the square underflowed completely. Two divisions never form the
+      intermediate. Found by hypothesis, reachable once a zero ``qi`` forces the primary
+      phase's decline to zero and leaves the yield's own slope as the whole of ``D``.
 
     * The associated-phase yield function suppresses its own expected degeneracies rather
       than relying on the ``errstate`` of whichever caller happens to wrap it, which did not

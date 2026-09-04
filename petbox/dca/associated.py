@@ -316,10 +316,19 @@ class MultisegmentPLYield(BothAssociatedPhase):
         `np.where` evaluates both branches, so the quotient is computed even where
         ``D == 0`` and then discarded; the errstate suppresses that unavoidable
         divide-by-zero rather than leaving it to surface as a spurious warning.
+
+        Divided by ``D`` twice rather than by ``D * D`` once. The square of a small ``D``
+        goes subnormal and then to zero while the quotient itself stays representable, so
+        squaring loses accuracy and then the value entirely: for a yield slope of
+        ``7.28e-158`` against a primary phase contributing no decline, the exact ``b`` is
+        ``-1 / m``, and squaring returns -1.34e157 against the true -1.373e157 before going
+        infinite outright. Two divisions never form the intermediate.
         """
         D = self._Dfn(t)
         with np.errstate(divide="ignore", invalid="ignore"):
-            return np.where(D == 0.0, 0.0, (self._Dfn2(t) - self.primary._Dfn2(t)) / (D * D))
+            return np.where(
+                D == 0.0, 0.0, (self._Dfn2(t) - self.primary._Dfn2(t)) / D / D
+            )
 
 
 @dataclass(frozen=True)
