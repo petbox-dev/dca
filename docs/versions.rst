@@ -130,6 +130,28 @@ integrate numerically.
         * a flat ``m0``, which is what ``PLYield(1.2, 0.0, 0.6, 180.0)`` --- the
           parameterization in this project's own README --- has always been.
 
+    * **Breaking numerical change:** the integration grid is seeded on both sides of every
+      time at which the rate may jump. A step fell between two log-spaced grid points and
+      the trapezoid rule integrated a *ramp* across the gap, and the excess was carried by
+      every later cumulative --- an EUR error rather than a local wobble. Against quadrature
+      split at each breakpoint, with ~4e-8 the baseline away from any step: a ``c`` override
+      on the yield ran 2.8e-4 and now runs 8.1e-08; a primary phase restarting from a shut-in
+      ran 4.3e-3 and now runs 2.4e-07. This affects any numerically integrated cumulative
+      whose rate steps, so an associated phase attached to a segmented model --- and it
+      predates shut-ins by as long as ``c`` and ``q`` overrides have existed.
+
+        * Models report their own candidate jumps through a new ``_rate_breakpoints`` hook,
+          empty by default. An associated phase reports the primary phase's as well, since
+          it multiplies that rate and inherits its steps.
+        * A segment boundary is only a genuine step where the segment overrides its level.
+          Both kinds are reported: a continuous boundary costs two grid points and refines
+          the integral slightly, where missing a real step is permanent.
+        * Not fixed, and separate: a segment that restarts steeply late in a forecast is
+          resolved by a grid spaced logarithmically from zero, which is coarse there. A
+          restart at 800 days holds 4.6e-5 relative at the default ``n_grid`` against the
+          ~1e-6 a decline from ``t = 0`` gets. That is ordinary second-order error --- 4.6e-5,
+          3.0e-6, 1.9e-7 as ``n_grid`` quadruples --- and ``n_grid`` is the existing remedy.
+
     * The associated phase's ``b`` divides by ``D`` twice rather than by ``D * D`` once. The
       square of a small ``D`` goes subnormal and then to zero while the quotient itself stays
       representable, so squaring lost accuracy and then the value outright. For a yield slope

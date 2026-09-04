@@ -594,6 +594,23 @@ class DeclineCurve(ABC):
         """
         return np.atleast_1d(x).astype(np.float64)
 
+    def _rate_breakpoints(self) -> NDFloat:
+        """
+        Times at which this model's rate may jump, for `_integrate_with` to resolve.
+
+        Empty by default, which is correct for every model whose rate is one smooth
+        expression -- PLE, SE, Duong. A multi-segment model overrides it with its segment
+        start times, and an associated phase adds the primary phase's, since it multiplies
+        that rate and inherits its discontinuities.
+
+        These are *candidate* jumps rather than confirmed ones: a segment boundary is only a
+        genuine step where the segment overrides its level, and is otherwise continuous by
+        construction. Reporting the continuous ones costs two grid points each and refines
+        the integral slightly, where missing a real one is a permanent error in every later
+        cumulative -- so the cheap direction is to report them all.
+        """
+        return np.array([], dtype=np.float64)
+
     @staticmethod
     def _validate_start_time(t0: float) -> NDFloat:
         """
@@ -679,7 +696,24 @@ class DeclineCurve(ABC):
         # time would put it outside the integration range
         t_max = float(forward.max()) if forward.max() > 0 else 1.0
         log_grid = np.logspace(np.log10(eps), np.log10(t_max), n_grid)
-        grid = np.unique(np.concatenate([[0.0], log_grid, forward]))
+
+        # Straddle every point where the rate may jump. The log-spaced grid lands wherever it
+        # lands, so a step between two of its points was integrated as a RAMP across the gap
+        # -- and the excess is carried into every later cumulative, so it reads as an EUR
+        # difference rather than a local wobble. Measured against piecewise quadrature: 2.8e-4
+        # relative at a yield `c` override and 4.3e-3 at a primary phase restarting from a
+        # shut-in, against ~4e-8 away from any step.
+        #
+        # Both sides are needed. `nextafter` towards zero is the last time still governed by
+        # the previous segment, and the breakpoint itself is the first governed by the next
+        # one -- `_lookup_segment` and `_qcheck` both put `t == t_start` in the later segment.
+        # With both present the ramp spans one representable step instead of a grid interval,
+        # and the trapezoid over it is the jump times a width of ~1e-13 days.
+        breakpoints = self._rate_breakpoints()
+        breakpoints = breakpoints[np.isfinite(breakpoints) & (breakpoints > 0.0)]
+        straddle = np.concatenate([np.nextafter(breakpoints, 0.0), breakpoints])
+
+        grid = np.unique(np.concatenate([[0.0], log_grid, forward, straddle]))
 
         # evaluate fn on the full grid in one vectorized call
         with np.errstate(over="ignore", under="ignore", invalid="ignore"):

@@ -744,6 +744,14 @@ class MultisegmentHyperbolic(PrimaryPhase):
 
         return x
 
+    def _rate_breakpoints(self) -> NDFloat:
+        """
+        The start time of every segment. A segment that overrides its rate steps the forecast
+        there, and the terminal exponential row is a kink; the rest are continuous by
+        construction -- see the base method for why all of them are reported anyway.
+        """
+        return np.asarray(self.segment_params[:, self.T_IDX], dtype=np.float64)
+
     def _qfn(self, t: NDFloat) -> NDFloat:
         return self._vectorize(self._qcheck, t)
 

@@ -255,6 +255,15 @@ class MultisegmentPLYield(BothAssociatedPhase):
             m[y >= self.max] = 0.0
         return np.where(t < 0.0, np.nan, m)
 
+    def _rate_breakpoints(self) -> NDFloat:
+        """
+        This model's own segment starts, plus the primary phase's. The associated rate is the
+        yield times the primary rate, so it jumps wherever either factor does -- a ``c``
+        override on this side, a ``q`` override or a shut-in on that one.
+        """
+        own = np.asarray(self.segment_params[:, self.T_IDX], dtype=np.float64)
+        return np.concatenate([own, self.primary._rate_breakpoints()])
+
     def _qfn(self, t: NDFloat) -> NDFloat:
         """Associated-phase rate: the yield ratio times the primary phase rate."""
         return self._yieldfn(t) * self.primary._qfn(t)

@@ -154,6 +154,43 @@ an analytical rate function), which helps the trapezoidal rule.
    configurations. Right: relative error vs. time for each case.
 
 
+Rate Discontinuities
+--------------------
+
+The grid is seeded on both sides of every time at which the rate may jump, via
+each model's ``_rate_breakpoints``: a segment start on the model itself, and for
+an associated phase the primary phase's as well, since it multiplies that rate
+and inherits its steps. The two points are the breakpoint and its predecessor
+under :func:`numpy.nextafter`, which are respectively the first time governed by
+the new segment and the last governed by the old one.
+
+Without them a step fell between two log-spaced points and the trapezoid rule
+integrated a *ramp* across the gap. The excess is then carried by every later
+cumulative, so it reads as an EUR difference rather than a local wobble.
+Measured against quadrature split at each breakpoint, and with ~4e-8 the
+baseline away from any step:
+
++------------------------------------------------+-----------------+-----------------+
+| Step                                           | Unseeded        | Seeded          |
++================================================+=================+=================+
+| ``c`` override on the yield, at 1095 days      |      2.8e-04    |      8.1e-08    |
++------------------------------------------------+-----------------+-----------------+
+| primary phase restarting from a shut-in        |      4.3e-03    |      2.4e-07    |
++------------------------------------------------+-----------------+-----------------+
+
+A segment boundary is only a genuine step where the segment overrides its level,
+and is otherwise continuous by construction. Both kinds are reported: a
+continuous boundary costs two grid points and refines the integral slightly,
+where missing a real step is permanent.
+
+One accuracy note that is *not* about the discontinuity. A segment that restarts
+steeply late in a forecast is resolved by a grid spaced logarithmically from
+zero, which is coarse there --- a restart at 800 days holds 4.6e-5 relative at
+the default ``n_grid`` rather than the ~1e-6 a decline from ``t = 0`` gets. It is
+ordinary second-order error, confirmed by convergence: 4.6e-5, 3.0e-6, 1.9e-7 as
+``n_grid`` quadruples from 10,000. Raise ``n_grid`` where such a segment matters.
+
+
 Interval Quantities
 -------------------
 

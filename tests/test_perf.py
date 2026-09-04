@@ -165,6 +165,51 @@ def test_integrate_with_vs_analytical() -> None:
     assert np.all(mvol >= 0.0)
 
 
+def test_cum_across_a_step_matches_piecewise_quadrature() -> None:
+    """The integration grid is log-spaced and carried no point at a segment boundary, so the
+    trapezoid rule integrated a RAMP across a step in the rate and carried the excess into
+    every later cumulative -- an EUR error, not a local blip.
+
+    Two things step the associated-phase rate, and the fix has to cover both: a ``c``
+    override on the yield model, and a ``q`` override -- a shut-in included -- on the primary
+    phase whose rate the yield multiplies. Measured before the fix, against a baseline of
+    ~4e-8 away from any step: 2.8e-4 relative at a yield step and 4.3e-3 at a primary
+    restart, the primary being worse because its jump is larger."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(
+        dca.GeneralizedPLYield(
+            1.2,
+            0.0,
+            (dca.PLYieldSegment(90.0, m=0.6), dca.PLYieldSegment(1095.0, c=25.0, m=0.6)),
+        )
+    )
+    secondary = mh.secondary
+    t = np.array([1000.0, 1095.0, 1100.0, 2000.0, 3650.0])
+    reference = _quad_cum_piecewise(
+        lambda s: float(secondary._qfn(np.array([s]))[0]), t, [90.0, 1095.0]
+    )
+    assert np.allclose(secondary.cum(t), reference, rtol=1e-5)
+
+    # a step in the PRIMARY rate: shut in at 365, back on production at 800
+    gh = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 500.0, 0.8, 1.5)]
+    )
+    gh.add_secondary(dca.PLYield(1.2, 0.0, 0.6, 180.0))
+    attached = gh.secondary
+    t = np.array([700.0, 800.0, 1200.0, 3650.0])
+    reference = _quad_cum_piecewise(
+        lambda s: float(attached._qfn(np.array([s]))[0]), t, [180.0, 365.0, 800.0]
+    )
+    # A looser tolerance here, and not because the step is any less resolved -- at 800 this
+    # is 2.4e-7. What is left at the later times is the grid's ORDINARY error, confirmed
+    # second-order: 4.65e-5 at the default n_grid, 3.02e-6 at 4x, 1.90e-7 at 16x, i.e.
+    # dividing by ~16 each time the count quadruples. A restart at 800 days puts a fresh
+    # steep decline where a grid spaced logarithmically from zero is coarse, which is a
+    # property of the grid rather than of the discontinuity.
+    assert np.allclose(attached.cum(t), reference, rtol=1e-4)
+    assert np.allclose(attached.cum(t, n_grid=160_000), reference, rtol=1e-6)
+
+
 def test_monthly_vol_matches_integral() -> None:
     """monthly_vol differenced two SEPARATE integrations. `_integrate_with` builds its
     log-spaced grid from the largest time it is given, so ``N(t)`` and ``N(t - 1 month)``
