@@ -1578,9 +1578,12 @@ def test_generalized_shut_in_restarts_only_at_an_explicit_c() -> None:
     assert np.isclose(y.gor(np.array([4380.0]))[0], 2.5 * 2.0**0.6, rtol=1e-12)
 
 
-def test_generalized_shut_in_is_exempt_from_min() -> None:
-    """min floors a declining yield, but must not resurrect a shut-in -- the associated
-    phase can be shut in while the primary still flows."""
+def test_generalized_shut_in_is_exempt_from_min_and_max() -> None:
+    """``min`` floors a declining yield, but must not resurrect a shut-in -- the associated
+    phase can be shut in while the primary still flows. ``min`` is the half of the pair that
+    can do the resurrecting, since a floor raises a zero and a ceiling cannot; the ``max``
+    case below asserts the weaker thing it can, that a ceiling still caps the producing
+    branch while the shut-in beside it stays zero."""
     mh, _ = _shut_in_model(min=1.5)
     y = mh.secondary
 
@@ -1588,6 +1591,91 @@ def test_generalized_shut_in_is_exempt_from_min() -> None:
     assert y.gor(np.array([90.0]))[0] == 1.5
 
     assert np.array_equal(y.gor(np.array([1095.0, 1500.0, 2190.0])), np.zeros(3))
+
+    capped = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    capped.add_secondary(
+        dca.GeneralizedPLYield(
+            1.2,
+            0.6,
+            (dca.PLYieldSegment(90.0, m=0.6), dca.PLYieldSegment(1095.0, c=0.0)),
+            None,
+            2.0,
+        )
+    )
+    assert capped.secondary.gor(np.array([365.0]))[0] == 2.0
+    assert np.array_equal(capped.secondary.gor(np.array([1095.0, 3650.0])), np.zeros(2))
+
+
+def test_generalized_shut_in_survives_a_shift() -> None:
+    """`shift` re-anchors every breakpoint, a shut-in included, so the shut-in moves with the
+    rest of the model rather than staying where it was."""
+    model = dca.GeneralizedPLYield(
+        1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.6), dca.PLYieldSegment(1095.0, c=0.0))
+    )
+    shifted = model.shift(30.0)
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(shifted)
+    y = mh.secondary
+
+    # read off the shifted model itself: `mh.secondary` is typed as the phase interface,
+    # which has the ratio accessors but not the segment list
+    assert [segment.t for segment in shifted.segments] == [120.0, 1125.0]
+
+    # 1095 was the shut-in before the shift and is still producing after it
+    assert y.gor(np.array([1095.0]))[0] > 0.0
+    assert np.array_equal(y.gor(np.array([1125.0, 2000.0])), np.zeros(2))
+
+
+def test_generalized_shut_in_reaches_the_water_accessors() -> None:
+    """A shut-in is a property of the yield function, so it reaches whichever pair of ratio
+    accessors the model is attached as -- `wor`/`wgr` here rather than `gor`/`cgr`."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_water(
+        dca.GeneralizedPLYield(
+            2.0, 0.0, (dca.PLYieldSegment(90.0, m=0.1), dca.PLYieldSegment(1095.0, c=0.0))
+        )
+    )
+    water = mh.water
+
+    assert water.wor(np.array([365.0]))[0] > 0.0
+    for accessor in (water.wor, water.wgr):
+        assert np.array_equal(accessor(np.array([1095.0, 2000.0])), np.zeros(2))
+
+
+def test_generalized_shut_in_can_cycle() -> None:
+    """Shut in, come back, shut in again. Each explicit ``c`` restarts the chain, so the
+    pattern is not limited to one shut-in per forecast.
+
+    The cumulative is exactly flat *strictly inside* each shut-in. It is not asserted across
+    the restart breakpoint: the associated phase integrates numerically, and the trapezoid
+    rule smears any step discontinuity over the interval containing it -- which a positive
+    ``c`` override does too, and has since those overrides existed."""
+    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh.add_secondary(
+        dca.GeneralizedPLYield(
+            1.2,
+            0.0,
+            (
+                dca.PLYieldSegment(90.0, m=0.6),
+                dca.PLYieldSegment(365.0, c=0.0),
+                dca.PLYieldSegment(1095.0, c=2.5, m=0.6),
+                dca.PLYieldSegment(2000.0, c=0.0),
+            ),
+        )
+    )
+    y = mh.secondary
+
+    assert y.gor(np.array([100.0]))[0] > 0.0
+    assert np.array_equal(y.gor(np.array([365.0, 800.0])), np.zeros(2))
+    assert y.gor(np.array([1095.0]))[0] == 2.5
+    assert y.gor(np.array([1500.0]))[0] > 2.5
+    assert np.array_equal(y.gor(np.array([2000.0, 3650.0])), np.zeros(2))
+
+    # strictly inside the first shut-in, which ends at the 1095 restart
+    inside = np.array([365.0, 500.0, 800.0, 1094.0])
+    cum = y.cum(inside)
+    assert np.array_equal(cum, np.full(4, cum[0]))
+    assert cum[0] > 0.0
 
 
 def test_generalized_shut_in_contributes_no_volume() -> None:
@@ -3146,6 +3234,99 @@ def test_generalized_hyperbolic_restart_after_a_shut_in_needs_a_decline() -> Non
         dca.GeneralizedHyperbolic.from_segments(
             1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 0.5)]
         )
+
+
+def test_generalized_hyperbolic_qi_zero_comes_online_at_a_segment() -> None:
+    """The model's own ``qi`` of zero was in bounds before shut-in segments existed, and a
+    later segment stating a rate brings the well online from it. That is the primary-phase
+    counterpart of a zero model ``c`` on the yield side, and it is unchanged here."""
+    gh = dca.GeneralizedHyperbolic.from_segments(0.0, 0.8, 1.5, [(800.0, 500.0, 0.8, 1.5)])
+    t = np.array([1.0, 365.0, 799.0, 800.0, 1200.0])
+
+    assert np.array_equal(gh.rate(t)[:3], np.zeros(3))
+    assert gh.rate(t)[3] == 500.0
+    assert gh.rate(t)[4] > 0.0
+
+    # nothing is recovered before it comes online
+    assert np.array_equal(gh.cum(t)[:3], np.zeros(3))
+    assert gh.cum(t)[4] > 0.0
+
+
+def test_generalized_hyperbolic_consecutive_shut_ins() -> None:
+    """Two shut-ins in a row are one shut-in as far as the forecast is concerned. The second
+    inherits nothing that can bring the rate back, since the first forced its own zeros."""
+    gh = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (500.0, 0.0, None, None)]
+    )
+    t = np.array([100.0, 365.0, 450.0, 500.0, 3650.0])
+
+    assert gh.rate(t)[0] > 0.0
+    assert np.array_equal(gh.rate(t)[1:], np.zeros(4))
+
+    cum = gh.cum(t)
+    assert np.array_equal(cum[1:], np.full(4, cum[1]))
+
+
+def test_generalized_hyperbolic_trailing_shut_in_bounds_the_eur() -> None:
+    """A hyperbolic with ``bi >= 1`` has no EUR -- the Arps cumulative diverges. A trailing
+    shut-in bounds it, because the rate is zero from that point rather than merely small."""
+    diverging = dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, ())
+    shut_in = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0, None, None)]
+    )
+
+    # the unbounded one keeps accruing; the shut-in one is done at its breakpoint
+    far = np.array([1e6, 1e9])
+    assert diverging.cum(far)[1] > diverging.cum(far)[0]
+    assert np.array_equal(shut_in.cum(far), np.full(2, shut_in.cum(np.array([365.0]))[0]))
+
+
+def test_generalized_hyperbolic_shut_in_holds_no_volume() -> None:
+    """Every volume accessor reports zero for an interval inside a shut-in, and the
+    cumulative is exactly flat across it -- the segment contributes no volume to the chain,
+    so this is analytic rather than an integration that happens to round to zero."""
+    gh = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 500.0, 0.8, 1.5)]
+    )
+    # every interval below lies strictly inside [365, 800)
+    inside = np.array([400.0, 500.0, 600.0, 700.0])
+
+    assert np.array_equal(gh.interval_vol(inside), np.zeros(4))
+    assert np.array_equal(gh.monthly_vol(inside), np.zeros(4))
+    assert np.array_equal(gh.monthly_vol_equiv(inside, 380.0), np.zeros(4))
+
+    cum = gh.cum(inside)
+    assert np.array_equal(cum, np.full(4, cum[0]))
+    assert cum[0] > 0.0
+
+
+def test_generalized_hyperbolic_time_at_rate_across_a_shut_in() -> None:
+    """Inverting rate to time still works. A rate of zero is first reached where the shut-in
+    begins, and a rate the forecast never returns to is ``nan`` rather than a time inside a
+    period the well is not flowing."""
+    gh = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0, None, None)]
+    )
+
+    # the breakpoint is a stored time, so this is exact
+    assert gh.time_at_rate(np.array([0.0]))[0] == 365.0
+
+    # the rate at the shut-in is well above 100, and the well never produces again
+    assert gh.rate(np.array([364.0]))[0] > 100.0
+    assert np.isnan(gh.time_at_rate(np.array([100.0]))[0])
+
+
+def test_generalized_hyperbolic_trailing_shut_in_ignores_Dterm() -> None:
+    """A terminal decline caps a hyperbolic tail. A trailing shut-in is flat, so its decline
+    never reaches ``Dterm`` -- which is the existing "last segment is flat" path, reached
+    through a shut-in rather than through a flat producing segment."""
+    with pytest.warns(RuntimeWarning, match="Dterm ignored: the last segment is flat"):
+        gh = dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 1.5, [(365.0, 0.0, None, None)], Dterm=0.08
+        )
+
+    # the initial conditions plus the one segment, with no terminal row appended
+    assert gh.segment_params.shape[0] == 2
 
 
 def test_generalized_hyperbolic_rejects_a_negative_rate() -> None:
