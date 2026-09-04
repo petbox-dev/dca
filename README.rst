@@ -211,6 +211,24 @@ prescribes the decline, and ``(t, q, D, b)`` sets both.
     >>> gh.b([1.0, 30.0, 365.0, 730.0, 3650.0])
     array([2.000, 1.200, 0.800, 0.500, 0.500])
 
+A rate of **zero** shuts the well in. The rate is zero from that breakpoint until a later
+segment states one, and the cumulative is flat across it — production already recovered
+cannot change when the rate does. ``D`` and ``b`` are forced to zero on a shut-in segment,
+which makes it an exponential of zero decline, so ``D``, ``beta`` and ``b`` all answer across
+it without a special case. A restart must state its own decline, since inheriting the
+shut-in's zero would give a flat rate for the rest of the forecast.
+
+.. code-block:: python
+
+    >>> gh = dca.GeneralizedHyperbolic.from_segments(
+    ...     1000.0, 0.8, 1.5,
+    ...     [(365.0, 0.0, None, None),     # shut in
+    ...      (800.0, 500.0, 0.8, 1.5)])    # back on production
+    >>> gh.rate([100.0, 365.0, 799.0, 800.0, 1200.0])
+    array([411.578, 0.000, 0.000, 500.000, 94.612])
+    >>> gh.cum([100.0, 365.0, 799.0, 800.0, 1200.0])
+    array([60139.393, 132992.845, 132992.845, 132992.845, 202893.493])
+
 The exponent steps at each breakpoint. Rate is continuous at 30 and 365 days, but the third
 segment resets it to 250 — a restimulation, say — while inheriting the decline. Cumulative
 volume is continuous at every breakpoint, including across that reset: production already

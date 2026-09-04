@@ -9,10 +9,12 @@ Version History
 2.3.0
 -----
 
-Adds shut-in periods to ``GeneralizedPLYield``, and fixes a grid misalignment that made every
-interval volume the difference of two independent numerical integrations. The shut-in work
-only widens the accepted parameter domain, so it leaves every 2.2.0 forecast unchanged; the
-interval-volume fix is a breaking numerical change for the models that integrate numerically.
+Adds shut-in periods to both generalized models --- ``GeneralizedPLYield`` for an associated
+phase and ``GeneralizedHyperbolic`` for a primary one --- and fixes a grid misalignment that
+made every interval volume the difference of two independent numerical integrations. The
+shut-in work only widens the accepted parameter domain, so it leaves every 2.2.0 forecast
+unchanged; the interval-volume fix is a breaking numerical change for the models that
+integrate numerically.
 
 * New behaviour
     * A ``PLYieldSegment`` ``c`` of ``0`` is a **shut-in**: the yield, and so the associated
@@ -37,6 +39,28 @@ interval-volume fix is a breaking numerical change for the models that integrate
     * A shut-in contributes no slope, so ``D`` reduces to the primary phase's decline and
       ``beta`` to ``t`` times it. Without this the stored segment slope leaked in as
       ``-m / t``, reporting a decline for a phase that has no rate at all.
+    * ``GeneralizedHyperbolic`` takes shut-in segments too, for symmetry: a
+      ``HyperbolicSegment`` ``q`` of ``0`` is a shut-in, the bound relaxing from ``> 0`` to
+      ``>= 0``. The rate is zero from that breakpoint until a later segment states one, and
+      the cumulative is flat across it --- production already recovered cannot change when
+      the rate does, which is why cumulative volume was never overridable.
+
+        * ``D`` and ``b`` are forced to zero on a shut-in segment, making it an exponential
+          of zero decline. That is what lets ``D``, ``beta``, ``b``, the chain fill and
+          ``time_at_rate`` answer across it with no special case of their own --- the
+          alternative, a shut-in flag tested in each of them, is the same behaviour spelled
+          out five times over. A *stated* non-zero ``D`` or ``b`` is rejected rather than
+          discarded: ``segments[i] has q == 0, which requires D == 0 and b == 0``.
+        * Zero is absorbing for the decline as well as the rate, since the resolution walks
+          inherit the forced zeros like any other value. A segment that inherits the rate
+          stays shut in; one that states a positive rate while inheriting ``D`` would inherit
+          a flat forecast at that rate for the rest of time, and an EUR to match, so it must
+          state its own decline: ``segments[i] restarts after a shut-in and must state its
+          own D``. ``b`` may still inherit the zero, which restarts exponentially.
+        * ``Dterm`` needs no new handling. A trailing shut-in is flat, so the existing
+          ``Dterm ignored: the last segment is flat`` warning already covers it.
+        * The model's own ``qi`` of zero was already in bounds, and a later segment stating a
+          rate already brought the well online from it. That case is unchanged.
 
 * Bug Fix
     * **Breaking numerical change:** ``monthly_vol`` and ``interval_vol`` differenced two

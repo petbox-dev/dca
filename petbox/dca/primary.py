@@ -1659,6 +1659,12 @@ class HyperbolicSegment:
     omitted ``q`` leaves the rate continuous. Supplying ``q`` steps the rate to that value
     at ``t`` -- a restimulation, say -- and supplying ``D`` prescribes the decline there.
 
+    A ``q`` of zero is a **shut-in**. ``D`` and ``b`` are then forced to zero, making the
+    segment an exponential of zero decline, so every accessor answers across it without a
+    special case; a non-zero ``D`` or ``b`` beside it is rejected rather than discarded.
+    Zero is absorbing, as it is for the decline: a later segment that inherits the rate
+    stays shut in, and one that states a rate must state its own ``D`` too.
+
     Cumulative volume is never overridable. It is always inherited, because production
     already recovered cannot change when the rate does.
 
@@ -1675,13 +1681,16 @@ class HyperbolicSegment:
 
         q: float | None = None
             The rate at ``t``, in units of ``volume / day``. ``None`` leaves the rate
-            continuous. Must be finite and positive when given.
+            continuous, and zero shuts the well in from ``t``. Must be finite and ``>= 0``
+            when given.
 
         D: float | None = None
             The decline at ``t`` in secant effective decline, i.e. annual effective percent
             decline, matching ``Di`` and ``Dterm``. ``None`` leaves the decline continuous.
             Negative to incline, zero for a flat segment. Must be finite and less than 1 when
-            given, and must agree in sign with the segment's resolved ``b``.
+            given, and must agree in sign with the segment's resolved ``b``. Must be zero, or
+            omitted, where ``q`` is zero -- a shut-in has no decline -- and must be given
+            where a positive ``q`` follows one.
 
         b: float | None = None
             The hyperbolic exponent from ``t`` onward. ``None`` continues the previous
@@ -1746,7 +1755,9 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         q(t) = q_i \\, (1 + b \\, D_i \\, (t - t_i)) ^ \\frac{-1}{b}
 
     A segment may instead override its rate or its decline, which is how a restimulation or
-    a prescribed decline is expressed. Cumulative volume is always continuous.
+    a prescribed decline is expressed. A rate override of zero is a **shut-in**: the rate is
+    zero from that breakpoint until a later segment states one, and the cumulative is flat
+    across it. Cumulative volume is always continuous.
 
     With an empty segment list this model is exactly :class:`MH`, including the terminal
     exponential segment. Unlike :class:`MH`, a ``Dterm`` steeper than the last segment's
@@ -1755,7 +1766,7 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
     The purpose of this model is to let a caller express any series of Arps-style segments
     that is physically meaningful, so it rejects only what is not:
 
-    - A **negative rate**, which no forecast has.
+    - A **negative rate**, which no forecast has. Zero is permitted, and is a shut-in.
     - A **decline of 100% per year or more**, which consumes the whole rate within the year.
       An arbitrarily steep *incline* is permitted: ``D = -1`` doubles the rate over a year
       and ``D = -9`` is a tenfold rise, both of which a well can do after a restimulation.
@@ -1877,14 +1888,15 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         # uses nan to mean "inherited", so an explicitly-NaN q, D or b would be silently
         # read as an inherit rather than rejected.
         #
-        # Only the physically impossible is rejected. A rate cannot be negative. A decline of
-        # 100% per year or more consumes the entire rate within the year, and converts to an
-        # infinite nominal decline. Everything else is permitted, including an arbitrarily
-        # steep incline: D = -1 doubles the rate over a year and D = -9 is a tenfold rise,
-        # both of which a well can do after a restimulation. b is bounded only by finiteness.
-        for segment in self.segments:
-            if segment.q is not None and not (np.isfinite(segment.q) and segment.q > 0.0):
-                raise ValueError("segments q must be finite and > 0")
+        # Only the physically impossible is rejected. A rate cannot be negative, though it
+        # may be zero -- that is a shut-in. A decline of 100% per year or more consumes the
+        # entire rate within the year, and converts to an infinite nominal decline.
+        # Everything else is permitted, including an arbitrarily steep incline: D = -1
+        # doubles the rate over a year and D = -9 is a tenfold rise, both of which a well can
+        # do after a restimulation. b is bounded only by finiteness.
+        for index, segment in enumerate(self.segments):
+            if segment.q is not None and not (np.isfinite(segment.q) and segment.q >= 0.0):
+                raise ValueError("segments q must be finite and >= 0")
 
             if segment.D is not None and not (np.isfinite(segment.D) and segment.D < 1.0):
                 raise ValueError("segments D must be finite and < 1")
@@ -1892,8 +1904,40 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             if segment.b is not None and not np.isfinite(segment.b):
                 raise ValueError("segments b must be finite")
 
-        # normalize every field to float, so the instance stays hashable and its fields
-        # match their annotations at runtime even when given ints
+            # A shut-in has no decline to state, and the normalization below forces both to
+            # zero. Rejecting a non-zero one is the difference between resolving an inherit
+            # and discarding what the caller actually asked for. Shaped after the
+            # `D == 0, which requires b == 0` check in `_validate_decline_signs`, which is
+            # the same kind of contradiction one level down.
+            if segment.q == 0.0 and (segment.D or segment.b):
+                raise ValueError(
+                    f"segments[{index}] has q == 0, which requires D == 0 and b == 0"
+                )
+
+            # Zero is absorbing for the decline as well as the rate, because the resolution
+            # walks inherit the forced zeros like any other value. A restart that inherits
+            # `D` therefore inherits a flat forecast at its own rate, for the rest of time,
+            # and an EUR to match -- so it has to state a decline. `b` may still inherit the
+            # zero, which restarts exponentially rather than flat.
+            if (
+                index > 0
+                and segment.q
+                and segment.D is None
+                and self.segments[index - 1].q == 0.0
+            ):
+                raise ValueError(
+                    f"segments[{index}] restarts after a shut-in and must state its own D"
+                )
+
+        # Normalize every field to float, so the instance stays hashable and its fields
+        # match their annotations at runtime even when given ints.
+        #
+        # A shut-in resolves to a flat segment here rather than anywhere later: forcing
+        # ``D`` and ``b`` to zero makes it an exponential segment of zero decline, which
+        # every segment function, derivative accessor and chain fill already handles. The
+        # alternative -- carrying a shut-in flag and special-casing it in each of them --
+        # is the same behaviour spelled out five times over. An inherited decline is what
+        # this resolves; a stated one was rejected above.
         object.__setattr__(
             self,
             "segments",
@@ -1901,8 +1945,8 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
                 HyperbolicSegment(
                     float(segment.t),
                     q=None if segment.q is None else float(segment.q),
-                    D=None if segment.D is None else float(segment.D),
-                    b=None if segment.b is None else float(segment.b),
+                    D=0.0 if segment.q == 0.0 else (None if segment.D is None else float(segment.D)),
+                    b=0.0 if segment.q == 0.0 else (None if segment.b is None else float(segment.b)),
                 )
                 for segment in self.segments
             ),

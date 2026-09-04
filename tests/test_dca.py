@@ -3059,6 +3059,104 @@ def test_inclining_hyperbolic_param_descs_and_phases() -> None:
 # ---------------------------------------------------------------------------------------
 
 
+def _shut_in_hyperbolic() -> dca.GeneralizedHyperbolic:
+    """Produce, shut in at 365 days, come back at 800 with a stated rate and decline."""
+    return dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 500.0, 0.8, 1.5)]
+    )
+
+
+def test_generalized_hyperbolic_shut_in_segment() -> None:
+    """A segment ``q`` of zero is a shut-in: the rate is zero from that breakpoint until a
+    later segment states a rate, and the cumulative is flat across it -- production already
+    recovered cannot change when the rate does, which is why cum is never overridable."""
+    gh = _shut_in_hyperbolic()
+    t = np.array([1.0, 100.0, 365.0, 500.0, 799.0, 800.0, 1200.0])
+
+    rate = gh.rate(t)
+    assert rate[0] > 0.0 and rate[1] > 0.0
+    assert np.array_equal(rate[2:5], np.zeros(3))
+    # the restart is the rate it was given, stored rather than computed
+    assert rate[5] == 500.0
+    assert rate[6] > 0.0
+
+    # exactly flat: the shut-in segment contributes a volume of zero to the chain
+    cum = gh.cum(t)
+    assert cum[2] == cum[3] == cum[4]
+    assert cum[1] < cum[2] and cum[4] < cum[6]
+
+
+def test_generalized_hyperbolic_shut_in_forces_a_flat_segment() -> None:
+    """``q == 0`` forces ``D`` and ``b`` to zero, making the shut-in an exponential segment
+    of zero decline. That is what lets every derivative accessor answer across it with no
+    special case of its own."""
+    gh = _shut_in_hyperbolic()
+
+    # row 0 is the initial conditions, so the shut-in is row 1
+    assert gh.segment_params[1, gh.Q_IDX] == 0.0
+    assert gh.segment_params[1, gh.D_IDX] == 0.0
+    assert gh.segment_params[1, gh.B_IDX] == 0.0
+
+    inside = np.array([365.0, 500.0, 799.0])
+    for accessor in (gh.D, gh.beta, gh.b):
+        assert np.array_equal(accessor(inside), np.zeros(3))
+
+
+def test_generalized_hyperbolic_shut_in_rejects_a_stated_decline() -> None:
+    """A shut-in has no decline to state. Forcing ``D`` and ``b`` to zero silently would
+    discard what the caller asked for, so a non-zero one is rejected instead."""
+    for D, b in ((0.8, None), (None, 1.5), (0.8, 1.5)):
+        with pytest.raises(ValueError, match="q == 0, which requires D == 0 and b == 0"):
+            dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (
+                dca.HyperbolicSegment(365.0, q=0.0, D=D, b=b),
+            ))
+
+    # stating them AS zero is not a conflict, and neither is inheriting them
+    dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (
+        dca.HyperbolicSegment(365.0, q=0.0, D=0.0, b=0.0),
+    ))
+    dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (dca.HyperbolicSegment(365.0, q=0.0),))
+
+
+def test_generalized_hyperbolic_restart_after_a_shut_in_needs_a_decline() -> None:
+    """A shut-in is absorbing for the decline as well as the rate, so a restart that
+    inherits ``D`` inherits zero -- a flat, non-zero rate for the rest of the forecast, and
+    an EUR to match. The restart must state its own decline."""
+    with pytest.raises(ValueError, match="segments\\[1\\] restarts after a shut-in"):
+        dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 500.0, None, None)]
+        )
+
+    # an explicit decline restarts cleanly, and b may still inherit the shut-in's zero,
+    # which is an exponential restart rather than a flat one
+    exponential = dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 500.0, 0.8, None)]
+    )
+    assert exponential.segment_params[2, exponential.B_IDX] == 0.0
+    assert exponential.rate(np.array([1200.0]))[0] < 500.0
+
+    # a segment that stays shut in by inheriting the zero rate is not a restart
+    dca.GeneralizedHyperbolic.from_segments(
+        1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 0.0)]
+    )
+
+    # but it cannot state a non-zero exponent while it does, which is the existing D/b
+    # contradiction reached through the inherited zero rather than a stated one
+    with pytest.raises(ValueError, match="has D == 0, which requires b == 0"):
+        dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 0.5)]
+        )
+
+
+def test_generalized_hyperbolic_rejects_a_negative_rate() -> None:
+    """Zero is a shut-in, but a rate below it is not a forecast."""
+    for bad in (-1.0, float("nan"), np.inf):
+        with pytest.raises(ValueError, match="segments q must be finite and >= 0"):
+            dca.GeneralizedHyperbolic(
+                1000.0, 0.8, 1.5, (dca.HyperbolicSegment(365.0, q=bad, D=0.0, b=0.0),)
+            )
+
+
 @pytest.mark.filterwarnings("ignore:Dterm ignored")  # bi = 0 with Dterm > 0 is in range here
 @given(
     qi=st.floats(1e-10, 1e6),
@@ -3430,10 +3528,11 @@ def test_generalized_hyperbolic_errors() -> None:
         ((HS(np.inf, b=1.0),), "segments t must be finite and > 0"),
         ((HS(100.0, b=1.0), HS(50.0, b=1.0)), "segments t not strictly increasing"),
         ((HS(100.0, b=1.0), HS(100.0, b=1.0)), "segments t not strictly increasing"),
-        ((HS(100.0, q=0.0),), "segments q must be finite and > 0"),
-        ((HS(100.0, q=-1.0),), "segments q must be finite and > 0"),
-        ((HS(100.0, q=np.nan),), "segments q must be finite and > 0"),
-        ((HS(100.0, q=np.inf),), "segments q must be finite and > 0"),
+        # q == 0 is absent here on purpose: it is a shut-in, not an error -- see
+        # test_generalized_hyperbolic_shut_in_segment
+        ((HS(100.0, q=-1.0),), "segments q must be finite and >= 0"),
+        ((HS(100.0, q=np.nan),), "segments q must be finite and >= 0"),
+        ((HS(100.0, q=np.inf),), "segments q must be finite and >= 0"),
         ((HS(100.0, D=1.0),), "segments D must be finite and < 1"),
         ((HS(100.0, D=np.inf),), "segments D must be finite and < 1"),
         ((HS(100.0, D=np.nan),), "segments D must be finite and < 1"),
