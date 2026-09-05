@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
-from itertools import chain, repeat
+from itertools import chain, pairwise, repeat
 from math import isfinite, log, log10
 from typing import (
     Any,
@@ -710,10 +710,35 @@ class DeclineCurve(ABC):
         # With both present the ramp spans one representable step instead of a grid interval,
         # and the trapezoid over it is the jump times a width of ~1e-13 days.
         breakpoints = self._rate_breakpoints()
-        breakpoints = breakpoints[np.isfinite(breakpoints) & (breakpoints > 0.0)]
+        breakpoints = np.unique(breakpoints[np.isfinite(breakpoints) & (breakpoints > 0.0)])
         straddle = np.concatenate([np.nextafter(breakpoints, 0.0), breakpoints])
 
-        grid = np.unique(np.concatenate([[0.0], log_grid, forward, straddle]))
+        # Refine after each breakpoint as well as straddling it. The global grid above is
+        # spaced logarithmically from ZERO, so its density falls off as t grows -- which is
+        # right for a decline that starts at t = 0 and wrong for a segment that restarts
+        # steeply later, whose own transient is fine relative to its start time. A restart at
+        # 800 days held 4.65e-5 relative on the global grid alone, against the ~2.3e-6 a
+        # smooth model gets at the same n_grid; a local grid, spaced logarithmically from the
+        # breakpoint instead, brings it back to 3.2e-6.
+        #
+        # Added to the global grid rather than replacing it, and this is the part worth
+        # keeping. Splitting n_grid across segments instead was measured and is WORSE: it
+        # starves whatever segment holds the long tail, taking a smooth tail after three
+        # early breakpoints from 4.7e-7 to 8.7e-6. The global grid keeps the tail resolved
+        # and the local ones add resolution exactly where it was missing.
+        #
+        # `max(4, ...)` bounds the total: each interval gets a quarter of n_grid until there
+        # are more than four of them, after which they share a budget of n_grid between them.
+        # So the grid at most doubles however many segments a model has.
+        nodes = np.concatenate([breakpoints[breakpoints < t_max], [t_max]])
+        per_interval = max(n_grid // max(4, nodes.size - 1), 2)
+        local = [
+            start + np.logspace(np.log10(eps), np.log10(stop - start), per_interval)
+            for start, stop in pairwise(nodes)
+            if stop > start
+        ]
+
+        grid = np.unique(np.concatenate([[0.0], log_grid, forward, straddle, *local]))
 
         # evaluate fn on the full grid in one vectorized call
         with np.errstate(over="ignore", under="ignore", invalid="ignore"):

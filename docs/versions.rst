@@ -146,11 +146,19 @@ integrate numerically.
         * A segment boundary is only a genuine step where the segment overrides its level.
           Both kinds are reported: a continuous boundary costs two grid points and refines
           the integral slightly, where missing a real step is permanent.
-        * Not fixed, and separate: a segment that restarts steeply late in a forecast is
-          resolved by a grid spaced logarithmically from zero, which is coarse there. A
-          restart at 800 days holds 4.6e-5 relative at the default ``n_grid`` against the
-          ~1e-6 a decline from ``t = 0`` gets. That is ordinary second-order error --- 4.6e-5,
-          3.0e-6, 1.9e-7 as ``n_grid`` quadruples --- and ``n_grid`` is the existing remedy.
+        * Each breakpoint also gets a *local* grid, spaced logarithmically from the
+          breakpoint rather than from zero. A separate problem from the step: the global
+          grid's density falls off as ``t`` grows, which is right for a decline beginning at
+          ``t = 0`` and wrong for a segment restarting steeply later. A restart at 800 days
+          held 4.7e-05 on the global grid alone against the ~2.3e-06 a smooth model gets at
+          the same ``n_grid``, and now holds 3.2e-06.
+        * The local grids are added to the global one, not carved out of it. Splitting
+          ``n_grid`` across segments was measured and is worse --- it starves whichever
+          segment holds the long tail, taking a smooth tail after three early breakpoints
+          from 4.7e-07 to 8.7e-06. Each interval takes a quarter of ``n_grid`` until there
+          are more than four of them, after which they share a budget of ``n_grid``, so the
+          grid at most doubles however many segments a model has. A model with no
+          breakpoints is untouched, and ``PLE`` returns bit-identical cumulatives.
 
     * The associated phase's ``b`` divides by ``D`` twice rather than by ``D * D`` once. The
       square of a small ``D`` goes subnormal and then to zero while the quotient itself stays

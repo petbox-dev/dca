@@ -183,12 +183,22 @@ and is otherwise continuous by construction. Both kinds are reported: a
 continuous boundary costs two grid points and refines the integral slightly,
 where missing a real step is permanent.
 
-One accuracy note that is *not* about the discontinuity. A segment that restarts
-steeply late in a forecast is resolved by a grid spaced logarithmically from
-zero, which is coarse there --- a restart at 800 days holds 4.6e-5 relative at
-the default ``n_grid`` rather than the ~1e-6 a decline from ``t = 0`` gets. It is
-ordinary second-order error, confirmed by convergence: 4.6e-5, 3.0e-6, 1.9e-7 as
-``n_grid`` quadruples from 10,000. Raise ``n_grid`` where such a segment matters.
+Each breakpoint also gets a *local* grid, spaced logarithmically from the
+breakpoint rather than from zero. This is a separate problem from the step
+itself: the global grid's density falls off as :math:`t` grows, which is right
+for a decline beginning at :math:`t = 0` and wrong for a segment that restarts
+steeply later, whose own transient is fine relative to its start time. A restart
+at 800 days held 4.7e-05 relative on the global grid alone, against the ~2.3e-06
+a smooth model gets at the same ``n_grid``; with the local grid it holds
+3.2e-06, back in line with that baseline.
+
+The local grids are *added* to the global one rather than replacing it. Splitting
+``n_grid`` across segments was measured and is worse: it starves whichever
+segment holds the long tail, taking a smooth tail after three early breakpoints
+from 4.7e-07 to 8.7e-06. Each interval gets a quarter of ``n_grid`` until there
+are more than four of them, after which they share a budget of ``n_grid``
+between them --- so the grid at most doubles, however many segments a model has,
+and a model with no breakpoints is untouched.
 
 
 Interval Quantities

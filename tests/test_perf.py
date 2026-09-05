@@ -200,13 +200,11 @@ def test_cum_across_a_step_matches_piecewise_quadrature() -> None:
     reference = _quad_cum_piecewise(
         lambda s: float(attached._qfn(np.array([s]))[0]), t, [180.0, 365.0, 800.0]
     )
-    # A looser tolerance here, and not because the step is any less resolved -- at 800 this
-    # is 2.4e-7. What is left at the later times is the grid's ORDINARY error, confirmed
-    # second-order: 4.65e-5 at the default n_grid, 3.02e-6 at 4x, 1.90e-7 at 16x, i.e.
-    # dividing by ~16 each time the count quadruples. A restart at 800 days puts a fresh
-    # steep decline where a grid spaced logarithmically from zero is coarse, which is a
-    # property of the grid rather than of the discontinuity.
-    assert np.allclose(attached.cum(t), reference, rtol=1e-4)
+    # A restart at 800 days puts a fresh steep decline where a grid spaced logarithmically
+    # from zero is coarse: this held 4.65e-5 on the global grid alone, against the ~2.3e-6
+    # a smooth model gets at the same n_grid. The local refinement after each breakpoint
+    # brings it back in line with that baseline rather than merely below the step artifact.
+    assert np.allclose(attached.cum(t), reference, rtol=1e-5)
     assert np.allclose(attached.cum(t, n_grid=160_000), reference, rtol=1e-6)
 
 
