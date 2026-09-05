@@ -33,6 +33,28 @@ def _quad_cum_piecewise(
     return np.array(cumulative)
 
 
+def _model_breakpoints(model: dca.DeclineCurve) -> list[float]:
+    """Every time the model's own rate can step, as the piecewise reference needs them.
+
+    Read off the model rather than restated as literals, so the reference cannot drift out of
+    sync with the segments -- and so it cannot silently omit one. A restated list missed the
+    primary phase's terminal-exponential breakpoint, which `_rate_breakpoints` contributes to
+    an attached yield and which sat inside the tested range."""
+    breakpoints = model._rate_breakpoints()
+    return sorted(float(t) for t in set(breakpoints[np.isfinite(breakpoints) & (breakpoints > 0.0)]))
+
+
+def _quad_cum_monthly(
+    rate_fn: Callable[[float], float], t: npt.NDArray[np.float64]
+) -> npt.NDArray[np.float64]:
+    """Trusted reference for a trailing-month volume: quadrature over the one month ending
+    at each element of ``t``, measured from zero where less than a month has elapsed."""
+    start = np.where(t < dca.DAYS_PER_MONTH, 0.0, t - dca.DAYS_PER_MONTH)
+    return np.array(
+        [quad(rate_fn, float(a), float(b))[0] for a, b in zip(start, t, strict=True)]
+    )
+
+
 @pytest.mark.parametrize("n", [0.3, 0.4, 0.5, 0.6, 0.8])
 def test_SE_cum_matches_integral(n: float) -> None:
     """SE.cum must equal the integral of SE.rate. Regression for the missing
@@ -186,7 +208,7 @@ def test_cum_across_a_step_matches_piecewise_quadrature() -> None:
     secondary = mh.secondary
     t = np.array([1000.0, 1095.0, 1100.0, 2000.0, 3650.0])
     reference = _quad_cum_piecewise(
-        lambda s: float(secondary._qfn(np.array([s]))[0]), t, [90.0, 1095.0]
+        lambda s: float(secondary._qfn(np.array([s]))[0]), t, _model_breakpoints(secondary)
     )
     assert np.allclose(secondary.cum(t), reference, rtol=1e-5)
 
@@ -198,7 +220,7 @@ def test_cum_across_a_step_matches_piecewise_quadrature() -> None:
     attached = gh.secondary
     t = np.array([700.0, 800.0, 1200.0, 3650.0])
     reference = _quad_cum_piecewise(
-        lambda s: float(attached._qfn(np.array([s]))[0]), t, [180.0, 365.0, 800.0]
+        lambda s: float(attached._qfn(np.array([s]))[0]), t, _model_breakpoints(attached)
     )
     # A restart at 800 days puts a fresh steep decline where a grid spaced logarithmically
     # from zero is coarse: this held 4.65e-5 on the global grid alone, against the ~2.3e-6
@@ -222,15 +244,11 @@ def test_monthly_vol_matches_integral() -> None:
         return float(qi * np.exp(-Di * s**n - Dinf * s))
 
     t = np.array([30.0, 90.0, 365.25, 1826.25, 3652.5, 10957.5])
-    t_start = np.where(t < dca.DAYS_PER_MONTH, 0.0, t - dca.DAYS_PER_MONTH)
 
     volumes = ple.monthly_vol(t)
     assert np.all(volumes >= 0.0)
 
-    ref = np.array(
-        [quad(rate_fn, float(a), float(b))[0] for a, b in zip(t_start, t, strict=True)]
-    )
-    assert np.allclose(volumes, ref, rtol=1e-4, atol=1e-9)
+    assert np.allclose(volumes, _quad_cum_monthly(rate_fn, t), rtol=1e-4, atol=1e-9)
 
 
 def test_monthly_vol_matches_integral_for_a_yield_model() -> None:
@@ -245,12 +263,8 @@ def test_monthly_vol_matches_integral_for_a_yield_model() -> None:
         return float(secondary.rate(np.array([s]))[0])
 
     t = np.array([30.0, 90.0, 365.25, 1826.25, 3652.5, 10957.5])
-    t_start = np.where(t < dca.DAYS_PER_MONTH, 0.0, t - dca.DAYS_PER_MONTH)
 
-    ref = np.array(
-        [quad(rate_fn, float(a), float(b))[0] for a, b in zip(t_start, t, strict=True)]
-    )
-    assert np.allclose(secondary.monthly_vol(t), ref, rtol=5e-6)
+    assert np.allclose(secondary.monthly_vol(t), _quad_cum_monthly(rate_fn, t), rtol=5e-6)
 
 
 def test_PLE_cum_matches_integral() -> None:

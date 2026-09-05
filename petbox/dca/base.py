@@ -42,11 +42,20 @@ NDBool = NDArray[np.bool_]
 # accepts and what this project's own README shows -- `mh.rate([-30.0, -10.0, 0.0])`. Because the
 # package ships `py.typed`, that fell on downstream users type-checking correct code.
 #
+# One public time argument is deliberately NOT this: `t0` on `interval_vol` and
+# `monthly_vol_equiv` is `float`, because it anchors exactly one interval rather than being a
+# series. The wide type was never right for it -- a multi-element `t0` did not raise, it
+# silently misaligned the differencing and returned one value per element of `t0` plus `t`.
+#
 # Deliberately narrower than `numpy.typing.ArrayLike`, which also admits strings, None, and
 # nested sequences. Those reach `astype(np.float64)` and either fail there with a numpy message
 # or silently produce a 2-d result, so keeping them out means the call site is still checked.
 FloatLike = float | Sequence[float] | NDArray[np.floating[Any]] | NDArray[np.integer[Any]]
 
+
+# The lower bound of every log-spaced integration grid. Not zero, which has no logarithm;
+# small enough that the omitted [0, GRID_START] sliver is far below the trapezoid's own error.
+GRID_START = 1e-12
 
 DAYS_PER_MONTH = 365.25 / 12.0
 DAYS_PER_YEAR = 365.25
@@ -66,6 +75,31 @@ _REMOVED_ACCESSORS: dict[_Phase, tuple[str, ...]] = {
     "secondary": ("wor", "wgr"),
     "water": ("gor", "cgr"),
 }
+
+
+def _validate_nonnegative_override(value: float | None, name: str) -> None:
+    """
+    Check one segment's optional level override, for both multi-segment models.
+
+    `GeneralizedHyperbolic` overrides a rate and `GeneralizedPLYield` a yield, but it is one
+    rule either way: absent is legal, and a value that is present must be finite and must not
+    be negative. Zero is legal in both, and means a shut-in.
+
+    Module-level for the same reason as `_validate_segment_times`, which sits beside it: the
+    two models share no base beyond :class:`DeclineCurve`, and the shut-in work relaxed both
+    from ``> 0`` to ``>= 0`` in a single edit. Keeping two copies identical by discipline is
+    what lets the next edit reach only one of them.
+
+    Parameters
+    ----------
+        value: float | None
+            The override as given, or ``None`` where the segment inherits its level.
+
+        name: str
+            The field's name, so the message says which one -- ``q`` or ``c``.
+    """
+    if value is not None and not (np.isfinite(value) and value >= 0.0):
+        raise ValueError(f"segments {name} must be finite and >= 0")
 
 
 def _validate_segment_times(times: NDFloat) -> None:
@@ -283,7 +317,14 @@ class DeclineCurve(ABC):
         """
         t = self._validate_ndarray(t)
         if t0 is None:
-            t0 = t[0]
+            # An empty request has no first time to anchor to, and defaulting from ``t[0]``
+            # raised IndexError where both sibling volume methods return empty. Anchored at
+            # zero instead, the concatenation below is a single point and `np.diff` of it is
+            # empty, which is that same answer -- reached through the validation rather than
+            # around it. An early return here skipped `_validate_start_time` and the
+            # integrator's own `n_grid` check, so a multi-element ``t0`` or an ``n_grid`` of 1
+            # passed silently on an empty ``t`` while every sibling still reported it.
+            t0 = t[0] if t.size else 0.0
         start = self._validate_start_time(t0)
         # One integration, not two. `_integrate_with` builds its log-spaced grid from the
         # largest time it is given, so a separately integrated ``t0`` samples ``[0, t0]`` at
@@ -622,10 +663,81 @@ class DeclineCurve(ABC):
         those methods depends on, silently returning one value per element of ``t0`` plus
         ``t`` rather than one per requested time.
         """
-        start = np.atleast_1d(t0).astype(np.float64)
+        start = DeclineCurve._validate_ndarray(t0)
         if start.size != 1:
             raise ValueError(f"t0 must be a single time, got {start.size} values")
         return start
+
+    def _breakpoint_refinement(self, t_max: float, n_grid: int) -> NDFloat:
+        """
+        The extra grid points that resolve a rate discontinuity, for `_integrate_with` to
+        merge into its global log-spaced grid. Empty for a model reporting no breakpoints.
+
+        Two jobs, and they answer different problems.
+
+        **Straddling** puts a point on each side of every jump. The global grid lands wherever
+        it lands, so a step between two of its points was integrated as a RAMP across the gap
+        -- and the excess is carried into every later cumulative, so it reads as an EUR
+        difference rather than a local wobble. Measured against piecewise quadrature: 2.8e-4
+        relative at a yield ``c`` override and 4.3e-3 at a primary phase restarting from a
+        shut-in, against ~4e-8 away from any step. Both sides are needed: `numpy.nextafter`
+        towards zero is the last time still governed by the previous segment, and the
+        breakpoint itself is the first governed by the next one, since `_lookup_segment` and
+        `_qcheck` both put ``t == t_start`` in the later segment. With both present the ramp
+        spans one representable step instead of a grid interval.
+
+        **Local refinement** adds a log-spaced grid anchored at each breakpoint. The global
+        grid is spaced logarithmically from ZERO, so its density falls off as ``t`` grows --
+        right for a decline that starts at ``t = 0``, wrong for a segment that restarts
+        steeply later, whose own transient is fine relative to its start time. A restart at
+        800 days held 4.65e-5 relative on the global grid alone, against the ~2.3e-6 a smooth
+        model gets at the same ``n_grid``; the local grid brings it back to 3.2e-6.
+
+        These are ADDED to the global grid rather than replacing it, and that is the part
+        worth keeping. Splitting ``n_grid`` across segments was measured and is WORSE: it
+        starves whichever segment holds the long tail, taking a smooth tail after three early
+        breakpoints from 4.7e-7 to 8.7e-6. ``max(4, ...)`` bounds the cost -- each interval
+        takes a quarter of ``n_grid`` until there are more than four of them, after which they
+        share a budget of ``n_grid`` -- so the grid at most doubles however many segments a
+        model has.
+
+        Parameters
+        ----------
+            t_max: float
+                The largest time being integrated to. Breakpoints beyond it are dropped.
+
+            n_grid: int
+                The global grid's point count, which the local budget is a fraction of.
+
+        Returns
+        -------
+            refinement points: NDFloat
+        """
+        breakpoints = self._rate_breakpoints()
+        breakpoints = np.unique(breakpoints[np.isfinite(breakpoints) & (breakpoints > 0.0)])
+        # past the horizon a breakpoint cannot affect any requested cumulative, so straddling
+        # it only spends two evaluations of `fn`
+        breakpoints = breakpoints[breakpoints <= t_max]
+        if breakpoints.size == 0:
+            return np.array([], dtype=np.float64)
+
+        straddle = np.concatenate([np.nextafter(breakpoints, 0.0), breakpoints])
+
+        nodes = np.concatenate([breakpoints[breakpoints < t_max], [t_max]])
+        per_interval = max(n_grid // max(4, nodes.size - 1), 2)
+        # `> GRID_START`, not `> start`: for a narrower interval `logspace` would run
+        # BACKWARDS, from the wider GRID_START down to the interval's own width, and the
+        # points would land past `stop`. Two breakpoints that close are within a few ULP of
+        # each other -- reachable when a shifted model and its primary phase compute what
+        # should be the same time by different arithmetic -- and there is nothing to resolve
+        # between them anyway.
+        local = [
+            start + np.logspace(np.log10(GRID_START), np.log10(stop - start), per_interval)
+            for start, stop in pairwise(nodes)
+            if stop - start > GRID_START
+        ]
+
+        return np.concatenate([straddle, *local])
 
     def _integrate_with(
         self, fn: Callable[[NDFloat], NDFloat], t: NDFloat, **kwargs: Any
@@ -639,6 +751,12 @@ class DeclineCurve(ABC):
         points near ``t=0`` where rate functions typically have the steepest
         gradients, achieving accuracy comparable to 50-point Gaussian quadrature
         at ~3x the speed.
+
+        Where the model reports discontinuities through `_rate_breakpoints`, the grid also
+        carries the points `_breakpoint_refinement` supplies: two straddling each jump, so it
+        is integrated as a step rather than a ramp, and a local log-spaced grid anchored at
+        each breakpoint, so a segment restarting steeply late is resolved as well as one
+        beginning at ``t = 0``. A model reporting none is integrated exactly as before.
 
         Parameters
         ----------
@@ -690,55 +808,14 @@ class DeclineCurve(ABC):
         if len(forward) == 0:
             return np.full_like(t, np.nan, dtype=np.float64)
 
-        eps = 1e-12
         # max(), not [-1]: identical for the sorted input this is normally given, but a
         # caller may pass any order, and a grid that stops short of the largest requested
         # time would put it outside the integration range
         t_max = float(forward.max()) if forward.max() > 0 else 1.0
-        log_grid = np.logspace(np.log10(eps), np.log10(t_max), n_grid)
+        log_grid = np.logspace(np.log10(GRID_START), np.log10(t_max), n_grid)
 
-        # Straddle every point where the rate may jump. The log-spaced grid lands wherever it
-        # lands, so a step between two of its points was integrated as a RAMP across the gap
-        # -- and the excess is carried into every later cumulative, so it reads as an EUR
-        # difference rather than a local wobble. Measured against piecewise quadrature: 2.8e-4
-        # relative at a yield `c` override and 4.3e-3 at a primary phase restarting from a
-        # shut-in, against ~4e-8 away from any step.
-        #
-        # Both sides are needed. `nextafter` towards zero is the last time still governed by
-        # the previous segment, and the breakpoint itself is the first governed by the next
-        # one -- `_lookup_segment` and `_qcheck` both put `t == t_start` in the later segment.
-        # With both present the ramp spans one representable step instead of a grid interval,
-        # and the trapezoid over it is the jump times a width of ~1e-13 days.
-        breakpoints = self._rate_breakpoints()
-        breakpoints = np.unique(breakpoints[np.isfinite(breakpoints) & (breakpoints > 0.0)])
-        straddle = np.concatenate([np.nextafter(breakpoints, 0.0), breakpoints])
-
-        # Refine after each breakpoint as well as straddling it. The global grid above is
-        # spaced logarithmically from ZERO, so its density falls off as t grows -- which is
-        # right for a decline that starts at t = 0 and wrong for a segment that restarts
-        # steeply later, whose own transient is fine relative to its start time. A restart at
-        # 800 days held 4.65e-5 relative on the global grid alone, against the ~2.3e-6 a
-        # smooth model gets at the same n_grid; a local grid, spaced logarithmically from the
-        # breakpoint instead, brings it back to 3.2e-6.
-        #
-        # Added to the global grid rather than replacing it, and this is the part worth
-        # keeping. Splitting n_grid across segments instead was measured and is WORSE: it
-        # starves whatever segment holds the long tail, taking a smooth tail after three
-        # early breakpoints from 4.7e-7 to 8.7e-6. The global grid keeps the tail resolved
-        # and the local ones add resolution exactly where it was missing.
-        #
-        # `max(4, ...)` bounds the total: each interval gets a quarter of n_grid until there
-        # are more than four of them, after which they share a budget of n_grid between them.
-        # So the grid at most doubles however many segments a model has.
-        nodes = np.concatenate([breakpoints[breakpoints < t_max], [t_max]])
-        per_interval = max(n_grid // max(4, nodes.size - 1), 2)
-        local = [
-            start + np.logspace(np.log10(eps), np.log10(stop - start), per_interval)
-            for start, stop in pairwise(nodes)
-            if stop > start
-        ]
-
-        grid = np.unique(np.concatenate([[0.0], log_grid, forward, straddle, *local]))
+        refinement = self._breakpoint_refinement(t_max, n_grid)
+        grid = np.unique(np.concatenate([[0.0], log_grid, forward, refinement]))
 
         # evaluate fn on the full grid in one vectorized call
         with np.errstate(over="ignore", under="ignore", invalid="ignore"):

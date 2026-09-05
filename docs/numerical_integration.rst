@@ -32,9 +32,13 @@ on a dense log-spaced grid merged with the requested evaluation times.
 2. Merge the requested :math:`t` values into the grid (via
    ``numpy.unique``), ensuring exact evaluation at each requested time.
 3. Evaluate :math:`q(t)` on the full grid in a single vectorized call.
-4. Apply ``cumulative_trapezoid`` to obtain the cumulative integral at
+4. Where the model reports discontinuities through ``_rate_breakpoints()``,
+   merge two points straddling each one, plus a log-spaced grid anchored at
+   each breakpoint --- see `Rate Discontinuities`_ below. A model reporting
+   none skips this entirely.
+5. Apply ``cumulative_trapezoid`` to obtain the cumulative integral at
    every grid point.
-5. Extract values at the requested :math:`t` indices directly (no
+6. Extract values at the requested :math:`t` indices directly (no
    interpolation).
 
 **Why log-spaced?** DCA rate functions typically have their steepest
@@ -170,12 +174,26 @@ cumulative, so it reads as an EUR difference rather than a local wobble.
 Measured against quadrature split at each breakpoint, and with ~4e-8 the
 baseline away from any step:
 
+Both rows are measured by ``test_cum_across_a_step_matches_piecewise_quadrature``
+in ``tests/test_perf.py``: the yield step on ``MH(1000, 0.7, 1.5, 0.08)`` with a
+``c = 25`` override at 1095 days, evaluated at
+``[1000, 1095, 1100, 2000, 3650]``; the primary restart on a
+``GeneralizedHyperbolic`` shut in at 365 and back at 800, with an attached
+``PLYield``, evaluated at ``[700, 800, 1200, 3650]``. The figures depend on the
+evaluation array, because the grid is built from its largest element --- a
+different array puts the same step in a differently spaced neighbourhood, so
+quoting one without the other says little.
+
+Each figure is the MAXIMUM relative error across that row's evaluation array,
+with both mechanisms of this section enabled --- not the error at one point,
+which is a different and flattering number.
+
 +------------------------------------------------+-----------------+-----------------+
 | Step                                           | Unseeded        | Seeded          |
 +================================================+=================+=================+
-| ``c`` override on the yield, at 1095 days      |      2.8e-04    |      8.1e-08    |
+| ``c`` override on the yield, at 1095 days      |      2.8e-04    |      6.0e-08    |
 +------------------------------------------------+-----------------+-----------------+
-| primary phase restarting from a shut-in        |      4.3e-03    |      2.4e-07    |
+| primary phase restarting from a shut-in        |      5.5e-03    |      3.1e-06    |
 +------------------------------------------------+-----------------+-----------------+
 
 A segment boundary is only a genuine step where the segment overrides its level,
@@ -249,7 +267,8 @@ vectorized evaluation over 10,000 grid points.
 Validation Script
 -----------------
 
-The accuracy results above can be reproduced by running::
+The `Grid Resolution`_ and `Associated Phase Accuracy`_ tables can be
+reproduced by running::
 
     python docs/integration_validation.py
 

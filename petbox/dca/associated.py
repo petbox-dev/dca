@@ -32,6 +32,7 @@ from .base import (
     ParamDesc,
     SecondaryPhase,
     WaterPhase,
+    _validate_nonnegative_override,
     _validate_segment_times,
 )
 
@@ -272,12 +273,13 @@ class MultisegmentPLYield(BothAssociatedPhase):
         """
         Cumulative volume. No closed form exists, so integrate `_qfn` numerically.
 
-        ``nan`` for ``t < 0`` must be applied here rather than inherited. `_integrate_with`
-        merges the requested ``t`` into its grid, so it *does* evaluate `_qfn` at a negative
-        ``t`` -- but it then does ``y[np.isnan(y)] = 0.0``, which converts the ``nan`` from
-        `_yieldfn` into a definite zero before integrating. Volume is the quantity callers
-        sum, so that silent zero would under-count a forecast whose start date is wrong,
-        which is exactly what the ``nan`` exists to surface.
+        ``nan`` for ``t < 0`` is stated here as well as inherited. `_integrate_with` already
+        returns it: negative times are filtered out of its grid, and its output array starts
+        as ``nan`` with only the forward positions written, so those elements come back
+        ``nan`` without this. Restating it makes the phase boundary carry the contract itself
+        rather than resting on an implementation detail of the integrator -- volume is the
+        quantity callers sum, so a definite value there would under-count a forecast whose
+        start date is wrong, which is what the ``nan`` exists to surface.
         """
         return np.where(t < 0.0, np.nan, self._integrate_with(self._qfn, t, **kwargs))
 
@@ -520,7 +522,8 @@ class PLYieldSegment:
 
         m: float | None = None
             The power-law slope from ``t`` onward. ``None`` continues the previous slope.
-            Must be finite and within ``[-10, 10]`` when given.
+            Must be finite and within the model's shared slope bound when given --
+            `MultisegmentPLYield.SLOPE_BOUND`, which the rejection message reports.
     """
 
     t: float
@@ -608,10 +611,14 @@ class GeneralizedPLYield(MultisegmentPLYield):
             from that breakpoint, and a positive one after it brings the phase back.
 
         min: float | None = None
-            The minimum allowed value. Would be used e.g. to limit minimum CGR.
+            The minimum allowed value. Would be used e.g. to limit minimum CGR. Does NOT
+            apply to a shut-in, which reports zero however this is set -- a floor that
+            resurrected one would put the phase back on production, and the associated phase
+            can be shut in while the primary still flows.
 
         max: float | None = None
-            The maximum allowed value. Would be used e.g. to limit maximum GOR.
+            The maximum allowed value. Would be used e.g. to limit maximum GOR. A shut-in is
+            exempt from this too, though a ceiling could not have raised a zero anyway.
     """
 
     c: float
@@ -723,8 +730,7 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # Check c per field rather than via the overrides array: that array uses nan to
         # mean "absent", so an explicitly-NaN c would be silently read as no override.
         for segment in self.segments:
-            if segment.c is not None and not (np.isfinite(segment.c) and segment.c >= 0.0):
-                raise ValueError("segments c must be finite and >= 0")
+            _validate_nonnegative_override(segment.c, "c")
 
         # segments[0] shares its time with the model `c`, so two positive values there are
         # two sources for one quantity. One of them being zero is not: a zero model `c`
@@ -736,7 +742,10 @@ class GeneralizedPLYield(MultisegmentPLYield):
         # both True, so an override that is merely invalid would be reported here as a
         # conflict and never reach the message that names what is actually wrong with it.
         if self.segments[0].c is not None and self.c != 0.0 and self.segments[0].c != 0.0:
-            raise ValueError("segments[0] c conflicts with the model c at the same time")
+            raise ValueError(
+                "segments[0] c conflicts with the model c at the same time; one of the two "
+                "must be zero, which is what makes it a shut-in rather than a second value"
+            )
 
         # normalize every field to float, so the instance stays hashable and its fields
         # match their annotations at runtime even when given ints

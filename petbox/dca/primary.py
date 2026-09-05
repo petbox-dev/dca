@@ -36,6 +36,7 @@ from .base import (
     NDFloat,
     ParamDesc,
     PrimaryPhase,
+    _validate_nonnegative_override,
     _validate_segment_times,
 )
 
@@ -322,12 +323,16 @@ class MultisegmentHyperbolic(PrimaryPhase):
             segments[i + 1, self.N_IDX] = self._Ncheck(*previous_at_boundary).item()
 
             # An inherited decline can underflow to exactly zero, when ``1 + D b dt``
-            # overflows over a long enough span. That segment is flat from its start, and
+            # overflows over a long enough span, and a zero ``qi`` forces the FIRST row flat
+            # so every row after it inherits that. Such a segment is flat from its start, and
             # every use of b is multiplied by D -- so a non-zero exponent beside it changes
             # neither rate nor volume, but `b(t)` would still report it, contradicting the
             # (D == 0 implies b == 0) rule the constructor enforces on its inputs. Normalize
-            # so the stored row cannot disagree with itself. Unreachable for MH and THM,
-            # whose declines and exponents are both bounded.
+            # so the stored row cannot disagree with itself. MH cannot reach it, its decline
+            # and exponent both being bounded. THM can, but only through a zero ``qi``: that
+            # forces row 0 flat, every later row inherits the zero, and this normalizes each
+            # of their exponents to match -- which is what makes `THM(0, ...).b(t)` zero
+            # throughout rather than reporting the transient exponents it computed.
             if abs(segments[i + 1, self.D_IDX]) < MIN_EPSILON:
                 segments[i + 1, self.B_IDX] = 0.0
 
@@ -369,13 +374,17 @@ class MultisegmentHyperbolic(PrimaryPhase):
         if Dterm_nom < MIN_EPSILON:
             return segments
 
-        # Nor is there anything to report for a model that never produced. A zero ``qi``
-        # forces its initial row flat, which the check below would otherwise treat as a
-        # caller whose Dterm is being dropped -- but a well shut in from the start has no
-        # tail to cap and nothing was silently lost. Keyed on the model's INITIAL rate, not
-        # the last segment's: a model that produced and then shut in does have a Dterm the
-        # caller meant to apply to the producing tail, and still says so.
-        if segments[0, self.Q_IDX] == 0.0:
+        # Nor is there anything to report for a model that never produces AT ALL. A zero
+        # ``qi`` forces its initial row flat, which the check below would otherwise treat as a
+        # caller whose Dterm is being dropped -- but a well that never flows has no tail to
+        # cap and nothing was silently lost.
+        #
+        # Every row, not just the first. `GeneralizedHyperbolic` can come online after a zero
+        # ``qi``, and that tail is an ordinary producing one that does need the cap -- keyed
+        # on row 0 alone, this returned early and dropped it without a word. A model that
+        # produced and then shut in still reaches the flatness check below, which is what
+        # tells that caller their Dterm cannot apply.
+        if not np.any(segments[:, self.Q_IDX] > 0.0):
             return segments
 
         # A terminal decline caps a *hyperbolic* tail: one whose decline falls with time until
@@ -1922,9 +1931,16 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         # Everything else is permitted, including an arbitrarily steep incline: D = -1
         # doubles the rate over a year and D = -9 is a tenfold rise, both of which a well can
         # do after a restimulation. b is bounded only by finiteness.
+        # The rate coming INTO each segment, resolved rather than stated. A segment that
+        # inherits its rate carries the previous one forward, so a shut-in continues through
+        # any number of inheriting segments -- and reading only the immediate predecessor's
+        # stated `q` missed exactly that: a shut-in, an inheriting continuation, then a
+        # restart passed the check below and inherited the forced zero decline, giving a
+        # flat, uncapped rate for the rest of the forecast.
+        incoming_rate = self.qi
+
         for index, segment in enumerate(self.segments):
-            if segment.q is not None and not (np.isfinite(segment.q) and segment.q >= 0.0):
-                raise ValueError("segments q must be finite and >= 0")
+            _validate_nonnegative_override(segment.q, "q")
 
             if segment.D is not None and not (np.isfinite(segment.D) and segment.D < 1.0):
                 raise ValueError("segments D must be finite and < 1")
@@ -1937,9 +1953,17 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             # and discarding what the caller actually asked for. Shaped after the
             # `D == 0, which requires b == 0` check in `_validate_decline_signs`, which is
             # the same kind of contradiction one level down.
-            if segment.q == 0.0 and (segment.D or segment.b):
+            #
+            # Against the RESOLVED rate, not the segment's own field. A segment that inherits
+            # a shut-in is as shut in as one that states `q = 0`, and keyed on the field this
+            # saw neither `qi = 0` with a segment stating only `D`, nor a mid-chain shut-in
+            # followed by one stating `D` and `b`. Both constructed, and both then reported a
+            # live decline for a well whose rate is zero at every time -- which is the whole
+            # contradiction forcing a shut-in flat exists to end.
+            resolved_rate = incoming_rate if segment.q is None else segment.q
+            if resolved_rate == 0.0 and (segment.D or segment.b):
                 raise ValueError(
-                    f"segments[{index}] has q == 0, which requires D == 0 and b == 0"
+                    f"segments[{index}] is shut in, which requires D == 0 and b == 0"
                 )
 
             # Zero is absorbing for the decline as well as the rate, because the resolution
@@ -1947,36 +1971,18 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
             # `D` therefore inherits a flat forecast at its own rate, for the rest of time,
             # and an EUR to match -- so it has to state a decline. `b` may still inherit the
             # zero, which restarts exponentially rather than flat.
-            # index 0 inherits from the initial conditions rather than from a segment, and
-            # a ``qi`` of zero is a shut-in there too -- with its decline forced the same way
-            if segment.q and segment.D is None and (
-                self.qi == 0.0 if index == 0 else self.segments[index - 1].q == 0.0
-            ):
+            # The initial conditions are the incoming rate for index 0, and a ``qi`` of zero
+            # is a shut-in there too -- with its decline forced the same way.
+            if segment.q and segment.D is None and incoming_rate == 0.0:
                 raise ValueError(
                     f"segments[{index}] restarts after a shut-in and must state its own D"
                 )
 
-        # Normalize every field to float, so the instance stays hashable and its fields
-        # match their annotations at runtime even when given ints.
-        #
-        # A shut-in resolves to a flat segment here rather than anywhere later: forcing
-        # ``D`` and ``b`` to zero makes it an exponential segment of zero decline, which
-        # every segment function, derivative accessor and chain fill already handles. The
-        # alternative -- carrying a shut-in flag and special-casing it in each of them --
-        # is the same behaviour spelled out five times over. An inherited decline is what
-        # this resolves; a stated one was rejected above.
+            if segment.q is not None:
+                incoming_rate = segment.q
+
         object.__setattr__(
-            self,
-            "segments",
-            tuple(
-                HyperbolicSegment(
-                    float(segment.t),
-                    q=None if segment.q is None else float(segment.q),
-                    D=0.0 if segment.q == 0.0 else (None if segment.D is None else float(segment.D)),
-                    b=0.0 if segment.q == 0.0 else (None if segment.b is None else float(segment.b)),
-                )
-                for segment in self.segments
-            ),
+            self, "segments", tuple(self._normalized_segment(segment) for segment in self.segments)
         )
 
         _validate_segment_times(
@@ -1986,6 +1992,29 @@ class GeneralizedHyperbolic(MultisegmentHyperbolic):
         self._validate_decline_signs()
 
         super()._validate()
+
+    @staticmethod
+    def _normalized_segment(segment: HyperbolicSegment) -> HyperbolicSegment:
+        """
+        One segment with every field normalized to float, and a shut-in resolved flat.
+
+        Floats so the instance stays hashable and its fields match their annotations at
+        runtime even when given ints.
+
+        A shut-in resolves to a flat segment here rather than anywhere later: forcing ``D``
+        and ``b`` to zero makes it an exponential segment of zero decline, which every
+        segment function, derivative accessor and chain fill already handles. The
+        alternative -- carrying a shut-in flag and special-casing it in each of them -- is
+        the same behaviour spelled out five times over. An inherited decline is what this
+        resolves; a stated one is rejected by `_validate` before reaching here.
+        """
+        shut_in = segment.q == 0.0
+        return HyperbolicSegment(
+            float(segment.t),
+            q=None if segment.q is None else float(segment.q),
+            D=0.0 if shut_in else (None if segment.D is None else float(segment.D)),
+            b=0.0 if shut_in else (None if segment.b is None else float(segment.b)),
+        )
 
     def _validate_decline_signs(self) -> None:
         """

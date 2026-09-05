@@ -101,6 +101,9 @@ integrate numerically.
       only (``PLE`` and the associated-phase yields); ``MH``, ``THM``, ``SE``, ``Duong`` and
       the other hyperbolics have closed-form cumulatives and are unchanged.
 
+        * Every figure below is measured at ``[30, 90, 365.25, 1826.25, 3652.5, 10957.5]``
+          days, and depends on that array: the grid is built from its largest element, so a
+          shorter one puts the same step in a differently spaced neighbourhood.
         * ``monthly_vol`` was the worse of the two, because *every* element crossed two
           grids. The residual is an absolute error, so it is unbounded against a monthly
           volume that has decayed: for ``PLE(1000, 0.8, 1e-4, 0.5)`` it was a constant
@@ -134,9 +137,11 @@ integrate numerically.
       time at which the rate may jump. A step fell between two log-spaced grid points and
       the trapezoid rule integrated a *ramp* across the gap, and the excess was carried by
       every later cumulative --- an EUR error rather than a local wobble. Against quadrature
-      split at each breakpoint, with ~4e-8 the baseline away from any step: a ``c`` override
-      on the yield ran 2.8e-4 and now runs 8.1e-08; a primary phase restarting from a shut-in
-      ran 4.3e-3 and now runs 2.4e-07. This affects any numerically integrated cumulative
+      split at each breakpoint, and quoted as the MAXIMUM relative error across each case's
+      evaluation array rather than the error at one flattering point: a ``c`` override on the
+      yield ran 2.8e-4 and now runs 6.0e-08; a primary phase restarting from a shut-in ran
+      5.5e-3 and now runs 3.1e-06 --- the latter being the local-refinement figure below, not
+      the straddle alone. This affects any numerically integrated cumulative
       whose rate steps, so an associated phase attached to a segmented model --- and it
       predates shut-ins by as long as ``c`` and ``q`` overrides have existed.
 

@@ -1010,7 +1010,7 @@ def test_plyield_closed_form() -> None:
     """Pin PLYield's yield/rate/D/beta/b to their closed forms, independent of the
     internal segment representation. Gate for the MultisegmentPLYield refactor."""
     c, m0, m, t0 = 1200.0, -0.1, 0.6, 180.0
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(dca.PLYield(c, m0, m, t0))
     y = mh.secondary
 
@@ -1037,7 +1037,7 @@ def test_plyield_closed_form_clamped() -> None:
     yield function is clamped, which is what makes D and beta flatten there."""
     c, m0, m, t0 = 1200.0, 0.8, 0.6, 180.0
     lo, hi = 800.0, 5000.0
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(dca.PLYield(c, m0, m, t0, lo, hi))
     y = mh.secondary
 
@@ -1222,7 +1222,7 @@ def test_generalized_anchor_chain_seed_is_consistent() -> None:
     )
     assert np.all(y.segment_params[:, y.Y_IDX] == 0.0)
 
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(y)
     assert np.all(mh.secondary.gor([45.0, 180.0, 900.0]) == 0.0)
 
@@ -1236,7 +1236,11 @@ GENERALIZED_SEGMENTS = (
 )
 
 
-def _generalized_primary() -> dca.MH:
+def _producing_primary() -> dca.MH:
+    """An arbitrary producing primary phase, built solely to host an attached secondary or
+    water phase. Every caller throws away its MH-specific detail, so the parameters carry no
+    meaning beyond "this well produces" -- which is why they are named here once rather than
+    restated at each site."""
     return dca.MH(1000.0, 0.7, 1.5, 0.08)
 
 
@@ -1276,7 +1280,7 @@ def test_segment_start_column_is_sorted() -> None:
     # The value is NOT nan: t / t0 is negative, and `_yieldfn` floors a non-positive
     # ratio at MIN_EPSILON, so the result is c * exp(m * log(MIN_EPSILON)) -- a tiny
     # positive number. Pinning it here documents that the mask, not the power, decides.
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(dca.PLYield(1200.0, 0.3, 0.6, -5.0, validate_params=[False] * 4))
     t = np.array([1.0, 10.0, 100.0])
     expected = 1200.0 * np.exp(0.6 * np.log(np.finfo(np.float64).tiny))
@@ -1287,7 +1291,7 @@ def test_generalized_continuity() -> None:
     """The yield function must be continuous at every breakpoint. This is the property
     the anchor chain exists to guarantee -- a coefficient-form implementation that
     mis-chained the anchors would show a step here."""
-    mh = _generalized_primary()
+    mh = _producing_primary()
     mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
@@ -1302,7 +1306,7 @@ def test_generalized_segment_slopes() -> None:
     """beta(t) is -m + t * primary.D(t), so beta - t * primary.D recovers -m exactly.
     Confirms the gather picks the right segment and the chain leaves slopes alone.
     Runs unclamped, since `_mfn` deliberately zeroes m wherever the yield is clamped."""
-    mh = _generalized_primary()
+    mh = _producing_primary()
     mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
@@ -1315,7 +1319,7 @@ def test_generalized_segment_slopes() -> None:
 
 def test_generalized_yield_values() -> None:
     """Spot-check the anchor chain against the products computed by hand."""
-    mh = _generalized_primary()
+    mh = _producing_primary()
     mh.add_secondary(dca.GeneralizedPLYield(GENERALIZED_C, GENERALIZED_M0, GENERALIZED_SEGMENTS))
     y = mh.secondary
 
@@ -1481,7 +1485,7 @@ def test_generalized_from_segments_builder() -> None:
 def test_generalized_c_override_steps_the_yield() -> None:
     """A segment c breaks the anchor chain: the yield steps to exactly that value at the
     breakpoint instead of continuing from the preceding segment."""
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(
         dca.GeneralizedPLYield(
             1.2, 0.0, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, c=2.5, m=0.6))
@@ -1531,7 +1535,7 @@ def _shut_in_model(
 ) -> tuple[dca.MH, dca.GeneralizedPLYield]:
     """A producing yield that shuts in at 1095 days, with one further segment after the
     shut-in whose slope must not leak into anything."""
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     y = dca.GeneralizedPLYield(
         1.2,
         0.0,
@@ -1568,7 +1572,7 @@ def test_generalized_shut_in_zeroes_the_yield() -> None:
 def test_generalized_shut_in_restarts_only_at_an_explicit_c() -> None:
     """Coming back on production takes an explicit c: the chain restarts at that value,
     since the shut-in erased the trend it would otherwise continue from."""
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(
         dca.GeneralizedPLYield(
             1.2,
@@ -1601,7 +1605,7 @@ def test_generalized_shut_in_is_exempt_from_min_and_max() -> None:
 
     assert np.array_equal(y.gor(np.array([1095.0, 1500.0, 2190.0])), np.zeros(3))
 
-    capped = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    capped = _producing_primary()
     capped.add_secondary(
         dca.GeneralizedPLYield(
             1.2,
@@ -1622,7 +1626,7 @@ def test_generalized_shut_in_survives_a_shift() -> None:
         1.2, 0.0, (dca.PLYieldSegment(90.0, m=0.6), dca.PLYieldSegment(1095.0, c=0.0))
     )
     shifted = model.shift(30.0)
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(shifted)
     y = mh.secondary
 
@@ -1638,7 +1642,7 @@ def test_generalized_shut_in_survives_a_shift() -> None:
 def test_generalized_shut_in_reaches_the_water_accessors() -> None:
     """A shut-in is a property of the yield function, so it reaches whichever pair of ratio
     accessors the model is attached as -- `wor`/`wgr` here rather than `gor`/`cgr`."""
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_water(
         dca.GeneralizedPLYield(
             2.0, 0.0, (dca.PLYieldSegment(90.0, m=0.1), dca.PLYieldSegment(1095.0, c=0.0))
@@ -1659,7 +1663,7 @@ def test_generalized_shut_in_can_cycle() -> None:
     the restart breakpoint: the associated phase integrates numerically, and the trapezoid
     rule smears any step discontinuity over the interval containing it -- which a positive
     ``c`` override does too, and has since those overrides existed."""
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(
         dca.GeneralizedPLYield(
             1.2,
@@ -1717,16 +1721,16 @@ def test_generalized_shut_in_has_no_slope() -> None:
     t = np.array([1095.0, 1500.0, 2190.0, 5000.0])
     assert np.allclose(y.D(t), mh.D(t), rtol=1e-13, atol=0.0)
     assert np.allclose(y.beta(t), mh.D(t) * t, rtol=1e-13, atol=0.0)
-    assert np.allclose(
-        y.b(t), -mh._Dfn2(t) / (mh.D(t) * mh.D(t)), rtol=1e-13, atol=0.0
-    )
+    # divided by D twice, matching `_bfn` -- squaring it here would rebuild in the
+    # reference the precision loss production moved away from
+    assert np.allclose(y.b(t), -mh._Dfn2(t) / mh.D(t) / mh.D(t), rtol=1e-13, atol=0.0)
 
 
 def test_generalized_initial_shut_in() -> None:
     """A model c of zero shuts the phase in from the start -- the only way to zero the
     pre-anchor branch, which spans t < segments[0].t -- and segments[0] may then supply
     the value it comes back at."""
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(
         dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(90.0, c=2.5, m=0.6),))
     )
@@ -1740,7 +1744,7 @@ def test_generalized_initial_shut_in() -> None:
 def test_generalized_shut_in_at_the_first_breakpoint() -> None:
     """The mirror case: a producing pre-anchor branch that shuts in exactly at
     segments[0].t, where the model c pins the value on the way in."""
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(dca.GeneralizedPLYield(1.2, 0.0, (dca.PLYieldSegment(180.0, c=0.0),)))
     y = mh.secondary
 
@@ -1751,7 +1755,7 @@ def test_generalized_shut_in_at_the_first_breakpoint() -> None:
 def test_generalized_shut_in_survives_a_saturating_exponent() -> None:
     """A shut-in stays zero even where the segment exponent saturates to inf, which
     `0 * inf` would otherwise make nan -- with a RuntimeWarning on the way out."""
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(
         dca.GeneralizedPLYield(
             1.2,
@@ -1804,13 +1808,13 @@ def test_zero_slope_contributes_no_decline_at_t_zero() -> None:
     ``m0``, which is the parameterization the README itself uses."""
     zero = np.array([0.0])
 
-    shut_in = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    shut_in = _producing_primary()
     shut_in.add_secondary(
         dca.GeneralizedPLYield(0.0, 0.0, (dca.PLYieldSegment(90.0, c=2.5, m=0.6),))
     )
-    clamped = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    clamped = _producing_primary()
     clamped.add_secondary(dca.PLYield(1.2, 0.5, 0.6, 180.0, 1.0, None))
-    flat = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    flat = _producing_primary()
     flat.add_secondary(dca.PLYield(1.2, 0.0, 0.6, 180.0))
 
     for primary in (shut_in, clamped, flat):
@@ -1823,7 +1827,7 @@ def test_zero_slope_contributes_no_decline_at_t_zero() -> None:
         assert np.all(np.isfinite(secondary.b(zero)))
 
     # a real power-law slope keeps its signed-infinite limit at the origin
-    sloped = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    sloped = _producing_primary()
     sloped.add_secondary(dca.PLYield(1.2, 0.5, 0.6, 180.0))
     assert sloped.secondary.D(zero)[0] == -np.inf
 
@@ -1847,7 +1851,7 @@ def test_degenerate_anchor_time_does_not_leak_a_warning() -> None:
     )
 
     for yield_model, t in cases:
-        primary = dca.MH(1000.0, 0.7, 1.5, 0.08)
+        primary = _producing_primary()
         primary.add_secondary(yield_model)
         secondary = primary.secondary
 
@@ -1884,9 +1888,9 @@ def test_generalized_inherited_slope_is_a_no_op() -> None:
 
     assert with_extra.segment_params.shape[0] == without.segment_params.shape[0] + 1
 
-    mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh_a = _producing_primary()
     mh_a.add_secondary(with_extra)
-    mh_b = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh_b = _producing_primary()
     mh_b.add_secondary(without)
     t = dca.get_time(1.0, 1e4, 61)
     assert np.allclose(mh_a.secondary.gor(t), mh_b.secondary.gor(t), rtol=1e-12)
@@ -1906,9 +1910,9 @@ def test_plyield_shift_reanchors() -> None:
     assert y.t0 == 180.0  # original untouched
 
     # the anchor value is preserved, at the shifted time
-    mh_a = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh_a = _producing_primary()
     mh_a.add_secondary(y)
-    mh_b = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh_b = _producing_primary()
     mh_b.add_secondary(shifted)
     assert mh_a.secondary.gor(np.array([180.0]))[0] == 1.2
     assert mh_b.secondary.gor(np.array([210.4]))[0] == 1.2
@@ -1928,7 +1932,7 @@ def test_generalized_shift_reanchors() -> None:
     assert (shifted.c, shifted.m0) == (y.c, y.m0)
     assert [segment.t for segment in y.segments] == [180.0, 1095.0]  # original untouched
 
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(shifted)
     # real-valued and rising over the month the original fit could not reach
     got = mh.secondary.gor(np.array([1.0, 15.0, 30.4]))
@@ -2182,20 +2186,20 @@ def test_yield_is_nan_before_zero() -> None:
     supported way to model the period before the anchor."""
     t = np.array([-30.4, -10.0, -1e-9])
     for m in (0.6, -0.6):
-        mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+        mh = _producing_primary()
         mh.add_secondary(dca.PLYield(c=1.2, m0=m, m=m, t0=180.0))
         assert np.all(np.isnan(mh.secondary.gor(t))), m
         assert np.all(np.isnan(mh.secondary.rate(t))), m
 
     # t == 0 keeps its existing 0.0 convention, and t > 0 is untouched
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0))
     assert mh.secondary.gor(np.array([0.0]))[0] == 0.0
     assert np.isclose(mh.secondary.gor(np.array([180.0]))[0], 1.2)
 
 
 def test_yield_nan_applies_to_generalized() -> None:
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(dca.GeneralizedPLYield(1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6),)))
     assert np.all(np.isnan(mh.secondary.gor(np.array([-30.4, -1.0]))))
 
@@ -2213,7 +2217,7 @@ def test_yield_nan_is_consistent_across_every_output() -> None:
             1.2, 0.6, (dca.PLYieldSegment(180.0, m=0.6), dca.PLYieldSegment(1095.0, m=-0.2))
         ),
     ):
-        mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+        mh = _producing_primary()
         mh.add_secondary(model)
         y = mh.secondary
         for name in ("gor", "cgr", "rate", "cum", "D", "beta", "b"):
@@ -2785,7 +2789,9 @@ def test_time_at_rate_on_a_zero_rate_model() -> None:
     for model in (
         dca.MH(0.0, 0.8, 1.5),
         dca.MH(0.0, 0.8, 1.5, 0.08),
-        dca.GeneralizedHyperbolic.from_segments(0.0, 0.8, 2.0, [(30.0, 1.2)]),
+        # b = 0.0, not 1.2: a segment on a shut-in model may not state an exponent, since
+        # a zero rate has no decline for one to act on
+        dca.GeneralizedHyperbolic.from_segments(0.0, 0.8, 2.0, [(30.0, 0.0)]),
     ):
         assert np.all(model.rate(dca.get_time()) == 0.0)
 
@@ -3223,7 +3229,7 @@ def test_generalized_hyperbolic_shut_in_rejects_a_stated_decline() -> None:
     """A shut-in has no decline to state. Forcing ``D`` and ``b`` to zero silently would
     discard what the caller asked for, so a non-zero one is rejected instead."""
     for D, b in ((0.8, None), (None, 1.5), (0.8, 1.5)):
-        with pytest.raises(ValueError, match="q == 0, which requires D == 0 and b == 0"):
+        with pytest.raises(ValueError, match="is shut in, which requires D == 0 and b == 0"):
             dca.GeneralizedHyperbolic(1000.0, 0.8, 1.5, (
                 dca.HyperbolicSegment(365.0, q=0.0, D=D, b=b),
             ))
@@ -3257,9 +3263,10 @@ def test_generalized_hyperbolic_restart_after_a_shut_in_needs_a_decline() -> Non
         1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 0.0)]
     )
 
-    # but it cannot state a non-zero exponent while it does, which is the existing D/b
-    # contradiction reached through the inherited zero rather than a stated one
-    with pytest.raises(ValueError, match="has D == 0, which requires b == 0"):
+    # but it cannot state a non-zero exponent while it does. That used to surface as the
+    # generic D/b sign contradiction, reached through the inherited zero decline; the
+    # shut-in rule now names the actual problem first
+    with pytest.raises(ValueError, match="is shut in, which requires D == 0 and b == 0"):
         dca.GeneralizedHyperbolic.from_segments(
             1000.0, 0.8, 1.5, [(365.0, 0.0, None, None), (800.0, 0.5)]
         )
@@ -3341,6 +3348,103 @@ def test_generalized_hyperbolic_consecutive_shut_ins() -> None:
 
     cum = gh.cum(t)
     assert np.array_equal(cum[1:], np.full(4, cum[1]))
+
+
+def test_generalized_hyperbolic_inherited_shut_in_rejects_a_stated_decline() -> None:
+    """A segment that INHERITS a shut-in is as shut in as one that states ``q = 0``, so a
+    decline stated on it is the same contradiction. Keyed on the segment's own ``q`` field
+    the rule saw neither of these, and the model reported a live decline for a well whose
+    rate is zero at every time -- the exact thing forcing a shut-in flat exists to end."""
+    # a zero qi, and a segment stating a decline without restating the rate
+    with pytest.raises(ValueError, match=r"segments\[0\] is shut in"):
+        dca.GeneralizedHyperbolic(0.0, 0.8, 1.5, (dca.HyperbolicSegment(100.0, D=0.5),))
+
+    # and a mid-chain shut-in followed by one stating a decline and an exponent
+    with pytest.raises(ValueError, match=r"segments\[1\] is shut in"):
+        dca.GeneralizedHyperbolic(
+            1000.0,
+            0.8,
+            1.5,
+            (
+                dca.HyperbolicSegment(100.0, q=0.0),
+                dca.HyperbolicSegment(200.0, D=0.5, b=1.2),
+            ),
+        )
+
+    # inheriting a PRODUCING rate and stating a decline is the ordinary case, untouched
+    producing = dca.GeneralizedHyperbolic(
+        1000.0, 0.8, 1.5, (dca.HyperbolicSegment(100.0, D=0.5),)
+    )
+    assert producing.rate(np.array([200.0]))[0] > 0.0
+    assert producing.D(np.array([200.0]))[0] > 0.0
+
+
+def test_generalized_hyperbolic_restart_after_an_inherited_shut_in() -> None:
+    """A shut-in continues through any number of segments that inherit the rate, so the
+    restart rule has to read the RESOLVED rate coming into a segment, not the immediately
+    preceding segment's stated one. Reading the stated field let a shut-in, an inheriting
+    continuation and then a restart through -- and the restart inherited the forced zero
+    decline, giving a flat, uncapped rate for the rest of the forecast."""
+    with pytest.raises(ValueError, match=r"segments\[2\] restarts after a shut-in"):
+        dca.GeneralizedHyperbolic(
+            1000.0,
+            0.8,
+            1.5,
+            (
+                dca.HyperbolicSegment(100.0, q=0.0),
+                dca.HyperbolicSegment(200.0),
+                dca.HyperbolicSegment(300.0, q=500.0),
+            ),
+        )
+
+    # stating the decline restarts it cleanly, and the rate then actually declines
+    restarted = dca.GeneralizedHyperbolic(
+        1000.0,
+        0.8,
+        1.5,
+        (
+            dca.HyperbolicSegment(100.0, q=0.0),
+            dca.HyperbolicSegment(200.0),
+            dca.HyperbolicSegment(300.0, q=500.0, D=0.8, b=1.5),
+        ),
+    )
+    assert restarted.rate(np.array([300.0]))[0] == 500.0
+    assert restarted.rate(np.array([100000.0]))[0] < 500.0
+
+
+def test_qi_zero_restart_is_still_capped_by_dterm() -> None:
+    """A model that comes online after a zero ``qi`` has a producing tail, and a ``Dterm``
+    beside it must still cap that tail. The silent early return that spares a never-producing
+    model its ``Dterm ignored`` warning was keyed on the INITIAL rate, so it fired here too
+    and dropped the cap without a word."""
+    capped = dca.GeneralizedHyperbolic(
+        0.0, 0.8, 1.5, (dca.HyperbolicSegment(100.0, q=500.0, D=0.5, b=1.0),), Dterm=0.08
+    )
+
+    # the initial row, the producing segment, and the terminal exponential
+    assert capped.segment_params.shape[0] == 3
+
+    # a model that never produces still appends nothing, and still says nothing
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        silent = dca.MH(0.0, 0.8, 1.5, 0.08)
+    assert silent.segment_params.shape[0] == 1
+
+    # while one that produced and then shut in is still told its Dterm cannot apply
+    with pytest.warns(RuntimeWarning, match="Dterm ignored"):
+        dca.GeneralizedHyperbolic.from_segments(
+            1000.0, 0.8, 1.5, [(365.0, 0.0, None, None)], Dterm=0.08
+        )
+
+
+def test_interval_vol_accepts_an_empty_time_array() -> None:
+    """Its two siblings return an empty array; `interval_vol` defaulted ``t0`` to ``t[0]``
+    and raised IndexError instead."""
+    ple = dca.PLE(1000.0, 0.8, 1e-4, 0.5)
+    empty = np.array([], dtype=np.float64)
+
+    for method in (ple.interval_vol, ple.monthly_vol, ple.monthly_vol_equiv):
+        assert method(empty).size == 0
 
 
 def test_generalized_hyperbolic_trailing_shut_in_bounds_the_eur() -> None:
@@ -4044,7 +4148,7 @@ def test_numerical_integration_isolates_negative_time() -> None:
         assert np.array_equal(baseline, with_negative[1:]), type(model).__name__
 
     # the associated-phase yields integrate the same way
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0))
     baseline = mh.secondary.cum(positive)
     with_negative = mh.secondary.cum(np.concatenate([[-30.0], positive]))
@@ -4082,7 +4186,7 @@ def test_numerical_integration_isolates_infinite_time() -> None:
     # PLE has no closed-form cumulative and always integrates; the yields do too. SE at this n
     # and Duong answer analytically, so they never reach the grid -- they are included to show
     # the finite entries are unharmed either way.
-    mh = dca.MH(1000.0, 0.7, 1.5, 0.08)
+    mh = _producing_primary()
     mh.add_secondary(dca.PLYield(c=1.2, m0=0.6, m=0.6, t0=180.0))
     for model in (ple, dca.SE(1000.0, 100.0, 0.5), dca.Duong(1000.0, 1.5, 1.2), mh.secondary):
         baseline = model.cum(positive)
