@@ -17,7 +17,8 @@ unchanged.
     * **Breaking numerical change:** ``transient_rate`` and ``transient_cum`` were scaled by
       ``exp(Dnom_i)``, with ``Dnom_i`` the initial nominal decline per day. The exponent was
       ``Dnom_i - int_0^t D`` instead of ``-int_0^t D``, so ``transient_rate(0)`` was not
-      ``qi``. ``transient_D`` was correct, so the error was a constant factor at every ``t``:
+      ``qi``. ``transient_D`` did not carry this factor, so the error was a constant factor at
+      every ``t``:
 
       .. code-block:: text
 
@@ -35,14 +36,30 @@ unchanged.
       ``transient_b`` at 60, 120 and 420 days goes from 1.99513, 1.74943, 0.50795 to 1.99604,
       1.75468, 0.50715.
     * The second Ei term of SPE-167242 Eq. 7 is the integration constant that makes
-      ``D(0) = Di``. It was subtracted without its ``(bi - bf) / c`` factor. The error was
-      small because the term is about ``-1.7e-10``, but it grew with the decline. For
+      ``D(0) = Dnom_i``. It was subtracted without its ``(bi - bf) / c`` factor. The error was
+      small because the term was about ``-5.6e-10`` with the old gamma (``-1.7e-10`` with the
+      corrected one), but its relative effect on ``D(0)`` grows with ``Dnom_i`` and ``telf``. For
       ``THM(5000, 0.99, 2, 0.7, 5000)``, ``transient_D(0)`` was 13.68847 against a ``Dnom_i``
       of 13.68789.
-    * Eq. 7 is now evaluated as ``1/Di + bf t + (bi - bf)/c g(t)``, with
+    * Eq. 7 is now evaluated as ``1/Dnom_i + bf t + (bi - bf)/c g(t)``, with
       ``g(t) = c t + Ei(-z(t)) - Ei(-z(0))``. This is the same expression, but ``bi t`` and the
       late-time Ei term no longer cancel each other. With ``bf = 0`` and a very small ``telf``,
-      that cancellation drove the denominator to zero and ``transient_D`` to ``inf``.
+      that cancellation left a denominator that was wrong, negative, or exactly zero.
+    * ``transient_D`` and ``transient_beta`` returned ``NaN`` at exactly ``t = tterm`` for a
+      hyperbolic terminal segment: the transient branch took ``t < tterm`` and the terminal
+      branch ``t > tterm``. ``transient_rate`` and ``transient_cum`` integrate over a grid that
+      includes the requested times, so asking for ``t = tterm`` zeroed the decline at one grid
+      point and shifted every later value. For ``THM(1000, 0.8, 2, 0.5, 1000, 0.1, 3)`` the
+      rate moved by ``+8.9e-4`` relative and the cumulative by ``+2.5e-4`` to ``+4.4e-4``.
+      ``t = tterm`` now takes the transient value, which equals the terminal segment's initial
+      decline.
+    * ``transient_D`` and ``transient_beta`` were wrong for an unsorted ``t`` with a hyperbolic
+      terminal segment. The Ei term was added in a loop that stopped at the first element past
+      ``tterm``, so every later element lost it, whatever its own time. For
+      ``THM(1000, 0.8, 2, 0.5, 60, 0.1, 5)``, ``transient_D([3000, 100, 500])`` gave 0.00097 at
+      ``t = 500`` against 0.00182 for a sorted call. The term is now a vectorized mask, so the
+      order of ``t`` does not matter. ``transient_rate`` and ``transient_cum`` integrate on a
+      sorted grid and were not affected.
 
 * Performance
     * The Ei terms are vectorized. ``mpmath.ei`` was called once per element in a Python loop,

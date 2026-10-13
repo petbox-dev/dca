@@ -524,15 +524,19 @@ TRANSIENT_THM_PARAMS: list[TransientTHMParams] = [
     (5000.0, 0.9, 2.0, 0.7, 200.0),
     (5000.0, 0.99, 2.0, 0.7, 5000.0),
     # bf = 0 and a tiny telf: late in time bi t and (bi - bf)/c Ei(-z) cancel to within the
-    # rounding of 1/Di, which drove the denominator to zero in the unrearranged Eq. 7
+    # rounding of 1/Dnom_i, which in the unrearranged Eq. 7 gave a wrong or negative denominator
+    # on this grid, and exactly zero at some t. Its rate underflows to zero within a year.
     (1000.0, 0.9999999850988388, 2.0, 0.0, 3.637978807091713e-12),
 ]
+# the fixtures with a rate that stays positive, so a relative comparison is meaningful
+TRANSIENT_THM_PARAMS_WITH_RATE = TRANSIENT_THM_PARAMS[:3]
 
 
 def transient_D_reference(model: dca.THM, t: float) -> float:
-    """SPE-167242 Eq. 7 in 50-digit arithmetic, independent of the code under test:
+    """SPE-167242 Eq. 7 in 50-digit arithmetic, independent of the code under test except for the
+    Di -> Dnom_i conversion, which the segmented models share and test separately:
 
-        1/D(t) = 1/Di + bi t + (bi - bf)/c [Ei(-exp(-c (t - telf) + e^gamma)) - Ei(-exp(c telf + e^gamma))]
+        1/D(t) = 1/Dnom_i + bi t + (bi - bf)/c [Ei(-exp(-c (t - telf) + e^gamma)) - Ei(-exp(c telf + e^gamma))]
 
     with c = e^gamma / (1.5 telf) and gamma the Euler-Mascheroni constant. mpmath evaluates Ei
     without underflow at any t, which is what the float implementation has to match."""
@@ -560,16 +564,17 @@ def test_THM_transient_rate_starts_at_qi(params: TransientTHMParams) -> None:
     factor: x1.0334 at Di = 0.8, x880,183 at Di = 0.99."""
     thm = dca.THM(*params)
     t = np.array([0.0, 365.25, 10957.5])
-    assert thm.transient_rate(t)[0] == pytest.approx(params[0], rel=1e-12)
+    assert thm.transient_rate(t)[0] == pytest.approx(thm.qi, rel=1e-12)
     assert thm.transient_cum(t)[0] == 0.0
 
 
 @pytest.mark.parametrize("params", TRANSIENT_THM_PARAMS)
-def test_THM_transient_D_starts_at_Di(params: TransientTHMParams) -> None:
-    """The second Ei term is the integration constant that makes D(0) = Di exactly. Without its
-    (bi - bf)/c factor, D(0) was off by up to 4e-5 relative."""
+def test_THM_transient_D_starts_at_Dnom_i(params: TransientTHMParams) -> None:
+    """The second Ei term is the integration constant that makes D(0) = Dnom_i exactly, the
+    initial nominal decline per day that the secant Di converts to. Without its
+    (bi - bf)/c factor, and with the old gamma, D(0) was off by up to 4.2e-5 relative."""
     thm = dca.THM(*params)
-    Dnom_i = thm._nominal_per_day_from_secant(params[1], params[2])
+    Dnom_i = thm._nominal_per_day_from_secant(thm.Di, thm.bi)
     assert thm.transient_D(np.array([0.0]))[0] == pytest.approx(Dnom_i, rel=1e-13)
 
 
@@ -578,15 +583,16 @@ def test_THM_transient_D_matches_closed_form(params: TransientTHMParams) -> None
     """Every t from the start through deep boundary-dominated flow, where Ei(-exp(x)) is far
     past the float underflow of scipy's expi. The last points sit hundreds of 1/c past telf."""
     thm = dca.THM(*params)
-    t = np.array([0.0, 1.0, 30.0, params[4], 3.0 * params[4], 3650.0, 10957.5, 36525.0, 1e6])
+    t = np.array([0.0, 1.0, 30.0, thm.telf, 3.0 * thm.telf, 3650.0, 10957.5, 36525.0, 1e6])
     expected = np.array([transient_D_reference(thm, time) for time in t])
     assert np.allclose(thm.transient_D(t), expected, rtol=1e-12, atol=0.0)
 
 
-@pytest.mark.parametrize("params", TRANSIENT_THM_PARAMS[:2])
+@pytest.mark.parametrize("params", TRANSIENT_THM_PARAMS_WITH_RATE)
 def test_THM_transient_cum_tracks_the_segmented_cum(params: TransientTHMParams) -> None:
     """The 3-segment discretization tracks the full model within ~0.1% in 30-year cumulative
-    (URTeC-2903036, App. A). The exp(Dnom_i) rate bias put the transient form 3% to 15% high."""
+    (URTeC-2903036, App. A). The exp(Dnom_i) rate bias put the transient form 3% high at
+    Di = 0.8, 15% at Di = 0.9, and a factor of 880,000 at Di = 0.99."""
     thm = dca.THM(*params)
     t = np.array([365.25, 10957.5])
     assert np.allclose(thm.transient_cum(t), thm.cum(t), rtol=2e-3, atol=0.0)
@@ -599,11 +605,9 @@ def test_THM_scaled_b_excess_integral_matches_mpmath(params: TransientTHMParams)
     branch, the series past it, and both sides of the switch between them."""
     import mpmath as mp
 
-    from petbox.dca.primary import EI_SERIES_SWITCH
-
     thm = dca.THM(*params)
-    c = thm.EXP_GAMMA / (1.5 * thm.telf)
-    switch_time = thm.telf + (thm.EXP_GAMMA - EI_SERIES_SWITCH) / c
+    c = thm._transient_decay_constant
+    switch_time = thm.telf + (thm.EXP_GAMMA - thm.EI_SERIES_SWITCH) / c
     t = np.concatenate([
         [0.0],
         np.geomspace(thm.telf * 1e-3, max(1e6, 1e3 * switch_time), 400),
@@ -619,17 +623,68 @@ def test_THM_scaled_b_excess_integral_matches_mpmath(params: TransientTHMParams)
             for time in t
         ])
 
-    g = thm._scaled_b_excess_integral(t, c)
+    g = thm._scaled_b_excess_integral(t)
     assert g[0] == 0.0
     assert np.all(np.diff(g[1:-3]) >= 0.0)
     assert np.allclose(g, expected, rtol=1e-12, atol=0.0)
 
 
+def test_THM_transient_D_hyperbolic_terminal_is_continuous_at_tterm() -> None:
+    """At t = tterm the decline takes the transient value, which is also the terminal segment's
+    initial decline. The transient branch once took t < tterm and the terminal branch t > tterm,
+    leaving t == tterm in neither: NaN. After tterm, D is the hyperbolic Dterm / (1 + bterm Dterm
+    (t - tterm)) seeded by that value."""
+    thm = dca.THM(1000.0, 0.8, 2.0, 0.5, 60.0, 0.1, 5.0)
+    tterm = thm.tterm * dca.DAYS_PER_YEAR
+    Dterm = transient_D_reference(thm, tterm)
+
+    around = np.array([np.nextafter(tterm, 0.0), tterm, np.nextafter(tterm, np.inf)])
+    assert np.allclose(thm.transient_D(around), Dterm, rtol=1e-12, atol=0.0)
+    assert np.all(np.isfinite(thm.transient_beta(around)))
+
+    after = tterm + np.array([10.0, 1000.0, 10000.0])
+    expected = Dterm / (1.0 + thm.bterm * Dterm * (after - tterm))
+    assert np.allclose(thm.transient_D(after), expected, rtol=1e-12, atol=0.0)
+
+
+def test_THM_transient_D_does_not_depend_on_the_order_of_t() -> None:
+    """The Ei term was once added in a loop that stopped at the first element past tterm, so an
+    unsorted t lost it for every later element: D(500) came out 47% low for [3000, 100, 500]."""
+    thm = dca.THM(1000.0, 0.8, 2.0, 0.5, 60.0, 0.1, 5.0)
+    unsorted = np.array([3000.0, 100.0, 500.0, 2500.0, 30.0])
+    order = np.argsort(unsorted)
+    # not bit-for-bit: numpy's SIMD loops can round the last bit differently by array position
+    assert np.allclose(thm.transient_D(unsorted)[order], thm.transient_D(unsorted[order]), rtol=1e-15, atol=0.0)
+
+
+def test_THM_transient_rate_does_not_depend_on_requesting_tterm() -> None:
+    """The integration grid includes every requested time. A NaN decline at t == tterm was zeroed
+    on the grid, so asking for tterm shifted every later rate, by 8.9e-4 relative here. tterm sits
+    before the 3-segment breakpoints, so the grid does not already straddle it."""
+    thm = dca.THM(1000.0, 0.8, 2.0, 0.5, 1000.0, 0.1, 3.0)
+    tterm = thm.tterm * dca.DAYS_PER_YEAR
+    t = np.array([500.0, 2000.0, 5000.0])
+    with_tterm = np.array([500.0, tterm, 2000.0, 5000.0])
+    assert np.allclose(thm.transient_rate(with_tterm)[[0, 2, 3]], thm.transient_rate(t), rtol=1e-5, atol=0.0)
+    assert np.allclose(thm.transient_cum(with_tterm)[[0, 2, 3]], thm.transient_cum(t), rtol=1e-5, atol=0.0)
+
+
+def test_THM_transient_D_exponential_terminal_floors_the_decline() -> None:
+    """With tterm = 0 and bterm a terminal decline, D is the transient decline until it falls to
+    the terminal decline and the terminal decline after: the larger of the two at every t."""
+    thm = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.08, 0.0)
+    Dterm = thm._nominal_per_day_from_tangent(thm.bterm)
+    t = dca.get_time()
+    transient = np.array([transient_D_reference(thm, time) for time in t])
+    assert np.any(transient < Dterm) and np.any(transient > Dterm)  # the floor is reached
+    assert np.allclose(thm.transient_D(t), np.maximum(transient, Dterm), rtol=1e-12, atol=0.0)
+
+
 def test_THM_transient_functions_do_not_need_mpmath() -> None:
-    """`mpmath` is a dev-only dependency, so an ordinary `pip install petbox-dca` does not have
+    """`mpmath` is a test-only dependency, so an ordinary `pip install petbox-dca` does not have
     it. `_transDfn` once needed it for Ei at late time, where scipy's expi underflows; that
-    branch is now an analytic series, so every transient function runs without mpmath and
-    gives the same numbers it gives with it.
+    branch is now an analytic series, so every transient function runs without mpmath. The
+    last time is past the series switch for these models, so the series branch runs too.
 
     The stub blocks the import for the duration of the test rather than uninstalling anything,
     so it is safe to run in an environment that has mpmath (which CI does)."""
@@ -647,14 +702,13 @@ def test_THM_transient_functions_do_not_need_mpmath() -> None:
                 raise ImportError(f"{name} is blocked by this test")
             return None
 
-    t = np.array([30.0, 365.25])
+    t = np.array([30.0, 365.25, 3650.0])
     plain = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0)                  # no terminal segment
     hyperbolic_term = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.0, 10.0)
     exponential_term = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.08, 0.0)
 
     models = (plain, hyperbolic_term, exponential_term)
     transient_names = ("transient_rate", "transient_cum", "transient_D", "transient_beta", "transient_b")
-    reference = [{name: getattr(model, name)(t) for name in transient_names} for model in models]
 
     blocker = BlockMpmath()
     blocked = [m for m in sys.modules if m == "mpmath" or m.startswith("mpmath.")]
@@ -667,10 +721,9 @@ def test_THM_transient_functions_do_not_need_mpmath() -> None:
         with pytest.raises(ImportError):
             importlib.import_module("mpmath")
 
-        # same process, same arithmetic, so equal bit for bit
-        for model, expected in zip(models, reference, strict=True):
+        for model in models:
             for name in transient_names:
-                assert np.array_equal(getattr(model, name)(t), expected[name]), name
+                assert np.all(np.isfinite(getattr(model, name)(t))), name
     finally:
         sys.meta_path.remove(blocker)
         sys.modules.update(saved_modules)
@@ -4414,10 +4467,8 @@ def test_transient_rate_saturates_instead_of_crashing() -> None:
     assert np.all(degenerate.transient_rate(t) == 0.0)
     assert np.all(degenerate.transient_cum(t) == 0.0)
 
-    # the ordinary case still produces a finite, non-increasing forecast. It is deliberately
-    # NOT compared against `rate`: the transient functions are the full definition and the
-    # segmented ones an analytic approximation to it, so they differ by a few percent by
-    # construction -- 1001.03 against 968.68 at t = 1 for this model.
+    # the ordinary case still produces a finite, non-increasing forecast. The comparison
+    # against the segmented `rate` is test_THM_transient_cum_tracks_the_segmented_cum's job.
     ordinary = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0)
     transient = ordinary.transient_rate(t)
     assert np.all(np.isfinite(transient)) and np.all(transient >= 0.0)

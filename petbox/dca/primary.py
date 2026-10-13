@@ -40,9 +40,6 @@ from .base import (
     _validate_segment_times,
 )
 
-# Below this ln z, THM's Ei(-z) takes the small-argument series rather than scipy's expi.
-EI_SERIES_SWITCH = log(1e-8)
-
 
 @dataclass(frozen=True)
 class NullPrimaryPhase(PrimaryPhase):
@@ -1289,6 +1286,9 @@ class THM(MultisegmentHyperbolic):
     # e^gamma, gamma the Euler-Mascheroni constant (SPE-167242 Eq. 5)
     EXP_GAMMA: ClassVar[float] = exp(np.euler_gamma)
     EXP_1: ClassVar[float] = exp(1.0)
+    # Below this ln z, Ei(-z) takes the small-argument series rather than scipy's expi. At
+    # z = 1e-8 the first omitted term, z^3 / 18, is about 6e-26, below float resolution of g(t).
+    EI_SERIES_SWITCH: ClassVar[float] = log(1e-8)
 
     def _validate(self) -> None:
         self._require_a_real_decline(self.Di, self.bi)
@@ -1449,9 +1449,13 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            D(t) = \\frac{1}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
+            D(t) = \\frac{1}{\\frac{1}{D_{nom,i}} + b_i t + \\frac{bi - bf}{c}
             (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^{\\gamma}}]
             - \\textrm{Ei}[-e^{c \\, t_{elf} + e^{\\gamma}}])}
+
+        where :math:`D_{nom,i}` is the initial nominal decline per day and :math:`c` and
+        :math:`\\gamma` are as in :meth:`transient_b`. The denominator is evaluated in a
+        rearranged form that avoids cancelling ``b_i t`` against the late-time Ei term.
 
         Parameters
         ----------
@@ -1471,9 +1475,11 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            \\beta(t) = \\frac{t}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
+            \\beta(t) = \\frac{t}{\\frac{1}{D_{nom,i}} + b_i t + \\frac{bi - bf}{c}
             (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^{\\gamma}}]
             - \\textrm{Ei}[-e^{c \\, t_{elf} + e^{\\gamma}}])}
+
+        with the terms as in :meth:`transient_D`.
 
         Parameters
         ----------
@@ -1551,6 +1557,12 @@ class THM(MultisegmentHyperbolic):
             # no need to compute transient function
             return self._Dcheck(0.0, qi, Dnom_i, bi, 0.0, t)
 
+        # the hyperbolic terminal segment's times: strictly after tterm, and all-False with no
+        # tterm (an exponential terminal sets its own mask below). One mask for both the
+        # transient fill and the terminal override, so every t lands in exactly one; a `>=` in
+        # the first once left t == tterm in neither and returned NaN there.
+        after_tterm = t > tterm if tterm > 0.0 else np.full_like(t, False, dtype=bool)
+
         if telf < MIN_EPSILON:
             # telf is too small to compute transient function
             D = self._Dcheck(0.0, qi, Dnom_i, bf, 0.0, t)
@@ -1558,29 +1570,11 @@ class THM(MultisegmentHyperbolic):
 
         else:
             # transient function
-            # an all-False mask when there is no terminal time in this array; an exponential
-            # terminal may still introduce one later
-            where_term = t >= tterm if tterm > 0.0 else np.full_like(t, False, dtype=bool)
-
-            c = self.EXP_GAMMA / (1.5 * telf)
-
-            def reciprocal_D(times: NDFloat) -> NDFloat:
-                # SPE-167242 Eq. 7, rearranged so bi * t is never formed:
-                #   1/D = 1/Di + bi t + (bi - bf)/c [Ei(-z(t)) - Ei(-z(0))]
-                #       = 1/Di + bf t + (bi - bf)/c g(t)
-                # Late in time (bi - bf)/c Ei(-z(t)) is ~ -(bi - bf) t, so the first form cancels
-                # two large terms; with bf = 0 and a tiny telf the rounding exceeded 1/Di and
-                # the denominator reached zero.
-                denominator = 1.0 / Dnom_i + bf * times
-                if abs(bi - bf) >= MIN_EPSILON:
-                    denominator = denominator + (bi - bf) / c * self._scaled_b_excess_integral(times, c)
-                return denominator
-
             D = np.full_like(t, np.nan, dtype=np.float64)
-            D[~where_term] = 1.0 / reciprocal_D(t[~where_term])
+            D[~after_tterm] = 1.0 / self._transient_reciprocal_D(t[~after_tterm], Dnom_i)
 
             if tterm > 0.0:
-                Dterm = float(1.0 / reciprocal_D(np.array([tterm]))[0])
+                Dterm = float(1.0 / self._transient_reciprocal_D(np.array([tterm]), Dnom_i)[0])
 
             else:
                 Dterm = 0.0
@@ -1589,30 +1583,72 @@ class THM(MultisegmentHyperbolic):
         if tterm != 0.0 or bterm != 0.0:
             if tterm > 0.0:
                 # hyperbolic
-                where_term = t > tterm
-                D[where_term] = self._Dcheck(tterm, 1.0, Dterm, bterm, 0.0, t[where_term])
+                D[after_tterm] = self._Dcheck(tterm, 1.0, Dterm, bterm, 0.0, t[after_tterm])
 
             elif tterm == 0.0:
                 # exponential
                 Dterm = self._nominal_per_day_from_tangent(bterm)
-                where_term = Dterm >= D
-                D[where_term] = self._Dcheck(tterm, 1.0, Dterm, 0.0, 0.0, t[where_term])
+                at_terminal_floor = Dterm >= D
+                D[at_terminal_floor] = self._Dcheck(tterm, 1.0, Dterm, 0.0, 0.0, t[at_terminal_floor])
 
         return D
 
-    def _scaled_b_excess_integral(self, t: NDFloat, c: float) -> NDFloat:
+    @property
+    def _transient_decay_constant(self) -> float:
+        # c = e^gamma / (1.5 telf), the decay constant of b(t) (SPE-167242 Eq. 5)
+        return self.EXP_GAMMA / (1.5 * self.telf)
+
+    def _transient_ln_z(self, t: NDFloat) -> NDFloat:
+        # ln z(t) = -c (t - telf) + e^gamma, with b(t) = bi - (bi - bf) exp(-z(t))
+        return -self._transient_decay_constant * (t - self.telf) + self.EXP_GAMMA
+
+    def _transient_reciprocal_D(self, t: NDFloat, Dnom_i: float) -> NDFloat:
+        """
+        The reciprocal of the transient decline, SPE-167242 Eq. 7, rearranged so ``bi t`` is
+        never formed:
+
+        .. math::
+
+            \\frac{1}{D(t)} = \\frac{1}{D_{nom,i}} + b_i t
+                + \\frac{b_i - b_f}{c} (\\textrm{Ei}[-z(t)] - \\textrm{Ei}[-z(0)])
+            = \\frac{1}{D_{nom,i}} + b_f t + \\frac{b_i - b_f}{c} g(t)
+
+        Late in time ``(bi - bf)/c Ei(-z(t))`` is about ``-(bi - bf) t``, so the first form
+        cancels two large terms. With ``bf = 0`` and a tiny ``telf`` the rounding exceeded
+        ``1/Dnom_i`` and the denominator reached zero.
+
+        Parameters
+        ----------
+            t: NDFloat
+                An array of time values, in days.
+
+            Dnom_i: float
+                The initial nominal decline, per day.
+
+        Returns
+        -------
+            NDFloat
+        """
+        bi = self.bi
+        bf = self.bf
+        denominator = 1.0 / Dnom_i + bf * t
+        if abs(bi - bf) >= MIN_EPSILON:
+            denominator = denominator + (bi - bf) / self._transient_decay_constant * self._scaled_b_excess_integral(t)
+        return denominator
+
+    def _scaled_b_excess_integral(self, t: NDFloat) -> NDFloat:
         """
         The integral g(t) in the transient decline, with z(t) = exp(-c (t - telf) + e^gamma):
 
         .. math::
 
             g(t) = c \\, t + \\textrm{Ei}[-z(t)] - \\textrm{Ei}[-z(0)]
-                 = c \\int_0^t e^{-z(\\tau)} \\, d\\tau
+                 = c \\int_0^t (1 - e^{-z(\\tau)}) \\, d\\tau
 
         so ``(bi - bf) / c * g(t)`` is the integral of ``b(t) - bf``. It is zero at ``t = 0``
-        and non-decreasing. ``Ei(-z(0))`` is the integration constant that makes D(0) = Di.
+        and non-decreasing. ``Ei(-z(0))`` is the integration constant that makes D(0) = Dnom_i.
 
-        ``scipy.special.expi`` is used while ``ln z >= EI_SERIES_SWITCH``. Below it,
+        ``scipy.special.expi`` is used while ``ln z >= THM.EI_SERIES_SWITCH``. Below it,
         ``exp(x)`` heads for underflow and ``expi(-0.0)`` is ``-inf``, so the small-argument
         series takes over, with ``ln z = x`` supplied directly:
 
@@ -1631,22 +1667,22 @@ class THM(MultisegmentHyperbolic):
             t: NDFloat
                 An array of time values, in days.
 
-            c: float
-                The transient decay constant, ``e^gamma / (1.5 telf)``.
-
         Returns
         -------
             NDFloat
         """
-        ln_z = -c * (t - self.telf) + self.EXP_GAMMA
+        c = self._transient_decay_constant
+        ln_z = self._transient_ln_z(t)
         # through the same array arithmetic as ln_z, so g(0) cancels to exactly zero
-        ei_at_0 = ei(-np.exp(-c * (np.zeros(1) - self.telf) + self.EXP_GAMMA))[0]
+        ln_z_at_0 = self._transient_ln_z(np.zeros(1))[0]
+        ei_at_0 = ei(-np.exp(ln_z_at_0))
 
-        series = ln_z < EI_SERIES_SWITCH
+        series = ln_z < self.EI_SERIES_SWITCH
         result = np.empty_like(t, dtype=np.float64)
         result[~series] = c * t[~series] + ei(-np.exp(ln_z[~series])) - ei_at_0
         z = np.exp(ln_z[series])
-        result[series] = c * self.telf + self.EXP_GAMMA + np.euler_gamma - ei_at_0 - z + z * z / 4.0
+        # c t + ln z(t) = ln z(0) for every t
+        result[series] = ln_z_at_0 + np.euler_gamma - ei_at_0 - z + z * z / 4.0
         return result
 
     def _transbfn(self, t: NDFloat) -> NDFloat:
@@ -1659,8 +1695,7 @@ class THM(MultisegmentHyperbolic):
         tterm = self.tterm * DAYS_PER_YEAR
 
         if telf >= MIN_EPSILON:
-            c = self.EXP_GAMMA / (1.5 * telf)
-            b: NDFloat = bi - (bi - bf) * np.exp(-np.exp(-c * (t - telf) + self.EXP_GAMMA))
+            b: NDFloat = bi - (bi - bf) * np.exp(-np.exp(self._transient_ln_z(t)))
         else:
             b = np.full_like(t, bf, dtype=np.float64)
 

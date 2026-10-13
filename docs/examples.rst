@@ -57,13 +57,13 @@ If performance is a consideration, the approximation is much faster.
 .. code-block:: python
 
     >>> %timeit thm.transient_rate(t)
-    3.46 ms per loop (best of 5 runs, 20 loops each)
+    3.87 ms ± 234 µs per loop (mean ± std. dev. of 7 runs, 100 loops each)
 
 
 .. code-block:: python
 
     >>> %timeit thm.rate(t)
-    63.0 µs per loop (best of 5 runs, 2000 loops each)
+    122 µs ± 20.9 µs per loop (mean ± std. dev. of 7 runs, 10,000 loops each)
 
 
 Power-Law Exponential Model
