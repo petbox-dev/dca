@@ -83,6 +83,14 @@ The following functions are exposed for use
 |                            | `get_time_monthly_vol(...) <https://petbox-dca.readthedocs.io/en/latest/api.html#petbox.dca.get_time_monthly_vol>`_             |
 +----------------------------+---------------------------------------------------------------------------------------------------------------------------------+
 
+The ``transient_*`` functions evaluate the full Transient Hyperbolic Model (SPE-167242 Eq. 7)
+with ``scipy`` only. The exponential-integral terms use ``scipy.special.expi``, and use the
+small-argument series late in time, where ``expi`` would underflow. They need no optional
+dependency. ``rate``, ``cum``, ``D``, ``beta`` and ``b`` give the 3-segment approximation
+(URTeC-2903036), which is faster: on ``get_time()``, ``rate`` takes 0.12 ms and
+``transient_rate`` takes 3.9 ms. For the models in the test suite, the approximation's 30-year
+cumulative is within 0.1% of the full model.
+
 
 Getting Started
 ===============
