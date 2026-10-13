@@ -6,6 +6,55 @@ Version History
    :noindex:
 
 
+2.3.1
+-----
+
+Corrects the ``THM`` transient functions against their source papers (SPE-167242,
+SPE-174784-PA, URTeC-2903036). The 3-segment ``rate``, ``cum``, ``D``, ``beta`` and ``b`` are
+unchanged.
+
+* Bug Fix
+    * **Breaking numerical change:** ``transient_rate`` and ``transient_cum`` were scaled by
+      ``exp(Dnom_i)``, with ``Dnom_i`` the initial nominal decline per day. The exponent was
+      ``Dnom_i - int_0^t D`` instead of ``-int_0^t D``, so ``transient_rate(0)`` was not
+      ``qi``. ``transient_D`` was correct, so the error was a constant factor at every ``t``:
+
+      .. code-block:: text
+
+          model                            q(0) / qi   before   after
+          THM(1000, 0.80, 2, 0.5,   60)               1.0334   1.0
+          THM(5000, 0.90, 2, 0.7,  200)               1.1451   1.0
+          THM(5000, 0.99, 2, 0.7, 5000)               880183   1.0
+
+      After the fix, ``transient_cum`` at 30 years is within 0.035% of the 3-segment ``cum``
+      for all three models.
+    * **Breaking numerical change:** ``THM.EXP_GAMMA`` was ``exp(0.5572156)``. The papers
+      define gamma as the Euler-Mascheroni constant, 0.5772156649..., and the value is now
+      ``exp(np.euler_gamma)``. It sets ``c = e^gamma / (1.5 telf)`` and the shift inside
+      ``b(t)``, so it changes every transient function. For ``THM(1000, 0.8, 2, 0.5, 60)``,
+      ``transient_b`` at 60, 120 and 420 days goes from 1.99513, 1.74943, 0.50795 to 1.99604,
+      1.75468, 0.50715.
+    * The second Ei term of SPE-167242 Eq. 7 is the integration constant that makes
+      ``D(0) = Di``. It was subtracted without its ``(bi - bf) / c`` factor. The error was
+      small because the term is about ``-1.7e-10``, but it grew with the decline. For
+      ``THM(5000, 0.99, 2, 0.7, 5000)``, ``transient_D(0)`` was 13.68847 against a ``Dnom_i``
+      of 13.68789.
+    * Eq. 7 is now evaluated as ``1/Di + bf t + (bi - bf)/c g(t)``, with
+      ``g(t) = c t + Ei(-z(t)) - Ei(-z(0))``. This is the same expression, but ``bi t`` and the
+      late-time Ei term no longer cancel each other. With ``bf = 0`` and a very small ``telf``,
+      that cancellation drove the denominator to zero and ``transient_D`` to ``inf``.
+
+* Performance
+    * The Ei terms are vectorized. ``mpmath.ei`` was called once per element in a Python loop,
+      because ``scipy.special.expi(-exp(x))`` underflows to ``-inf`` at late time. Below
+      ``exp(x) = 1e-8`` the small-argument series now takes over, with ``ln z = x`` supplied
+      directly. For ``THM(750, 0.8, 2, 0.5, 28)`` on ``get_time()``, ``transient_rate`` goes
+      from 557 ms to 3.5 ms and ``transient_D`` from 4.05 ms to 0.037 ms.
+    * The transient functions no longer need ``mpmath``, so they no longer raise
+      ``ImportError`` without it. ``mpmath`` stays in the ``test`` extra as the 50-digit
+      reference for the tests.
+
+
 2.3.0
 -----
 

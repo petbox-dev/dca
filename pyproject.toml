@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "petbox-dca"
-version = "2.3.0"
+version = "2.3.1"
 description = "Decline Curve Library"
 readme = {file = "README.rst", content-type = "text/x-rst"}
 license = "MIT"
@@ -46,8 +46,8 @@ Homepage = "https://github.com/petbox-dev/dca"
 # -- only the figure scripts and mypy do. `dev` remains the one-stop group for a human.
 test = [
     "hypothesis>=6.14.8",
-    # THM's five transient_* functions import it lazily and raise without it, so the test that
-    # pins that behaviour needs it present in order to block it.
+    # The 50-digit reference the THM transient tests check against. The package itself does
+    # not import it.
     "mpmath>=1.3.0",
     "pytest>=6.2.4",
     "pytest-cov>=2.12.1",
@@ -153,8 +153,8 @@ disallow_any_unimported = true
 # Two modules mypy cannot resolve, declared here rather than as `# type: ignore` comments so
 # the reasons live in one place and `warn_unused_ignores` can still police every inline ignore.
 #
-#   mpmath -- 1.3.0 ships neither stubs nor a py.typed marker, so the lazy import in
-#             `THM._transDfn` is unanalyzable. Drop it if mpmath ever ships typing.
+#   mpmath -- 1.3.0 ships neither stubs nor a py.typed marker, so the lazy imports in the THM
+#             transient tests are unanalyzable. Drop it if mpmath ever ships typing.
 #   data   -- `tests/doc_examples.py` is the figure-generating script, run from `tests/` so
 #             `data.py` is a sibling on sys.path. Its `from data import ...` line is also
 #             rendered into docs/examples.rst by a literalinclude, so it has to keep the form a

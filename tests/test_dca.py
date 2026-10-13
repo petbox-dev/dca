@@ -13,6 +13,7 @@ Notes
 Created on August 5, 2019
 """
 
+import importlib
 import inspect
 import re
 import sys
@@ -517,12 +518,118 @@ def test_THM_transient_extra() -> None:
         thm = dca.THM(1000.0, 1e-10, 2.0, 0.3, 30.0, 0.5, 10.0)
 
 
-def test_THM_transient_functions_raise_without_mpmath() -> None:
+TransientTHMParams = tuple[float, float, float, float, float]
+TRANSIENT_THM_PARAMS: list[TransientTHMParams] = [
+    (1000.0, 0.8, 2.0, 0.5, 60.0),
+    (5000.0, 0.9, 2.0, 0.7, 200.0),
+    (5000.0, 0.99, 2.0, 0.7, 5000.0),
+    # bf = 0 and a tiny telf: late in time bi t and (bi - bf)/c Ei(-z) cancel to within the
+    # rounding of 1/Di, which drove the denominator to zero in the unrearranged Eq. 7
+    (1000.0, 0.9999999850988388, 2.0, 0.0, 3.637978807091713e-12),
+]
+
+
+def transient_D_reference(model: dca.THM, t: float) -> float:
+    """SPE-167242 Eq. 7 in 50-digit arithmetic, independent of the code under test:
+
+        1/D(t) = 1/Di + bi t + (bi - bf)/c [Ei(-exp(-c (t - telf) + e^gamma)) - Ei(-exp(c telf + e^gamma))]
+
+    with c = e^gamma / (1.5 telf) and gamma the Euler-Mascheroni constant. mpmath evaluates Ei
+    without underflow at any t, which is what the float implementation has to match."""
+    import mpmath as mp
+
+    with mp.workdps(50):
+        exp_gamma = mp.exp(mp.euler)
+        Dnom_i = mp.mpf(dca.THM._nominal_per_day_from_secant(model.Di, model.bi))
+        c = exp_gamma / (mp.mpf(1.5) * model.telf)
+        ei_t = mp.ei(-mp.exp(-c * (mp.mpf(t) - model.telf) + exp_gamma))
+        ei_0 = mp.ei(-mp.exp(c * model.telf + exp_gamma))
+        denominator = 1 / Dnom_i + model.bi * mp.mpf(t) + (model.bi - model.bf) / c * (ei_t - ei_0)
+        return float(1 / denominator)
+
+
+def test_THM_EXP_GAMMA_is_exp_of_euler_mascheroni() -> None:
+    """All three source papers define gamma as the Euler-Mascheroni constant, 0.5772156649...
+    The class constant once carried 0.5572156, a transposed digit."""
+    assert np.log(dca.THM.EXP_GAMMA) == pytest.approx(np.euler_gamma, rel=1e-15)
+
+
+@pytest.mark.parametrize("params", TRANSIENT_THM_PARAMS)
+def test_THM_transient_rate_starts_at_qi(params: TransientTHMParams) -> None:
+    """q(t) = qi exp(-int_0^t D), so q(0) = qi. The rate once carried an extra exp(Dnom_i)
+    factor: x1.0334 at Di = 0.8, x880,183 at Di = 0.99."""
+    thm = dca.THM(*params)
+    t = np.array([0.0, 365.25, 10957.5])
+    assert thm.transient_rate(t)[0] == pytest.approx(params[0], rel=1e-12)
+    assert thm.transient_cum(t)[0] == 0.0
+
+
+@pytest.mark.parametrize("params", TRANSIENT_THM_PARAMS)
+def test_THM_transient_D_starts_at_Di(params: TransientTHMParams) -> None:
+    """The second Ei term is the integration constant that makes D(0) = Di exactly. Without its
+    (bi - bf)/c factor, D(0) was off by up to 4e-5 relative."""
+    thm = dca.THM(*params)
+    Dnom_i = thm._nominal_per_day_from_secant(params[1], params[2])
+    assert thm.transient_D(np.array([0.0]))[0] == pytest.approx(Dnom_i, rel=1e-13)
+
+
+@pytest.mark.parametrize("params", TRANSIENT_THM_PARAMS)
+def test_THM_transient_D_matches_closed_form(params: TransientTHMParams) -> None:
+    """Every t from the start through deep boundary-dominated flow, where Ei(-exp(x)) is far
+    past the float underflow of scipy's expi. The last points sit hundreds of 1/c past telf."""
+    thm = dca.THM(*params)
+    t = np.array([0.0, 1.0, 30.0, params[4], 3.0 * params[4], 3650.0, 10957.5, 36525.0, 1e6])
+    expected = np.array([transient_D_reference(thm, time) for time in t])
+    assert np.allclose(thm.transient_D(t), expected, rtol=1e-12, atol=0.0)
+
+
+@pytest.mark.parametrize("params", TRANSIENT_THM_PARAMS[:2])
+def test_THM_transient_cum_tracks_the_segmented_cum(params: TransientTHMParams) -> None:
+    """The 3-segment discretization tracks the full model within ~0.1% in 30-year cumulative
+    (URTeC-2903036, App. A). The exp(Dnom_i) rate bias put the transient form 3% to 15% high."""
+    thm = dca.THM(*params)
+    t = np.array([365.25, 10957.5])
+    assert np.allclose(thm.transient_cum(t), thm.cum(t), rtol=2e-3, atol=0.0)
+    assert np.allclose(thm.transient_rate(t), thm.rate(t), rtol=5e-3, atol=0.0)
+
+
+@pytest.mark.parametrize("params", TRANSIENT_THM_PARAMS)
+def test_THM_scaled_b_excess_integral_matches_mpmath(params: TransientTHMParams) -> None:
+    """g(t) = c t + Ei(-z(t)) - Ei(-z(0)) across the whole range `_transDfn` reaches: the scipy
+    branch, the series past it, and both sides of the switch between them."""
+    import mpmath as mp
+
+    from petbox.dca.primary import EI_SERIES_SWITCH
+
+    thm = dca.THM(*params)
+    c = thm.EXP_GAMMA / (1.5 * thm.telf)
+    switch_time = thm.telf + (thm.EXP_GAMMA - EI_SERIES_SWITCH) / c
+    t = np.concatenate([
+        [0.0],
+        np.geomspace(thm.telf * 1e-3, max(1e6, 1e3 * switch_time), 400),
+        [np.nextafter(switch_time, 0.0), switch_time, np.nextafter(switch_time, np.inf)],
+    ])
+
+    with mp.workdps(50):
+        exp_gamma = mp.exp(mp.euler)
+        c_mp = exp_gamma / (mp.mpf(1.5) * thm.telf)
+        ei_at_0 = mp.ei(-mp.exp(c_mp * thm.telf + exp_gamma))
+        expected = np.array([
+            float(c_mp * mp.mpf(time) + mp.ei(-mp.exp(-c_mp * (mp.mpf(time) - thm.telf) + exp_gamma)) - ei_at_0)
+            for time in t
+        ])
+
+    g = thm._scaled_b_excess_integral(t, c)
+    assert g[0] == 0.0
+    assert np.all(np.diff(g[1:-3]) >= 0.0)
+    assert np.allclose(g, expected, rtol=1e-12, atol=0.0)
+
+
+def test_THM_transient_functions_do_not_need_mpmath() -> None:
     """`mpmath` is a dev-only dependency, so an ordinary `pip install petbox-dca` does not have
-    it. `_transDfn` used to print to stderr and return all-nan, which did not degrade cleanly:
-    only transient_D and transient_beta propagated the nan, while transient_rate returned a
-    *constant* and transient_cum integrated that constant into a straight line -- plausible
-    numbers rather than a visible failure. It raises now, and this pins that.
+    it. `_transDfn` once needed it for Ei at late time, where scipy's expi underflows; that
+    branch is now an analytic series, so every transient function runs without mpmath and
+    gives the same numbers it gives with it.
 
     The stub blocks the import for the duration of the test rather than uninstalling anything,
     so it is safe to run in an environment that has mpmath (which CI does)."""
@@ -545,9 +652,9 @@ def test_THM_transient_functions_raise_without_mpmath() -> None:
     hyperbolic_term = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.0, 10.0)
     exponential_term = dca.THM(1000.0, 0.8, 2.0, 0.8, 30.0, 0.08, 0.0)
 
-    # the non-transient functions have no mpmath dependency, which the error message claims;
-    # capture them first so it can be asserted rather than assumed
-    reference = {name: getattr(plain, name)(t) for name in ("rate", "cum", "D", "beta", "b")}
+    models = (plain, hyperbolic_term, exponential_term)
+    transient_names = ("transient_rate", "transient_cum", "transient_D", "transient_beta", "transient_b")
+    reference = [{name: getattr(model, name)(t) for name in transient_names} for model in models]
 
     blocker = BlockMpmath()
     blocked = [m for m in sys.modules if m == "mpmath" or m.startswith("mpmath.")]
@@ -556,36 +663,17 @@ def test_THM_transient_functions_raise_without_mpmath() -> None:
     for name in blocked:
         del sys.modules[name]
     try:
-        # Four always need the transient decline integral. `transient_b` is the exception: `_bfn`
-        # reaches for it only to locate an *exponential* terminal boundary, so it needs mpmath in
-        # that configuration and not otherwise. Asserted both ways so a change in which branch
-        # calls `_transDfn` shows up here.
-        for model in (plain, hyperbolic_term, exponential_term):
-            for name in ("transient_rate", "transient_cum", "transient_D", "transient_beta"):
-                with pytest.raises(ImportError, match=r"require `mpmath`"):
-                    getattr(model, name)(t)
+        # the block is live: an import that reached mpmath would raise here
+        with pytest.raises(ImportError):
+            importlib.import_module("mpmath")
 
-        with pytest.raises(ImportError, match=r"require `mpmath`"):
-            exponential_term.transient_b(t)
-
-        for model in (plain, hyperbolic_term):
-            assert np.all(np.isfinite(model.transient_b(t)))
-
-        # the message names the remedy and reassures about the rest of the API
-        with pytest.raises(ImportError) as raised:
-            plain.transient_rate(t)
-        assert "pip install mpmath" in str(raised.value)
-        assert isinstance(raised.value.__cause__, ImportError)  # chained, cause not lost
-
-        # and the ordinary functions really are unaffected
-        for name, expected in reference.items():
-            assert np.array_equal(getattr(plain, name)(t), expected, equal_nan=True), name
+        # same process, same arithmetic, so equal bit for bit
+        for model, expected in zip(models, reference, strict=True):
+            for name in transient_names:
+                assert np.array_equal(getattr(model, name)(t), expected[name]), name
     finally:
         sys.meta_path.remove(blocker)
         sys.modules.update(saved_modules)
-
-    # restored, so the rest of the session is unaffected by this test
-    assert np.all(np.isfinite(plain.transient_rate(t)))
 
 
 @given(

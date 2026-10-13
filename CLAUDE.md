@@ -160,11 +160,9 @@ from `ensurepip`, which is why 3.12 and 3.13 are unaffected. Create such venvs a
 
 Runtime: `numpy >= 2.1`, `scipy >= 1.13`. Requires Python >= 3.10.
 
-`mpmath` is a **test-only** dependency (in the `test` extra, not in `dependencies`), imported lazily inside `THM._transDfn`. It is needed only by the five `THM.transient_*` functions; everything else works without it.
+`mpmath` is a **test-only** dependency (in the `test` extra, not in `dependencies`). The package does not import it. The THM transient tests use it as a 50-digit reference for SPE-167242 Eq. 7. `THM._scaled_b_excess_integral` evaluates the Ei terms with `scipy.special.expi`, and with the small-argument series where `expi(-exp(x))` would underflow to `-inf`.
 
-Absent, they raise `ImportError` naming the fix. `transient_rate`/`cum`/`D`/`beta` raise always; `transient_b` only for a `bterm`-terminated model, since that is the one branch needing the transient integral.
-
-That replaced a stderr print plus all-`nan` return, which did not degrade cleanly: only `transient_D` and `transient_beta` propagated the `nan`, while `transient_rate` returned a *constant* (`1033.4` at every `t` for `THM(1000, 0.8, 2.0, 0.8, 30.0)`) and `transient_cum` integrated that constant into a straight line. Plausible numbers, in a library people fit economics to. If you add another optional dependency, fail the same way — loudly, at the point of use.
+If you add an optional dependency, fail loudly at the point of use: raise `ImportError` that names the fix. Do not print a warning and return `nan`. An earlier `mpmath`-absent path did that, and `transient_rate` then returned a plausible-looking constant instead of a visible failure.
 
 ## Version
 

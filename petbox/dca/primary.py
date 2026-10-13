@@ -16,7 +16,7 @@ import warnings
 from abc import abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from math import exp, expm1, isfinite, log1p
+from math import exp, expm1, isfinite, log, log1p
 from typing import (
     Any,
     ClassVar,
@@ -39,6 +39,9 @@ from .base import (
     _validate_nonnegative_override,
     _validate_segment_times,
 )
+
+# Below this ln z, THM's Ei(-z) takes the small-argument series rather than scipy's expi.
+EI_SERIES_SWITCH = log(1e-8)
 
 
 @dataclass(frozen=True)
@@ -1283,7 +1286,8 @@ class THM(MultisegmentHyperbolic):
     # since the generated __hash__ hashes the field tuple
     validate_params: Iterable[bool] = field(default_factory=lambda: (True,) * 7)
 
-    EXP_GAMMA: ClassVar[float] = exp(0.5572156)
+    # e^gamma, gamma the Euler-Mascheroni constant (SPE-167242 Eq. 5)
+    EXP_GAMMA: ClassVar[float] = exp(np.euler_gamma)
     EXP_1: ClassVar[float] = exp(1.0)
 
     def _validate(self) -> None:
@@ -1398,7 +1402,7 @@ class THM(MultisegmentHyperbolic):
 
         .. math::
 
-            q(t) = e^{-\\int_0^t D(t) \\, dt}
+            q(t) = q_i \\, e^{-\\int_0^t D(t) \\, dt}
 
         Parameters
         ----------
@@ -1446,8 +1450,8 @@ class THM(MultisegmentHyperbolic):
         .. math::
 
             D(t) = \\frac{1}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
-            (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^(\\gamma)}]
-            - \\textrm{Ei}[-e^{c \\, t_{elf} + e^(\\gamma)}])}
+            (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^{\\gamma}}]
+            - \\textrm{Ei}[-e^{c \\, t_{elf} + e^{\\gamma}}])}
 
         Parameters
         ----------
@@ -1468,8 +1472,8 @@ class THM(MultisegmentHyperbolic):
         .. math::
 
             \\beta(t) = \\frac{t}{\\frac{1}{Di} + b_i t + \\frac{bi - bf}{c}
-            (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^(\\gamma)}]
-            - \\textrm{Ei}[-e^{c \\, t_{elf} + e^(\\gamma)}])}
+            (\\textrm{Ei}[-e^{-c \\, (t -t_{elf}) + e^{\\gamma}}]
+            - \\textrm{Ei}[-e^{c \\, t_{elf} + e^{\\gamma}}])}
 
         Parameters
         ----------
@@ -1517,8 +1521,9 @@ class THM(MultisegmentHyperbolic):
     def _transqfn(self, t: NDFloat, **kwargs: Any) -> NDFloat:
         kwargs.setdefault("n", 10)
         qi = self.qi
-        Dnom_i = self._nominal_per_day_from_secant(self.Di, self.bi)
-        D_dt = Dnom_i - self._integrate_with(self._transDfn, t, **kwargs)
+        # q(t) = qi exp(-int_0^t D). This once added Dnom_i to the exponent, which scaled every
+        # rate and cumulative by exp(Dnom_i): x1.0334 at Di = 0.8, x880,183 at Di = 0.99.
+        D_dt = -self._integrate_with(self._transDfn, t, **kwargs)
 
         # Saturate the exponent the way _qcheck does, rather than masking the output. The
         # previous form assigned a full-length right-hand side into a masked left-hand side --
@@ -1532,26 +1537,6 @@ class THM(MultisegmentHyperbolic):
             return qi * np.exp(D_dt)
 
     def _transDfn(self, t: NDFloat) -> NDFloat:
-        try:
-            import mpmath as mp
-        except ImportError as no_mpmath:
-            # Raise rather than warn. This used to print to stderr and return all-nan, on the
-            # theory that a missing optional dependency should degrade rather than fail -- but
-            # it did not degrade cleanly. Only `transient_D` and `transient_beta` propagated the
-            # nan; `transient_rate` returned a *constant* (1033.4 at every t for
-            # THM(1000, 0.8, 2.0, 0.8, 30.0)) and `transient_cum` integrated that constant into
-            # a straight line. Both are plausible-looking numbers, on quiet stderr, in a library
-            # people fit economics to. `mpmath` is not in `dependencies`, so any ordinary
-            # `pip install petbox-dca` hit this.
-            #
-            # Covered by `test_THM_transient_functions_raise_without_mpmath`, which blocks the
-            # import through a `sys.meta_path` stub rather than uninstalling anything.
-            raise ImportError(
-                "The THM transient functions require `mpmath`, which is not installed. "
-                "Install it with `pip install mpmath`. The non-transient functions -- rate, "
-                "cum, D, beta, b -- have no such dependency and are unaffected."
-            ) from no_mpmath
-
         t = np.atleast_1d(t)
         qi = self.qi
         bi = self.bi
@@ -1578,24 +1563,24 @@ class THM(MultisegmentHyperbolic):
             where_term = t >= tterm if tterm > 0.0 else np.full_like(t, False, dtype=bool)
 
             c = self.EXP_GAMMA / (1.5 * telf)
-            D_denom = np.full_like(t, np.nan, dtype=np.float64)
-            D_denom[~where_term] = (
-                1.0 / Dnom_i + bi * t[~where_term] - ei(-np.exp(c * telf + self.EXP_GAMMA))
-            )
-            if abs(bi - bf) >= MIN_EPSILON:
-                for i, _t in enumerate(t):
-                    if where_term[i]:
-                        break
-                    D_denom[i] += (bi - bf) / c * mp.ei(-mp.exp(-c * (_t - telf) + self.EXP_GAMMA))
 
-            D = 1.0 / D_denom
+            def reciprocal_D(times: NDFloat) -> NDFloat:
+                # SPE-167242 Eq. 7, rearranged so bi * t is never formed:
+                #   1/D = 1/Di + bi t + (bi - bf)/c [Ei(-z(t)) - Ei(-z(0))]
+                #       = 1/Di + bf t + (bi - bf)/c g(t)
+                # Late in time (bi - bf)/c Ei(-z(t)) is ~ -(bi - bf) t, so the first form cancels
+                # two large terms; with bf = 0 and a tiny telf the rounding exceeded 1/Di and
+                # the denominator reached zero.
+                denominator = 1.0 / Dnom_i + bf * times
+                if abs(bi - bf) >= MIN_EPSILON:
+                    denominator = denominator + (bi - bf) / c * self._scaled_b_excess_integral(times, c)
+                return denominator
+
+            D = np.full_like(t, np.nan, dtype=np.float64)
+            D[~where_term] = 1.0 / reciprocal_D(t[~where_term])
 
             if tterm > 0.0:
-                D_denom = 1.0 / Dnom_i + bi * tterm - ei(-np.exp(c * telf + self.EXP_GAMMA))
-                if abs(bi - bf) >= MIN_EPSILON:
-                    D_denom += (bi - bf) / c * mp.ei(-mp.exp(-c * (tterm - telf) + self.EXP_GAMMA))
-
-                Dterm = float(1.0 / D_denom)
+                Dterm = float(1.0 / reciprocal_D(np.array([tterm]))[0])
 
             else:
                 Dterm = 0.0
@@ -1614,6 +1599,55 @@ class THM(MultisegmentHyperbolic):
                 D[where_term] = self._Dcheck(tterm, 1.0, Dterm, 0.0, 0.0, t[where_term])
 
         return D
+
+    def _scaled_b_excess_integral(self, t: NDFloat, c: float) -> NDFloat:
+        """
+        The integral g(t) in the transient decline, with z(t) = exp(-c (t - telf) + e^gamma):
+
+        .. math::
+
+            g(t) = c \\, t + \\textrm{Ei}[-z(t)] - \\textrm{Ei}[-z(0)]
+                 = c \\int_0^t e^{-z(\\tau)} \\, d\\tau
+
+        so ``(bi - bf) / c * g(t)`` is the integral of ``b(t) - bf``. It is zero at ``t = 0``
+        and non-decreasing. ``Ei(-z(0))`` is the integration constant that makes D(0) = Di.
+
+        ``scipy.special.expi`` is used while ``ln z >= EI_SERIES_SWITCH``. Below it,
+        ``exp(x)`` heads for underflow and ``expi(-0.0)`` is ``-inf``, so the small-argument
+        series takes over, with ``ln z = x`` supplied directly:
+
+        .. math::
+
+            \\textrm{Ei}(-z) = \\gamma + \\ln z - z + \\frac{z^2}{4} - \\ldots
+
+        Here ``c t + ln z = c telf + e^gamma``, so g is assembled without the two large,
+        opposite terms. For ``z < 1e-8`` the omitted terms are below ``1e-24``.
+
+        This replaced an ``mpmath.ei`` call per element in a Python loop, which is why
+        ``mpmath`` is no longer needed by the transient functions.
+
+        Parameters
+        ----------
+            t: NDFloat
+                An array of time values, in days.
+
+            c: float
+                The transient decay constant, ``e^gamma / (1.5 telf)``.
+
+        Returns
+        -------
+            NDFloat
+        """
+        ln_z = -c * (t - self.telf) + self.EXP_GAMMA
+        # through the same array arithmetic as ln_z, so g(0) cancels to exactly zero
+        ei_at_0 = ei(-np.exp(-c * (np.zeros(1) - self.telf) + self.EXP_GAMMA))[0]
+
+        series = ln_z < EI_SERIES_SWITCH
+        result = np.empty_like(t, dtype=np.float64)
+        result[~series] = c * t[~series] + ei(-np.exp(ln_z[~series])) - ei_at_0
+        z = np.exp(ln_z[series])
+        result[series] = c * self.telf + self.EXP_GAMMA + np.euler_gamma - ei_at_0 - z + z * z / 4.0
+        return result
 
     def _transbfn(self, t: NDFloat) -> NDFloat:
 
